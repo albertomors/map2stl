@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-19
+
+Milestone 2: fetch the 3D data for the selected area.
+
 ### Added
 
 - **Fetch 3D data** (milestone 2): downloads the OpenStreetMap buildings, roads, railways,
