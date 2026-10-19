@@ -15,7 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   heights) and a colored map preview with a checkbox per category.
 - Building heights from `height`, `building:levels` or an estimate by building type;
   `building:part`s replace their outline.
-- Download progress with server name and elapsed time; Cancel button.
+- Progress bars for the OSM download (waiting time, server, megabytes received) and the
+  terrain tiles; Cancel button.
 - OSM answers are cached in the browser for a week; busy or silent servers fall back
   to mirrors.
 

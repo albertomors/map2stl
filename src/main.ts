@@ -123,18 +123,20 @@ async function fetchData(sel: Selection) {
   $('data').hidden = false;
   const status = $('data-status');
   status.classList.remove('error');
-  status.textContent = 'Starting…';
+  status.textContent = '';
+  $('data-progress').hidden = false;
   // Re-render every second too, so a slow server shows a running clock instead of looking stuck.
-  const started = Date.now();
-  let last: FetchProgress | null = null;
-  const render = () => last && (status.textContent = formatProgress(last, (Date.now() - started) / 1000));
+  const wait: ServerWait = { since: Date.now() };
+  let last: FetchProgress = { osmBytes: 0, osmCached: false, osmDone: false, tilesDone: 0, tilesTotal: 0 };
+  const render = () => showProgress(last, wait);
+  render();
   const clock = setInterval(render, 1000);
   try {
     const data = await fetchAreaData(sel, controller.signal, (p) => {
       last = p;
       render();
     });
-    status.textContent = '';
+    $('data-progress').hidden = true;
     showData(data);
   } catch (err) {
     if (controller.signal.aborted) {
@@ -143,6 +145,7 @@ async function fetchData(sel: Selection) {
       return;
     }
     console.error('Fetching 3D data failed', err);
+    $('data-progress').hidden = true;
     status.classList.add('error');
     status.textContent = `${(err as Error).message}. Try again in a minute.`;
   } finally {
@@ -160,6 +163,7 @@ function resetData() {
   $('fetch').textContent = 'Fetch 3D data';
   preview?.clear();
   $('data').hidden = true;
+  $('data-progress').hidden = true;
   $('data-layers').replaceChildren();
   $('data-terrain').textContent = '';
 }
@@ -202,11 +206,47 @@ function showData(data: AreaData) {
     `Terrain ${Math.round(t.min)}–${Math.round(t.max)} m above sea level, ${t.width}×${t.height} grid (≈${spacing.toFixed(0)} m).`;
 }
 
-function formatProgress(p: FetchProgress, seconds: number): string {
-  const waiting = `waiting for ${p.osmServer ?? 'server'} (${Math.round(seconds)} s)…`;
-  const osm = p.osmDone ? 'done' : p.osmCached ? 'from cache' : p.osmBytes ? formatBytes(p.osmBytes) : waiting;
-  const terrain = p.tilesTotal ? `${p.tilesDone}/${p.tilesTotal} tiles` : '…';
-  return `OpenStreetMap: ${osm} · Terrain: ${terrain}`;
+// Which Overpass server we're waiting on, and since when (reset when it moves to a mirror).
+interface ServerWait {
+  server?: string;
+  previous?: string;
+  since: number;
+}
+
+function showProgress(p: FetchProgress, wait: ServerWait) {
+  if (p.osmServer && p.osmServer !== wait.server) {
+    wait.previous = wait.server;
+    wait.server = p.osmServer;
+    wait.since = Date.now();
+  }
+  const seconds = Math.round((Date.now() - wait.since) / 1000);
+  if (p.osmDone || p.osmCached) {
+    setBar('progress-osm', p.osmCached ? 'From cache' : 'Done', 1, '');
+  } else if (p.osmBytes) {
+    // The server doesn't say how big the answer is: count the bytes instead of a percentage.
+    setBar('progress-osm', `Downloading ${formatBytes(p.osmBytes)}`, null, `from ${wait.server}`);
+  } else {
+    const note = wait.previous
+      ? `${wait.previous} was busy, now asking ${wait.server}.`
+      : `${wait.server ?? 'The server'} collects every feature in the area first: dense city centers take up to a minute.`;
+    setBar('progress-osm', `Waiting for server… ${seconds} s`, null, note);
+  }
+  if (p.tilesTotal) {
+    const done = p.tilesDone === p.tilesTotal;
+    setBar('progress-terrain', done ? 'Done' : `${p.tilesDone} of ${p.tilesTotal} tiles`, p.tilesDone / p.tilesTotal, '');
+  } else {
+    setBar('progress-terrain', 'Starting…', null, '');
+  }
+}
+
+// `fraction` null = unknown length: the bar animates instead of filling.
+function setBar(id: string, text: string, fraction: number | null, note: string) {
+  const row = $(id);
+  row.querySelector('.progress-text')!.textContent = text;
+  row.querySelector('.progress-note')!.textContent = note;
+  row.classList.toggle('busy', fraction === null);
+  row.classList.toggle('done', fraction === 1);
+  (row.querySelector('.bar > div') as HTMLElement).style.width = fraction === null ? '' : `${fraction * 100}%`;
 }
 
 function formatBytes(n: number): string {

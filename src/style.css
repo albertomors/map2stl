@@ -425,3 +425,78 @@ dd {
 .credit {
   font-size: 11px;
 }
+
+/* Download progress */
+
+#data-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.progress-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 14px;
+}
+
+.progress-text {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.progress .bar {
+  position: relative;
+  height: 6px;
+  margin-top: 6px;
+  overflow: hidden;
+  border-radius: 3px;
+  background: var(--surface);
+}
+
+.progress .bar > div {
+  height: 100%;
+  width: 0;
+  border-radius: 3px;
+  background: var(--accent);
+  transition: width 200ms ease-out;
+}
+
+/* Unknown length: a segment sweeps across. */
+.progress.busy .bar > div {
+  position: absolute;
+  width: 35%;
+  transition: none;
+  animation: progress-sweep 1.3s ease-in-out infinite;
+}
+
+.progress.done .progress-text {
+  color: var(--fg);
+}
+
+@keyframes progress-sweep {
+  from {
+    left: -35%;
+  }
+  to {
+    left: 100%;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .progress.busy .bar > div {
+    animation-duration: 4s;
+  }
+}
+
+.progress-note {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.progress-note:empty {
+  display: none;
+}

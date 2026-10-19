@@ -59,6 +59,18 @@
 
       <section id="data" hidden>
         <h2>3D data</h2>
+        <div id="data-progress" hidden>
+          <div class="progress" id="progress-osm">
+            <div class="progress-head"><span>OpenStreetMap</span><span class="progress-text"></span></div>
+            <div class="bar"><div></div></div>
+            <p class="progress-note"></p>
+          </div>
+          <div class="progress" id="progress-terrain">
+            <div class="progress-head"><span>Terrain</span><span class="progress-text"></span></div>
+            <div class="bar"><div></div></div>
+            <p class="progress-note"></p>
+          </div>
+        </div>
         <p id="data-status" class="hint" aria-live="polite"></p>
         <ul id="data-layers"></ul>
         <p id="data-terrain" class="hint"></p>
