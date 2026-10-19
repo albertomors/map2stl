@@ -7,12 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Orbit (right-drag or Ctrl+drag) now holds the map like a hand: the point you grab
+  follows the cursor while you turn and tilt, and is still under it when you release.
+  Grabbing the sky or a point near the horizon turns and tilts around the view center.
+
 ### Fixed
 
-- Orbiting at a steep tilt no longer flings the camera across the city: the grabbed
-  point now stays exactly under the cursor.
-- Orbiting from a far-away point near the horizon, or from the sky, turns around the
-  view center instead of swinging the camera kilometers away.
+- Orbiting at a steep tilt no longer flings the camera across the city.
 
 ## [0.1.0] - 2026-10-19
 

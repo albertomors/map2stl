@@ -20,8 +20,9 @@ npm run build    # type-check + production build in dist/
   The URL keeps the map position (`#zoom/lat/lng`), so links can be shared.
 - **Search**: cities, regions and countries, with suggestions while you type, from
   [Photon](https://photon.komoot.io) (OSM data, no API key). Arrow keys + Enter pick a result.
-- **Navigation**: drag to pan, scroll to zoom, **right-drag or Ctrl+drag to orbit and tilt**
-  around the point under the cursor (smoothed, replaces MapLibre's center-spinning rotate).
+- **Navigation**: drag to pan, scroll to zoom, **right-drag or Ctrl+drag to orbit and tilt**:
+  horizontal turns, vertical tilts, and the point you grabbed stays under the cursor
+  (replaces MapLibre's center-spinning rotate).
   On-screen: zoom buttons, a compass you drag to rotate (click to face north), 2D/3D toggle.
 - **Area selection**: pick a shape and drag on the map.
   - Rectangle: drag corner to corner.

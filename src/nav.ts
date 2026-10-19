@@ -1,4 +1,4 @@
-// Map navigation: smooth orbit around the point under the cursor, plus an on-screen
+// Map navigation: orbit that keeps the grabbed point under the cursor, plus an on-screen
 // control (zoom, draggable compass, 2D/3D toggle). Replaces MapLibre's right-drag rotate,
 // which spins around the screen center and is very sensitive.
 
@@ -9,11 +9,9 @@ const BEARING_PER_PX = 0.3;
 const PITCH_PER_PX = 0.25;
 const MAX_PITCH = 80;
 const PITCH_3D = 60;
-// Fraction of the remaining distance covered each frame: lower is smoother but laggier.
-const SMOOTHING = 0.3;
 // A grabbed point farther from the view center than this many times the center-to-bottom-edge
-// distance (near the horizon, or sky) would swing the camera across the city: orbit the center instead.
-const MAX_PIVOT_REACH = 2;
+// distance (near the horizon, or sky) can't be held: drag turns and tilts by distance instead.
+const MAX_GRAB_REACH = 2;
 
 export function setupNavigation(map: Map) {
   map.dragRotate.disable();
@@ -22,19 +20,24 @@ export function setupNavigation(map: Map) {
   map.addControl({ onAdd: () => buildControl(map), onRemove: () => {} }, 'bottom-right');
 }
 
-// Right-drag or Ctrl+drag orbits: left/right turns, up/down tilts.
-// The point clicked stays put on screen, so you circle around what you're looking at;
-// far-away points and the sky fall back to the view center.
+// Right-drag or Ctrl+drag: horizontal movement turns, vertical tilts, and the map slides so the
+// grabbed point follows the cursor, like holding the map in your hand: on release it is still
+// under the cursor. Far-away points and the sky can't be held, so those drags just turn and
+// tilt around the view center.
 function setupOrbit(map: Map) {
   const canvas = map.getCanvasContainer();
   let dragging = false;
-  let last = { x: 0, y: 0 };
-  let anchor = { x: 0, y: 0 };
-  let pivot: LngLat | null = null;
-  let target = { bearing: 0, pitch: 0 };
+  let start = { x: 0, y: 0, bearing: 0, pitch: 0 };
+  let cursor = { x: 0, y: 0 };
+  let grab: LngLat | null = null;
   let frame = 0;
 
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  const local = (e: PointerEvent) => {
+    const rect = canvas.getBoundingClientRect();
+    return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+  };
 
   canvas.addEventListener('pointerdown', (e) => {
     if (!(e.button === 2 || (e.button === 0 && e.ctrlKey))) return;
@@ -42,19 +45,15 @@ function setupOrbit(map: Map) {
     e.stopPropagation();
     dragging = true;
     canvas.setPointerCapture(e.pointerId);
-    const rect = canvas.getBoundingClientRect();
-    anchor = { x: e.clientX - rect.left, y: e.clientY - rect.top };
-    last = { x: e.clientX, y: e.clientY };
-    pivot = pickPivot(map, anchor);
-    target = { bearing: map.getBearing(), pitch: map.getPitch() };
+    cursor = local(e);
+    start = { ...cursor, bearing: map.getBearing(), pitch: map.getPitch() };
+    grab = pickGrab(map, cursor);
     canvas.style.cursor = 'grabbing';
   });
 
   canvas.addEventListener('pointermove', (e) => {
     if (!dragging) return;
-    target.bearing += (e.clientX - last.x) * BEARING_PER_PX;
-    target.pitch = clamp(target.pitch - (e.clientY - last.y) * PITCH_PER_PX, 0, MAX_PITCH);
-    last = { x: e.clientX, y: e.clientY };
+    cursor = local(e);
     if (!frame) frame = requestAnimationFrame(step);
   });
 
@@ -68,40 +67,34 @@ function setupOrbit(map: Map) {
   canvas.addEventListener('pointercancel', stop);
 
   function step() {
-    const bearing = map.getBearing();
-    const pitch = map.getPitch();
-    const dBearing = target.bearing - bearing;
-    const dPitch = target.pitch - pitch;
-    const done = Math.abs(dBearing) < 0.05 && Math.abs(dPitch) < 0.05;
+    frame = 0;
     map.jumpTo({
-      bearing: done ? target.bearing : bearing + dBearing * SMOOTHING,
-      pitch: done ? target.pitch : pitch + dPitch * SMOOTHING,
+      bearing: start.bearing + (cursor.x - start.x) * BEARING_PER_PX,
+      pitch: clamp(start.pitch - (cursor.y - start.y) * PITCH_PER_PX, 0, MAX_PITCH),
     });
-    if (pivot) keepOnScreen(map, pivot, anchor);
-    frame = done ? 0 : requestAnimationFrame(step);
+    if (grab) holdUnderCursor(map, grab, cursor);
   }
 }
 
-// The ground point under `at`, or null to orbit around the view center.
-function pickPivot(map: Map, at: { x: number; y: number }): LngLat | null {
+// The ground point under `at`, or null when it's too far away (or sky) to hold on to.
+function pickGrab(map: Map, at: { x: number; y: number }): LngLat | null {
   const canvas = map.getCanvas();
   const center = map.getCenter();
   const point = map.unproject([at.x, at.y]);
   const bottom = map.unproject([canvas.clientWidth / 2, canvas.clientHeight]);
-  const reach = MAX_PIVOT_REACH * distance(center.toArray(), bottom.toArray());
+  const reach = MAX_GRAB_REACH * distance(center.toArray(), bottom.toArray());
   return distance(center.toArray(), point.toArray()) > reach ? null : point;
 }
 
-// Shift the map so `point` is drawn at screen position `at` again. Moving the center slides the
+// Slide the map so `point` is drawn at screen position `at`. Moving the center slides the
 // camera rigidly over the ground, so the fix is the ground offset between `point` and whatever
-// is under `at` now, done in Mercator where that slide is linear. A screen-space step instead
-// overshoots under perspective and diverges at steep tilt.
-function keepOnScreen(map: Map, point: LngLat, at: { x: number; y: number }) {
+// is under `at` now, done in Mercator where that slide is linear (a screen-space step overshoots
+// under perspective and diverges at steep tilt).
+function holdUnderCursor(map: Map, point: LngLat, at: { x: number; y: number }) {
   const want = MercatorCoordinate.fromLngLat(point);
   const got = MercatorCoordinate.fromLngLat(map.unproject([at.x, at.y]));
   const c = MercatorCoordinate.fromLngLat(map.getCenter());
-  const center = new MercatorCoordinate(c.x + want.x - got.x, c.y + want.y - got.y).toLngLat();
-  map.jumpTo({ center });
+  map.jumpTo({ center: new MercatorCoordinate(c.x + want.x - got.x, c.y + want.y - got.y).toLngLat() });
 }
 
 function buildControl(map: Map): HTMLElement {
