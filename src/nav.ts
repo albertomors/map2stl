@@ -2,7 +2,8 @@
 // control (zoom, draggable compass, 2D/3D toggle). Replaces MapLibre's right-drag rotate,
 // which spins around the screen center and is very sensitive.
 
-import type { LngLat, Map, PointLike } from 'maplibre-gl';
+import { MercatorCoordinate, type LngLat, type Map } from 'maplibre-gl';
+import { distance } from './geo';
 
 const BEARING_PER_PX = 0.3;
 const PITCH_PER_PX = 0.25;
@@ -10,6 +11,9 @@ const MAX_PITCH = 80;
 const PITCH_3D = 60;
 // Fraction of the remaining distance covered each frame: lower is smoother but laggier.
 const SMOOTHING = 0.3;
+// A grabbed point farther from the view center than this many times the center-to-bottom-edge
+// distance (near the horizon, or sky) would swing the camera across the city: orbit the center instead.
+const MAX_PIVOT_REACH = 2;
 
 export function setupNavigation(map: Map) {
   map.dragRotate.disable();
@@ -19,7 +23,8 @@ export function setupNavigation(map: Map) {
 }
 
 // Right-drag or Ctrl+drag orbits: left/right turns, up/down tilts.
-// The point clicked stays put on screen, so you circle around what you're looking at.
+// The point clicked stays put on screen, so you circle around what you're looking at;
+// far-away points and the sky fall back to the view center.
 function setupOrbit(map: Map) {
   const canvas = map.getCanvasContainer();
   let dragging = false;
@@ -40,7 +45,7 @@ function setupOrbit(map: Map) {
     const rect = canvas.getBoundingClientRect();
     anchor = { x: e.clientX - rect.left, y: e.clientY - rect.top };
     last = { x: e.clientX, y: e.clientY };
-    pivot = map.unproject([anchor.x, anchor.y]);
+    pivot = pickPivot(map, anchor);
     target = { bearing: map.getBearing(), pitch: map.getPitch() };
     canvas.style.cursor = 'grabbing';
   });
@@ -77,12 +82,26 @@ function setupOrbit(map: Map) {
   }
 }
 
-// Shift the map so `point` is drawn at screen position `at` again.
+// The ground point under `at`, or null to orbit around the view center.
+function pickPivot(map: Map, at: { x: number; y: number }): LngLat | null {
+  const canvas = map.getCanvas();
+  const center = map.getCenter();
+  const point = map.unproject([at.x, at.y]);
+  const bottom = map.unproject([canvas.clientWidth / 2, canvas.clientHeight]);
+  const reach = MAX_PIVOT_REACH * distance(center.toArray(), bottom.toArray());
+  return distance(center.toArray(), point.toArray()) > reach ? null : point;
+}
+
+// Shift the map so `point` is drawn at screen position `at` again. Moving the center slides the
+// camera rigidly over the ground, so the fix is the ground offset between `point` and whatever
+// is under `at` now, done in Mercator where that slide is linear. A screen-space step instead
+// overshoots under perspective and diverges at steep tilt.
 function keepOnScreen(map: Map, point: LngLat, at: { x: number; y: number }) {
-  const now = map.project(point);
-  const center = map.project(map.getCenter());
-  const shifted: PointLike = [center.x + now.x - at.x, center.y + now.y - at.y];
-  map.jumpTo({ center: map.unproject(shifted) });
+  const want = MercatorCoordinate.fromLngLat(point);
+  const got = MercatorCoordinate.fromLngLat(map.unproject([at.x, at.y]));
+  const c = MercatorCoordinate.fromLngLat(map.getCenter());
+  const center = new MercatorCoordinate(c.x + want.x - got.x, c.y + want.y - got.y).toLngLat();
+  map.jumpTo({ center });
 }
 
 function buildControl(map: Map): HTMLElement {
