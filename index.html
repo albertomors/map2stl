@@ -54,7 +54,15 @@
         <div class="actions">
           <button id="clear" class="secondary">Clear</button>
         </div>
-        <button class="primary" disabled title="Milestone 2">Fetch 3D data →</button>
+        <button id="fetch" class="primary">Fetch 3D data</button>
+      </section>
+
+      <section id="data" hidden>
+        <h2>3D data</h2>
+        <p id="data-status" class="hint" aria-live="polite"></p>
+        <ul id="data-layers"></ul>
+        <p id="data-terrain" class="hint"></p>
+        <p class="hint credit">© OpenStreetMap contributors · terrain: AWS Terrain Tiles</p>
       </section>
     </aside>
 

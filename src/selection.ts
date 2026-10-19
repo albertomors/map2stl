@@ -2,7 +2,7 @@
 // Stored as center + size + rotation, so it can be scaled and rotated in place;
 // the outline ring is derived from those.
 
-import { bbox, bearingTo, destination, distance, ringArea, type LngLat } from './geo';
+import { bbox, bearingTo, destination, distance, pointInRing, ringArea, type LngLat } from './geo';
 
 export type ShapeKind = 'rectangle' | 'hexagon' | 'circle';
 
@@ -96,16 +96,8 @@ export function describe(sel: Selection): SelectionInfo {
   return { ring: r, bbox: bbox(r), widthM: w, heightM: h, areaM2: ringArea(r) };
 }
 
-// Ray casting in lng/lat: fine for city-sized shapes away from the poles.
 export function contains(sel: Selection, p: LngLat): boolean {
-  const r = ring(sel);
-  let inside = false;
-  for (let i = 0, j = r.length - 2; i < r.length - 1; j = i++) {
-    const [xi, yi] = r[i];
-    const [xj, yj] = r[j];
-    if (yi > p[1] !== yj > p[1] && p[0] < ((xj - xi) * (p[1] - yi)) / (yj - yi) + xi) inside = !inside;
-  }
-  return inside;
+  return pointInRing(p, ring(sel));
 }
 
 export function toGeoJSON(sel: Selection): GeoJSON.Feature<GeoJSON.Polygon> {

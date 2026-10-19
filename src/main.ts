@@ -2,8 +2,11 @@ import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import './style.css';
+import { fetchAreaData, summarize, type AreaData, type FetchProgress } from './area-data';
 import { DrawController } from './draw';
+import { distance } from './geo';
 import { setupNavigation } from './nav';
+import { DataPreview, LAYER_COLORS } from './preview';
 import { setupSearch } from './search';
 import { describe, loadSelection, saveSelection, type Selection, type ShapeKind } from './selection';
 
@@ -37,6 +40,10 @@ setupSearch(map, $('search'), $('search-input'), $('search-results'));
 
 const toolButtons = document.querySelectorAll<HTMLButtonElement>('[data-tool]');
 let draw: DrawController | null = null;
+let preview: DataPreview | null = null;
+let selection: Selection | null = null;
+// The download in progress, if any.
+let loading: AbortController | null = null;
 
 // Wired right away: a click before the map is ready says so instead of doing nothing.
 toolButtons.forEach((btn) =>
@@ -47,17 +54,23 @@ toolButtons.forEach((btn) =>
   }),
 );
 $('clear').addEventListener('click', () => draw?.clear());
+$('fetch').addEventListener('click', () => (loading ? loading.abort() : selection && fetchData(selection)));
 
 map.on('error', (e) => console.error('Map error', e.error));
 
 map.on('load', () => {
   draw = new DrawController(map, showTool, (sel, final) => {
+    // Data fetched for the old shape no longer matches.
+    if (sel !== selection) resetData();
+    selection = sel;
     showSelection(sel);
     if (final) saveSelection(sel);
   });
 
   const saved = loadSelection();
+  preview = new DataPreview(map, 'selection-fill');
   if (saved) {
+    selection = saved;
     draw.show(saved);
     showSelection(saved);
     // Only jump to the saved area when the URL doesn't already say where to look.
@@ -100,4 +113,102 @@ function formatLength(m: number): string {
 
 function formatArea(m2: number): string {
   return m2 < 1e6 ? `${(m2 / 1e4).toFixed(1)} ha` : `${(m2 / 1e6).toFixed(2)} km²`;
+}
+
+async function fetchData(sel: Selection) {
+  resetData();
+  const controller = new AbortController();
+  loading = controller;
+  $('fetch').textContent = 'Cancel';
+  $('data').hidden = false;
+  const status = $('data-status');
+  status.classList.remove('error');
+  status.textContent = 'Starting…';
+  // Re-render every second too, so a slow server shows a running clock instead of looking stuck.
+  const started = Date.now();
+  let last: FetchProgress | null = null;
+  const render = () => last && (status.textContent = formatProgress(last, (Date.now() - started) / 1000));
+  const clock = setInterval(render, 1000);
+  try {
+    const data = await fetchAreaData(sel, controller.signal, (p) => {
+      last = p;
+      render();
+    });
+    status.textContent = '';
+    showData(data);
+  } catch (err) {
+    if (controller.signal.aborted) {
+      // Cancelled, or replaced by a new selection: resetData() already tidied up.
+      if (loading === controller) resetData();
+      return;
+    }
+    console.error('Fetching 3D data failed', err);
+    status.classList.add('error');
+    status.textContent = `${(err as Error).message}. Try again in a minute.`;
+  } finally {
+    clearInterval(clock);
+    if (loading === controller) {
+      loading = null;
+      $('fetch').textContent = 'Fetch 3D data';
+    }
+  }
+}
+
+function resetData() {
+  loading?.abort();
+  loading = null;
+  $('fetch').textContent = 'Fetch 3D data';
+  preview?.clear();
+  $('data').hidden = true;
+  $('data-layers').replaceChildren();
+  $('data-terrain').textContent = '';
+}
+
+function showData(data: AreaData) {
+  preview?.show(data);
+  $('data-layers').replaceChildren(
+    ...summarize(data).map(({ layer, label, count, detail }) => {
+      const li = document.createElement('li');
+      li.classList.toggle('empty', count === 0);
+      const box = document.createElement('input');
+      box.type = 'checkbox';
+      box.checked = true;
+      box.disabled = count === 0;
+      box.addEventListener('change', () => preview?.setVisible(layer, box.checked));
+      const swatch = document.createElement('span');
+      swatch.className = 'swatch';
+      swatch.style.background = LAYER_COLORS[layer];
+      const name = document.createElement('span');
+      name.textContent = label;
+      const num = document.createElement('span');
+      num.className = 'count';
+      num.textContent = count.toLocaleString();
+      const label_ = document.createElement('label');
+      label_.append(box, swatch, name, num);
+      if (detail && count) {
+        const sub = document.createElement('span');
+        sub.className = 'detail';
+        sub.textContent = detail;
+        label_.append(sub);
+      }
+      li.append(label_);
+      return li;
+    }),
+  );
+  const t = data.terrain;
+  const midLat = (t.bbox[1] + t.bbox[3]) / 2;
+  const spacing = distance([t.bbox[0], midLat], [t.bbox[2], midLat]) / t.width;
+  $('data-terrain').textContent =
+    `Terrain ${Math.round(t.min)}–${Math.round(t.max)} m above sea level, ${t.width}×${t.height} grid (≈${spacing.toFixed(0)} m).`;
+}
+
+function formatProgress(p: FetchProgress, seconds: number): string {
+  const waiting = `waiting for ${p.osmServer ?? 'server'} (${Math.round(seconds)} s)…`;
+  const osm = p.osmDone ? 'done' : p.osmCached ? 'from cache' : p.osmBytes ? formatBytes(p.osmBytes) : waiting;
+  const terrain = p.tilesTotal ? `${p.tilesDone}/${p.tilesTotal} tiles` : '…';
+  return `OpenStreetMap: ${osm} · Terrain: ${terrain}`;
+}
+
+function formatBytes(n: number): string {
+  return n < 1e6 ? `${Math.round(n / 1e3)} kB` : `${(n / 1e6).toFixed(1)} MB`;
 }

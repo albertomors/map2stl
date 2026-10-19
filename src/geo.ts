@@ -62,3 +62,50 @@ export function bbox(ring: LngLat[]): [number, number, number, number] {
   const lats = ring.map((p) => p[1]);
   return [Math.min(...lngs), Math.min(...lats), Math.max(...lngs), Math.max(...lats)];
 }
+
+// Ray casting in lng/lat: fine for city-sized shapes away from the poles.
+export function pointInRing(p: LngLat, ring: LngLat[]): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const [xi, yi] = ring[i];
+    const [xj, yj] = ring[j];
+    if (yi > p[1] !== yj > p[1] && p[0] < ((xj - xi) * (p[1] - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+function segmentsCross(a: LngLat, b: LngLat, c: LngLat, d: LngLat): boolean {
+  const side = (p: LngLat, q: LngLat, r: LngLat) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
+  return side(a, b, c) * side(a, b, d) < 0 && side(c, d, a) * side(c, d, b) < 0;
+}
+
+// Whether a path (or closed area, when `area` is set) touches the ring at all.
+export function intersectsRing(path: LngLat[], ring: LngLat[], area = false): boolean {
+  if (path.some((p) => pointInRing(p, ring))) return true;
+  // An area can cover the whole ring without a vertex inside it.
+  if (area && pointInRing(ring[0], path)) return true;
+  for (let i = 1; i < path.length; i++) {
+    for (let j = 1; j < ring.length; j++) {
+      if (segmentsCross(path[i - 1], path[i], ring[j - 1], ring[j])) return true;
+    }
+  }
+  return false;
+}
+
+// Vertex average: good enough to decide which side of the selection a building is on.
+export function centroid(ring: LngLat[]): LngLat {
+  const n = ring.length > 1 && ring[0] === ring[ring.length - 1] ? ring.length - 1 : ring.length;
+  let x = 0;
+  let y = 0;
+  for (let i = 0; i < n; i++) {
+    x += ring[i][0];
+    y += ring[i][1];
+  }
+  return [x / n, y / n];
+}
+
+export function pathLength(path: LngLat[]): number {
+  let total = 0;
+  for (let i = 1; i < path.length; i++) total += distance(path[i - 1], path[i]);
+  return total;
+}

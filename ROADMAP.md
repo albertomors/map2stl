@@ -2,14 +2,6 @@
 
 Open work only: built items move to the README and CHANGELOG.
 
-## Milestone 2: fetch the 3D data
-
-- Download OSM data for the selection with the Overpass API, clipped to the shape.
-- Sort it into categories: buildings (footprint + `height` / `building:levels`, `building:part`),
-  roads, railways, water, green areas, trees.
-- Terrain elevation from AWS Terrain Tiles (Terrarium PNG, free, no key); Copernicus GLO-30 later.
-- Show a count per category, cache responses, and handle Overpass rate limits.
-
 ## Milestone 3: 3D viewer
 
 - Three.js scene: terrain mesh, extruded buildings sitting on it, flat or raised roads and water.
@@ -30,6 +22,12 @@ Open work only: built items move to the README and CHANGELOG.
 - Embed the "© OpenStreetMap contributors" credit.
 
 ## Later
+
+- Sea: OSM draws coastlines as open lines, so harbors and fjords don't come back as water
+  areas yet. Build sea polygons from `natural=coastline`, or use the osmdata.openstreetmap.de
+  water polygons.
+- Copernicus GLO-30 terrain where the AWS tiles are coarse.
+- Clip the base map's buildings to the selection while previewing, instead of hiding all.
 
 - Overture Maps buildings to fill gaps in OSM heights.
 - Segmentation for mesh sources (photogrammetry) where objects aren't already separate.

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Fetch 3D data** (milestone 2): downloads the OpenStreetMap buildings, roads, railways,
+  water, green areas and trees inside the selection, plus a terrain elevation grid.
+- Per-category counts in the panel (with road length and how many buildings have real
+  heights) and a colored map preview with a checkbox per category.
+- Building heights from `height`, `building:levels` or an estimate by building type;
+  `building:part`s replace their outline.
+- Download progress with server name and elapsed time; Cancel button.
+- OSM answers are cached in the browser for a week; busy or silent servers fall back
+  to mirrors.
+
 ### Changed
 
 - Orbit (right-drag or Ctrl+drag) now holds the map like a hand: the point you grab
