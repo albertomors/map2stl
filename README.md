@@ -43,15 +43,24 @@ npm run build    # type-check + production build in dist/
 **Fetch 3D data** downloads everything inside the selection and shows it on the map,
 colored by category, with a checkbox per layer:
 
-- **OpenStreetMap features** from the [Overpass API](https://overpass-api.de): buildings
-  (and `building:part`s), roads and paths, railways and trams, water areas and streams,
-  green areas (parks, grass, forest…) and single trees. Tunnels and underground features
-  are skipped.
+- **OpenStreetMap features** from the [Overpass API](https://overpass-api.de), one toggleable
+  layer each:
+  - **Buildings** and `building:part`s, with roof shape, roof height and colors when tagged.
+  - **Bridges, piers, walls, towers**: bridge decks, piers and breakwaters, walls and city
+    walls, towers, chimneys, masts and lighthouses, each with a height.
+  - **Roads & paths** and **railways & trams**, with bridges marked (darker on the map).
+  - **Squares, parking, sports**: pedestrian squares, car parks, pitches and tracks,
+    airport runways, taxiways and aprons.
+  - **Water**: lakes, rivers and streams, plus the **sea**, rebuilt from the coastline
+    (OSM stores coasts as lines with the water on their right, not as areas).
+  - **Green areas**, **sand, rock, glacier** and single **trees**.
+  - Tunnels and underground features are skipped.
   - Buildings are kept whole when their center is inside the shape (a building cut at the
     edge would print as a broken wall). Lines and areas are kept when they touch it;
     cutting them to the shape happens at export.
   - Building height: `height` tag, else `building:levels` × 3 m, else an estimate from the
     building type (1–3 floors). The panel shows how many have real heights.
+  - Untagged structures get typical heights (city wall 6 m, chimney 40 m, mast 12 m…).
   - Outlines that contain `building:part`s are replaced by their parts.
   - Answers are cached in the browser for a week. Busy servers (429/5xx, or no answer in
     100 s) are skipped for the next mirror; dense city centers take 30–60 s.
@@ -74,6 +83,7 @@ The result (`AreaData` in `src/area-data.ts`) is what the 3D viewer will build f
 | `src/area-data.ts` | Fetches OSM data and terrain for a selection, per-layer summary |
 | `src/overpass.ts` | Overpass client: mirrors, retries, timeout, browser cache |
 | `src/osm.ts` | Overpass query, sorting into categories, multipolygons, building heights |
+| `src/coast.ts` | Sea polygons from coastline lines |
 | `src/terrain.ts` | Terrarium tiles → elevation grid |
 | `src/preview.ts` | Map layers showing the fetched data |
 

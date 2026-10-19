@@ -1,7 +1,9 @@
 // OpenStreetMap features inside the selection, sorted into the categories the model is built
-// from. Buildings get a height in meters (from tags, or estimated); lines get a width.
+// from. Buildings and structures get a height in meters (from tags, or estimated); lines get
+// a width.
 
-import { centroid, intersectsRing, pointInRing, type LngLat } from './geo';
+import { seaPolygons } from './coast';
+import { bbox, centroid, intersectsRing, pointInRing, type LngLat } from './geo';
 import type { OverpassElement } from './overpass';
 
 export interface Polygon {
@@ -11,10 +13,16 @@ export interface Polygon {
 
 export interface Building extends Polygon {
   id: string;
-  // Meters above the ground: the walls run from minHeight to height.
+  // Meters above the ground: the walls run from minHeight to height (roof included).
   height: number;
   minHeight: number;
   heightFrom: 'height' | 'levels' | 'estimate';
+  // OSM roof:shape (flat, gabled, hipped, dome, pyramidal…) and its height, part of `height`.
+  roofShape?: string;
+  roofHeight?: number;
+  roofDirection?: number;
+  colour?: string;
+  roofColour?: string;
   name?: string;
 }
 
@@ -23,28 +31,60 @@ export interface Line {
   kind: string;
   // Meters.
   width: number;
+  // Raised above what's under it: bridges must not print flat on the river.
+  bridge?: boolean;
 }
 
 export interface Area extends Polygon {
   kind: string;
 }
 
+// Piers, walls, towers…: built things that aren't buildings.
+export interface StructureLine extends Line {
+  height: number;
+}
+
+export interface StructureArea extends Area {
+  height: number;
+}
+
+export interface Tower {
+  at: LngLat;
+  kind: string;
+  height: number;
+}
+
 export interface OsmData {
   buildings: Building[];
   roads: Line[];
   railways: Line[];
+  // Includes the sea, rebuilt from coastlines (kind "sea").
   waterAreas: Area[];
   waterways: Line[];
   green: Area[];
   trees: LngLat[];
+  structureLines: StructureLine[];
+  structureAreas: StructureArea[];
+  towers: Tower[];
+  // Sand, beach, rock, glacier…
+  surfaces: Area[];
+  // Squares, parking, sports pitches, airport aprons; runways and taxiways as lines.
+  pavedAreas: Area[];
+  pavedLines: Line[];
 }
 
 const LEVEL_HEIGHT = 3;
 const RAIL = 'rail|light_rail|tram|subway|narrow_gauge|monorail|funicular';
 const WATERWAY_LINE = 'river|canal|stream|ditch|drain';
 const GREEN_LANDUSE = 'grass|forest|meadow|recreation_ground|village_green|cemetery|allotments|orchard|vineyard';
-const GREEN_LEISURE = 'park|garden|playground|pitch|golf_course';
+const GREEN_LEISURE = 'park|garden|playground|golf_course';
 const GREEN_NATURAL = 'wood|scrub|grassland|heath';
+const SURFACE_NATURAL = 'sand|beach|bare_rock|scree|shingle|glacier';
+const PIER = 'pier|breakwater|groyne';
+const WALL = 'wall|city_wall|retaining_wall';
+const TOWER = 'tower|chimney|lighthouse|water_tower|mast|silo';
+const AEROWAY = 'runway|taxiway|apron';
+const PEDESTRIAN = /^(pedestrian|footway|cycleway|path|platform)$/;
 
 // [bbox] is s,w,n,e. Features are cut to the real shape afterwards, in parse().
 export function buildQuery([w, s, e, n]: [number, number, number, number]): string {
@@ -54,32 +94,54 @@ export function buildQuery([w, s, e, n]: [number, number, number, number]): stri
   ${area('["building"]')}
   ${area('["building:part"]')}
   way["highway"];
+  relation["highway"]["type"="multipolygon"];
+  ${area('["area:highway"]')}
   way["railway"~"^(${RAIL})$"];
+  ${area(`["aeroway"~"^(${AEROWAY})$"]`)}
   ${area('["natural"="water"]')}
   ${area('["waterway"="riverbank"]')}
   ${area('["landuse"~"^(reservoir|basin)$"]')}
   way["waterway"~"^(${WATERWAY_LINE})$"];
+  way["natural"="coastline"];
   ${area(`["landuse"~"^(${GREEN_LANDUSE})$"]`)}
-  ${area(`["leisure"~"^(${GREEN_LEISURE})$"]`)}
-  ${area(`["natural"~"^(${GREEN_NATURAL})$"]`)}
+  ${area(`["leisure"~"^(${GREEN_LEISURE}|pitch|track)$"]`)}
+  ${area(`["natural"~"^(${GREEN_NATURAL}|${SURFACE_NATURAL})$"]`)}
+  ${area('["amenity"="parking"]')}
+  ${area('["man_made"="bridge"]')}
+  ${area(`["man_made"~"^(${PIER})$"]`)}
+  way["barrier"~"^(${WALL})$"];
+  way["historic"="city_walls"];
+  nw["man_made"~"^(${TOWER})$"];
   node["natural"="tree"];
 );
 out geom qt;`;
 }
 
 export function parse(elements: OverpassElement[], ring: LngLat[]): OsmData {
-  const data: OsmData = { buildings: [], roads: [], railways: [], waterAreas: [], waterways: [], green: [], trees: [] };
+  const data: OsmData = {
+    buildings: [], roads: [], railways: [], waterAreas: [], waterways: [], green: [], trees: [],
+    structureLines: [], structureAreas: [], towers: [], surfaces: [], pavedAreas: [], pavedLines: [],
+  };
   const outlines: Building[] = [];
   const parts: Building[] = [];
+  const coast: LngLat[][] = [];
 
   for (const el of elements) {
     const t = el.tags ?? {};
 
     if (el.type === 'node') {
-      if (t.natural === 'tree' && el.lon !== undefined && el.lat !== undefined) {
-        const p: LngLat = [el.lon, el.lat];
-        if (pointInRing(p, ring)) data.trees.push(p);
-      }
+      if (el.lon === undefined || el.lat === undefined) continue;
+      const p: LngLat = [el.lon, el.lat];
+      if (!pointInRing(p, ring)) continue;
+      if (t.natural === 'tree') data.trees.push(p);
+      else if (t.man_made) data.towers.push({ at: p, kind: t.man_made, height: towerHeight(t) });
+      continue;
+    }
+
+    // Kept whole and unclipped: the sea is rebuilt from them below.
+    if (t.natural === 'coastline') {
+      const path = coords(el.geometry);
+      if (path.length > 1) coast.push(path);
       continue;
     }
 
@@ -88,7 +150,7 @@ export function parse(elements: OverpassElement[], ring: LngLat[]): OsmData {
       // Whole buildings only: one cut at the edge of the selection would print as a broken wall.
       for (const poly of polygons(el)) {
         if (!pointInRing(centroid(poly.outer), ring)) continue;
-        (isPart ? parts : outlines).push({ ...poly, id: `${el.type}/${el.id}`, ...buildingHeight(t, isPart), name: t.name });
+        (isPart ? parts : outlines).push({ ...poly, id: `${el.type}/${el.id}`, ...buildingHeight(t, isPart), ...roof(t), name: t.name });
       }
       continue;
     }
@@ -96,17 +158,58 @@ export function parse(elements: OverpassElement[], ring: LngLat[]): OsmData {
     // Underground features don't belong in a printed model.
     if (t.tunnel && t.tunnel !== 'no') continue;
     if (t.layer && Number(t.layer) < 0) continue;
+    const bridge = !!t.bridge && t.bridge !== 'no';
+    const closedArea = t.area === 'yes' || el.type === 'relation';
 
-    if (t.highway && el.type === 'way') {
-      if (/^(proposed|construction|platform|elevator|corridor)$/.test(t.highway) || t.area === 'yes') continue;
-      addLine(data.roads, el, t.highway, parseLength(t.width) ?? ROAD_WIDTH[t.highway] ?? 3, ring);
-    } else if (t.railway && el.type === 'way') {
-      addLine(data.railways, el, t.railway, t.railway === 'tram' ? 2.5 : 3.5, ring);
+    const surface = t['area:highway'];
+    if (surface && !PEDESTRIAN.test(surface)) {
+      // Carriageway outlines: the road center lines already cover them.
+      continue;
+    } else if (surface || (t.highway && closedArea)) {
+      addAreas(data.pavedAreas, el, surface ?? t.highway, ring);
+    } else if (t.highway) {
+      if (/^(proposed|construction|platform|elevator|corridor)$/.test(t.highway)) continue;
+      addLine(data.roads, el, t.highway, parseLength(t.width) ?? ROAD_WIDTH[t.highway] ?? 3, ring, bridge);
+    } else if (t.railway) {
+      addLine(data.railways, el, t.railway, t.railway === 'tram' ? 2.5 : 3.5, ring, bridge);
+    } else if (t.aeroway) {
+      // Runways and taxiways are usually drawn as center lines, aprons as areas.
+      if (t.aeroway === 'apron' || closedArea) addAreas(data.pavedAreas, el, t.aeroway, ring);
+      else addLine(data.pavedLines, el, t.aeroway, parseLength(t.width) ?? (t.aeroway === 'runway' ? 45 : 23), ring);
     } else if (t.natural === 'water' || t.waterway === 'riverbank' || /^(reservoir|basin)$/.test(t.landuse ?? '')) {
       addAreas(data.waterAreas, el, t.water ?? t.natural ?? t.landuse ?? 'water', ring);
-    } else if (t.waterway && el.type === 'way') {
+    } else if (t.waterway) {
       if (t.culvert || t.covered === 'yes') continue;
-      addLine(data.waterways, el, t.waterway, parseLength(t.width) ?? WATERWAY_WIDTH[t.waterway] ?? 2, ring);
+      addLine(data.waterways, el, t.waterway, parseLength(t.width) ?? WATERWAY_WIDTH[t.waterway] ?? 2, ring, bridge);
+    } else if (t.man_made === 'bridge') {
+      // The deck outline; the roads on it carry bridge=yes too.
+      for (const poly of polygons(el)) {
+        if (intersectsRing(poly.outer, ring, true)) data.structureAreas.push({ ...poly, kind: 'bridge', height: 1 });
+      }
+    } else if (t.man_made && new RegExp(`^(${PIER})$`).test(t.man_made)) {
+      const height = parseLength(t.height) ?? 1;
+      // Closed outlines are the pier itself; open ways are its center line.
+      const polys = polygons(el);
+      if (polys.length) {
+        for (const poly of polys) if (intersectsRing(poly.outer, ring, true)) data.structureAreas.push({ ...poly, kind: t.man_made, height });
+      } else {
+        addStructureLine(data.structureLines, el, t.man_made, parseLength(t.width) ?? 4, height, ring);
+      }
+    } else if (t.man_made && new RegExp(`^(${TOWER})$`).test(t.man_made)) {
+      // Towers drawn as outlines without a building tag.
+      for (const poly of polygons(el)) {
+        if (pointInRing(centroid(poly.outer), ring)) data.structureAreas.push({ ...poly, kind: t.man_made, height: towerHeight(t) });
+      }
+    } else if (new RegExp(`^(${WALL})$`).test(t.barrier ?? '') || t.historic === 'city_walls') {
+      const kind = t.historic === 'city_walls' ? 'city_wall' : t.barrier;
+      const big = kind === 'city_wall';
+      const height = parseLength(t.height) ?? (big ? 6 : 2);
+      addStructureLine(data.structureLines, el, kind, parseLength(t.width) ?? (big ? 2 : 0.4), height, ring);
+    } else if (t.amenity === 'parking' || t.leisure === 'pitch' || t.leisure === 'track') {
+      // A running track is usually a closed loop drawn as a way: an area here.
+      addAreas(data.pavedAreas, el, t.amenity ?? t.sport ?? t.leisure, ring);
+    } else if (t.natural && new RegExp(`^(${SURFACE_NATURAL})$`).test(t.natural)) {
+      addAreas(data.surfaces, el, t.natural, ring);
     } else if (t.landuse || t.leisure || t.natural) {
       addAreas(data.green, el, t.landuse ?? t.leisure ?? t.natural, ring);
     }
@@ -119,7 +222,41 @@ export function parse(elements: OverpassElement[], ring: LngLat[]): OsmData {
     for (const o of outlines) if (!covered.has(o) && pointInRing(c, o.outer)) covered.add(o);
   }
   data.buildings = [...outlines.filter((o) => !covered.has(o)), ...parts];
+
+  for (const sea of seaPolygons(coast, bbox(ring))) {
+    if (intersectsRing(sea.outer, ring, true)) data.waterAreas.push({ ...sea, kind: 'sea' });
+  }
   return data;
+}
+
+function roof(t: Record<string, string>): Pick<Building, 'roofShape' | 'roofHeight' | 'roofDirection' | 'colour' | 'roofColour'> {
+  const levels = Number(t['roof:levels']);
+  return {
+    roofShape: t['roof:shape'],
+    roofHeight: parseLength(t['roof:height']) ?? (levels > 0 ? levels * LEVEL_HEIGHT : undefined),
+    roofDirection: parseDirection(t['roof:direction']),
+    colour: t['building:colour'],
+    roofColour: t['roof:colour'],
+  };
+}
+
+const COMPASS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+
+// "135" or "SE" → degrees.
+function parseDirection(v: string | undefined): number | undefined {
+  if (!v) return undefined;
+  const i = COMPASS.indexOf(v.trim().toUpperCase());
+  if (i >= 0) return i * 22.5;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+// Typical heights when untagged: these stand out of a printed skyline.
+// Untagged masts are mostly street lighting and flagpoles, so they stay short.
+const TOWER_HEIGHT: Record<string, number> = { chimney: 40, mast: 12, tower: 25, lighthouse: 20, water_tower: 25, silo: 20 };
+
+function towerHeight(t: Record<string, string>): number {
+  return parseLength(t.height) ?? TOWER_HEIGHT[t.man_made] ?? 20;
 }
 
 // Typical carriageway widths in meters when the way has no width tag.
@@ -161,9 +298,14 @@ export function parseLength(v: string | undefined): number | undefined {
   return meters ? Number(meters[1]) : undefined;
 }
 
-function addLine(out: Line[], el: OverpassElement, kind: string, width: number, ring: LngLat[]) {
+function addLine(out: Line[], el: OverpassElement, kind: string, width: number, ring: LngLat[], bridge = false) {
   const path = coords(el.geometry);
-  if (path.length > 1 && intersectsRing(path, ring)) out.push({ path, kind, width });
+  if (path.length > 1 && intersectsRing(path, ring)) out.push({ path, kind, width, ...(bridge ? { bridge } : {}) });
+}
+
+function addStructureLine(out: StructureLine[], el: OverpassElement, kind: string, width: number, height: number, ring: LngLat[]) {
+  const path = coords(el.geometry);
+  if (path.length > 1 && intersectsRing(path, ring)) out.push({ path, kind, width, height });
 }
 
 function addAreas(out: Area[], el: OverpassElement, kind: string, ring: LngLat[]) {

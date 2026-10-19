@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   heights) and a colored map preview with a checkbox per category.
 - Building heights from `height`, `building:levels` or an estimate by building type;
   `building:part`s replace their outline.
+- Roof shape, roof height and building/roof colors are kept for each building.
+- Sea areas, rebuilt from OSM coastlines.
+- Bridges marked on roads, railways and streams; bridge decks fetched.
+- New layers: bridges, piers, walls and towers; squares, parking and sports (incl. airport
+  runways and aprons); sand, rock and glacier.
 - Progress bars for the OSM download (waiting time, server, megabytes received) and the
   terrain tiles; Cancel button.
 - OSM answers are cached in the browser for a week; busy or silent servers fall back

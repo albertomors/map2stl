@@ -8,25 +8,38 @@ import type { Area, Line, Polygon } from './osm';
 
 export const LAYER_COLORS: Record<Layer, string> = {
   buildings: '#d0764f',
+  structures: '#b8487a',
   roads: '#4a4f5a',
   railways: '#8a5cc2',
+  paved: '#9aa1ab',
   water: '#3b8fe0',
   green: '#5fae4c',
+  surfaces: '#d9be7c',
   trees: '#2e7a2e',
 };
 
 // Drawn below the selection outline, bottom to top.
+const POLYGONS: ExpressionSpecification = ['==', ['geometry-type'], 'Polygon'];
+const LINES: ExpressionSpecification = ['==', ['geometry-type'], 'LineString'];
+const POINTS: ExpressionSpecification = ['==', ['geometry-type'], 'Point'];
 const LAYERS: { layer: Layer; id: string; type: 'fill' | 'line' | 'circle' | 'fill-extrusion'; filter?: ExpressionSpecification }[] = [
   { layer: 'green', id: 'preview-green', type: 'fill' },
-  { layer: 'water', id: 'preview-water-areas', type: 'fill', filter: ['==', ['geometry-type'], 'Polygon'] },
-  { layer: 'water', id: 'preview-waterways', type: 'line', filter: ['==', ['geometry-type'], 'LineString'] },
+  { layer: 'surfaces', id: 'preview-surfaces', type: 'fill' },
+  { layer: 'water', id: 'preview-water-areas', type: 'fill', filter: POLYGONS },
+  { layer: 'water', id: 'preview-waterways', type: 'line', filter: LINES },
+  { layer: 'paved', id: 'preview-paved-areas', type: 'fill', filter: POLYGONS },
+  { layer: 'paved', id: 'preview-paved-lines', type: 'line', filter: LINES },
   { layer: 'roads', id: 'preview-roads', type: 'line' },
   { layer: 'railways', id: 'preview-railways', type: 'line' },
   { layer: 'trees', id: 'preview-trees', type: 'circle' },
+  { layer: 'structures', id: 'preview-structure-lines', type: 'line', filter: LINES },
+  { layer: 'structures', id: 'preview-structure-areas', type: 'fill-extrusion', filter: POLYGONS },
+  { layer: 'structures', id: 'preview-towers', type: 'circle', filter: POINTS },
   { layer: 'buildings', id: 'preview-buildings', type: 'fill-extrusion' },
 ];
 
 const TREE_RADIUS_M = 3;
+const TOWER_RADIUS_M = 4;
 
 export class DataPreview {
   private hiddenBaseLayers: string[] = [];
@@ -42,7 +55,14 @@ export class DataPreview {
       railways: osm.railways.map(line),
       water: [...osm.waterAreas.map((a) => area(a)), ...osm.waterways.map(line)],
       green: osm.green.map((a) => area(a)),
-      trees: osm.trees.map((p) => ({ type: 'Feature', properties: {}, geometry: { type: 'Point', coordinates: p } })),
+      surfaces: osm.surfaces.map((a) => area(a)),
+      paved: [...osm.pavedAreas.map((a) => area(a)), ...osm.pavedLines.map(line)],
+      structures: [
+        ...osm.structureAreas.map((a) => polygon(a, { kind: a.kind, height: a.height, base: 0 })),
+        ...osm.structureLines.map(line),
+        ...osm.towers.map((t) => point(t.at, { kind: t.kind })),
+      ],
+      trees: osm.trees.map((p) => point(p, {})),
     };
     for (const [layer, features] of Object.entries(sources)) {
       this.map.addSource(`preview-${layer}`, { type: 'geojson', data: { type: 'FeatureCollection', features } });
@@ -60,10 +80,13 @@ export class DataPreview {
       if (type === 'fill') {
         this.map.addLayer({ ...common, type, paint: { 'fill-color': color, 'fill-opacity': 0.55 } }, this.beforeId);
       } else if (type === 'line') {
-        const paint = { 'line-color': color, 'line-width': metersToPx(['get', 'width']) };
+        // Bridges in a darker shade, so they can be told apart from the street below.
+        const lineColor: ExpressionSpecification = ['case', ['==', ['get', 'bridge'], 1], '#1b1d22', color];
+        const paint = { 'line-color': lineColor, 'line-width': metersToPx(['get', 'width']) };
         this.map.addLayer({ ...common, type, paint, layout: { 'line-cap': 'round', 'line-join': 'round' } }, this.beforeId);
       } else if (type === 'circle') {
-        this.map.addLayer({ ...common, type, paint: { 'circle-color': color, 'circle-radius': metersToPx(TREE_RADIUS_M) } }, this.beforeId);
+        const radius = layer === 'trees' ? TREE_RADIUS_M : TOWER_RADIUS_M;
+        this.map.addLayer({ ...common, type, paint: { 'circle-color': color, 'circle-radius': metersToPx(radius) } }, this.beforeId);
       } else {
         const paint = {
           'fill-extrusion-color': color,
@@ -108,7 +131,11 @@ function area(a: Area): GeoJSON.Feature {
   return polygon(a, { kind: a.kind });
 }
 
+function point(p: [number, number], properties: Record<string, number | string>): GeoJSON.Feature {
+  return { type: 'Feature', properties, geometry: { type: 'Point', coordinates: p } };
+}
+
 function line(l: Line): GeoJSON.Feature {
-  return { type: 'Feature', properties: { kind: l.kind, width: l.width }, geometry: { type: 'LineString', coordinates: l.path } };
+  return { type: 'Feature', properties: { kind: l.kind, width: l.width, bridge: l.bridge ? 1 : 0 }, geometry: { type: 'LineString', coordinates: l.path } };
 }
 

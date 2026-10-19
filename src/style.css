@@ -428,6 +428,10 @@ dd {
 
 /* Download progress */
 
+#data-progress[hidden] {
+  display: none;
+}
+
 #data-progress {
   display: flex;
   flex-direction: column;
