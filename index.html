@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>map2stl</title>
+  </head>
+  <body>
+    <div id="map"></div>
+
+    <aside id="panel">
+      <header>
+        <h1>map2stl</h1>
+        <p>Any place on Earth, ready to 3D print.</p>
+      </header>
+
+      <form id="search" role="search" autocomplete="off">
+        <input id="search-input" type="search" placeholder="Search a city…" aria-label="Search a city" />
+        <button type="submit" aria-label="Search">
+          <svg viewBox="0 0 24 24" width="18" height="18"><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></svg>
+        </button>
+        <ul id="search-results" hidden></ul>
+      </form>
+
+      <section>
+        <h2>Select an area</h2>
+        <div class="tools">
+          <button data-tool="rectangle" title="Rectangle">
+            <svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="1" /></svg>
+            Rectangle
+          </button>
+          <button data-tool="hexagon" title="Hexagon">
+            <svg viewBox="0 0 24 24"><path d="M3 12 7.5 4.2h9L21 12l-4.5 7.8h-9Z" /></svg>
+            Hexagon
+          </button>
+          <button data-tool="circle" title="Circle">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" /></svg>
+            Circle
+          </button>
+        </div>
+        <p id="tool-hint" class="hint">Pick a shape, then drag on the map.</p>
+      </section>
+
+      <p class="hint nav-hint">
+        Drag to pan · scroll to zoom · <b>right-drag</b> or <b>Ctrl+drag</b> to orbit and tilt
+      </p>
+
+      <section id="selection" hidden>
+        <h2>Selection</h2>
+        <dl id="selection-info"></dl>
+        <p id="selection-warning" class="warning" hidden>
+          Large area: downloading the 3D data will be slow and small details may not print.
+        </p>
+        <div class="actions">
+          <button id="clear" class="secondary">Clear</button>
+        </div>
+        <button class="primary" disabled title="Milestone 2">Fetch 3D data →</button>
+      </section>
+    </aside>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

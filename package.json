@@ -1,0 +1,20 @@
+{
+  "name": "map2stl",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pick any place on Earth and turn it into a 3D-printable model (STL / 3MF)",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "maplibre-gl": "^6.15.0"
+  },
+  "devDependencies": {
+    "@types/geojson": "^7946.0.16",
+    "typescript": "~5.9.3",
+    "vite": "^8.3.4"
+  }
+}

@@ -1,0 +1,31 @@
+# Changelog
+
+All notable changes to this project are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [0.1.0] - 2026-10-19
+
+Milestone 1: find a place and select the area to print.
+
+### Added
+
+- Map with OpenStreetMap vector tiles from OpenFreeMap (no API key). The URL keeps the
+  map position, so links can be shared.
+- City and region search with suggestions while typing, from Photon. Arrow keys and
+  Enter pick a result.
+- Navigation: drag to pan, scroll to zoom, right-drag or Ctrl+drag to orbit and tilt
+  around the point under the cursor.
+- On-screen navigation control: zoom buttons, a draggable compass (click to face north),
+  and a 2D/3D toggle.
+- Area selection with rectangle, hexagon and circle tools, drawn aligned to the current
+  view direction.
+- Edit handles on the selection: move from the center, scale from the corner (keeping
+  the ratio), rotate from the top.
+- Clicking outside the selection clears it.
+- Selection panel with size, area, radius, rotation and center, plus a warning for
+  areas above 10 km².
+- The selection is saved in the browser and restored on reload.
