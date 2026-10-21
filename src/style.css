@@ -559,15 +559,27 @@ body.mode-3d .map-only {
   accent-color: var(--accent);
 }
 
-/* Building editing */
+/* Object editing */
 
-.building-name {
+.object-title {
   margin: 0 0 2px;
   font-weight: 600;
 }
 
-#building-edit .slider {
+#object-edit .slider:first-of-type {
   margin-top: 10px;
+}
+
+#edits-summary {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+
+.edit-actions {
+  display: flex;
+  gap: 12px;
 }
 
 button.link {
@@ -577,4 +589,9 @@ button.link {
   color: var(--accent);
   font-size: inherit;
   text-decoration: underline;
+}
+
+button.link:disabled {
+  color: var(--muted);
+  text-decoration: none;
 }

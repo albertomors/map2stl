@@ -99,9 +99,9 @@ function readTile(tile: VectorTile, x: number, y: number, ring: LngLat[], data: 
       for (const path of lines) data.railways.push(line(path, String(p.subclass ?? cls), p.subclass === 'tram' ? 2.5 : 3.5, bridge));
     } else if (cls === 'pier') {
       for (const path of lines) data.structureLines.push({ ...line(path, 'pier', 4), height: 1 });
-      for (const poly of polys) data.structureAreas.push({ ...poly, kind: 'pier', height: 1 });
+      for (const poly of polys) data.structureAreas.push({ ...poly, id: nextId('area'), kind: 'pier', height: 1 });
     } else if (cls === 'bridge') {
-      for (const poly of polys) data.structureAreas.push({ ...poly, kind: 'bridge', height: 1 });
+      for (const poly of polys) data.structureAreas.push({ ...poly, id: nextId('area'), kind: 'bridge', height: 1 });
     } else {
       for (const path of lines) data.roads.push(line(path, String(p.subclass ?? cls), ROAD_WIDTH[cls] ?? 3, bridge));
       // Pedestrian squares and similar are drawn as areas.
@@ -143,8 +143,12 @@ function readTile(tile: VectorTile, x: number, y: number, ring: LngLat[], data: 
   });
 }
 
+// Tile features have no stable ids: number them in the order they're read.
+let counter = 0;
+const nextId = (what: string) => `tile-${what}/${counter++}`;
+
 function line(path: LngLat[], kind: string, width: number, bridge = false): Line {
-  return { path, kind, width, ...(bridge ? { bridge } : {}) };
+  return { id: nextId('line'), path, kind, width, ...(bridge ? { bridge } : {}) };
 }
 
 function area(poly: Polygon, kind: string): Area {

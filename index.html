@@ -66,34 +66,40 @@ nom<!doctype html>
         <button id="close-3d" class="secondary back">← Back to map</button>
         <h2>3D view</h2>
         <label class="slider">
-          <span>Terrain height</span><output id="terrain-scale-value"></output>
+          <span>Terrain height multiplier</span><output id="terrain-scale-value"></output>
           <input id="terrain-scale" type="range" min="1" max="5" step="0.1" value="1.5" />
         </label>
         <label class="slider">
-          <span>Building height</span><output id="height-scale-value"></output>
+          <span>Building height multiplier</span><output id="height-scale-value"></output>
           <input id="height-scale" type="range" min="0.5" max="3" step="0.1" value="1" />
         </label>
-        <p class="hint">Left-drag to orbit · right-drag to pan · scroll to zoom · click a building to edit it</p>
-        <p id="edits-summary" class="hint" hidden>
-          <span id="edits-count"></span><span id="restore-all-group"> · <button id="restore-all" class="link">Restore all</button></span>
+        <p class="hint">Left-drag to orbit · right-drag to pan · scroll to zoom</p>
+        <p id="select-hint" class="hint"></p>
+        <p id="edits-summary" class="hint">
+          <span id="edits-count"></span>
+          <span class="edit-actions">
+            <button id="restore-deleted" class="link">Restore deleted</button>
+            <button id="reset-all" class="link">Reset all</button>
+          </span>
         </p>
       </section>
 
-      <section id="building-edit" class="view3d-only" hidden>
-        <h2>Selected building</h2>
-        <p id="building-name" class="building-name"></p>
-        <p id="building-info" class="hint"></p>
-        <label class="slider">
-          <span>Size</span><output id="building-scale-value"></output>
-          <input id="building-scale" type="range" min="1" max="4" step="0.1" value="1" />
+      <section id="object-edit" class="view3d-only" hidden>
+        <h2>Selected</h2>
+        <p id="object-title" class="object-title"></p>
+        <p id="object-info" class="hint"></p>
+        <label class="slider" id="object-size-row">
+          <span>Size (all dimensions)</span><output id="object-size-value"></output>
+          <input id="object-size" type="range" min="1" max="4" step="0.1" value="1" />
+        </label>
+        <label class="slider" id="object-height-row">
+          <span>Height only</span><output id="object-height-value"></output>
+          <input id="object-height" type="range" min="0.5" max="4" step="0.1" value="1" />
         </label>
         <div class="actions">
-          <button id="building-delete">Delete</button>
-          <button id="building-reset" class="secondary">Reset</button>
+          <button id="object-delete">Delete</button>
+          <button id="object-reset" class="secondary">Reset</button>
         </div>
-        <p id="building-readonly" class="hint" hidden>
-          Editing becomes available when the detailed data arrives (building ids change then).
-        </p>
       </section>
 
       <section id="data" hidden>

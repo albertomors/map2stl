@@ -4,6 +4,7 @@
 import { Color, ConeGeometry, InstancedMesh, Matrix4, MeshLambertMaterial, ShapeUtils, Vector2, type BufferGeometry } from 'three';
 import type { LngLat } from '../geo';
 import type { LocalFrame } from '../local';
+import { editKey, type EditedTree } from '../edits';
 import type { Building, Line, OsmData, StructureArea, Tower } from '../osm';
 import { MeshBuilder, tagColor, type Vec3 } from './mesh';
 import { buildRoof, defaultRoofHeight } from './roofs';
@@ -22,7 +23,7 @@ const BRIDGE_DECK_M = 1.2;
 const BRIDGE_CLEARANCE_M = 1;
 // Thin walls vanish on screen; the export will apply its own print minimums.
 const MIN_WIDTH_M = 0.8;
-const TREE_HEIGHT_M = 9;
+export const TREE_HEIGHT_M = 9;
 const TREE_RADIUS_M = 3;
 
 export interface Placement {
@@ -35,16 +36,11 @@ export interface Placement {
 
 type P = [number, number];
 
-// The merged mesh, and for each triangle the index of its building in `buildings`.
-export interface BuildingsMesh {
-  geometry: BufferGeometry;
-  owners: number[];
-}
-
-export function buildBuildings(buildings: Building[], at: Placement): BuildingsMesh | null {
+export function buildBuildings(buildings: Building[], at: Placement): PickableMesh | null {
   const m = new MeshBuilder();
-  for (const [i, b] of buildings.entries()) {
-    m.owner = i;
+  const keys: string[] = [];
+  for (const b of buildings) {
+    m.owner = keys.push(editKey(b)) - 1;
     const outer = ringToLocal(b.outer, at.frame);
     if (outer.length < 3) continue;
     const holes = b.holes.map((h) => ringToLocal(h, at.frame)).filter((h) => h.length >= 3);
@@ -70,43 +66,65 @@ export function buildBuildings(buildings: Building[], at: Placement): BuildingsM
       }
     }
   }
-  return m.empty ? null : { geometry: m.build(), owners: m.owners };
+  return m.empty ? null : { geometry: m.build(), owners: m.owners, keys };
 }
 
-export function buildStructures(osm: OsmData, at: Placement): BufferGeometry | null {
+// A merged mesh whose triangles know which object they belong to: `keys[owners[triangle]]`.
+export interface PickableMesh {
+  geometry: BufferGeometry;
+  owners: number[];
+  keys: string[];
+}
+
+export function buildStructures(osm: OsmData, at: Placement): PickableMesh | null {
   const m = new MeshBuilder();
+  const keys: string[] = [];
   const c = COLORS.structure;
-  for (const s of osm.structureAreas) structureArea(m, s, at, c);
+  const own = (key: string) => (m.owner = keys.push(key) - 1);
+  for (const s of osm.structureAreas) {
+    own(s.id);
+    structureArea(m, s, at, c);
+  }
   for (const s of osm.structureLines) {
+    own(s.id);
     const ground = Math.min(...s.path.map((p) => at.elevation(p))) * at.terrainScale;
     ribbon(m, s.path, at, Math.max(s.width, MIN_WIDTH_M), ground, ground + s.height * at.heightScale, c);
   }
-  for (const t of osm.towers) tower(m, t, at, c);
-  return m.empty ? null : m.build();
+  for (const t of osm.towers) {
+    own(t.id);
+    tower(m, t, at, c);
+  }
+  return m.empty ? null : { geometry: m.build(), owners: m.owners, keys };
 }
 
 // Road or rail bridges: a deck level with the higher bank, above the river or road below.
-export function buildBridges(lines: Line[], at: Placement, color: Color): BufferGeometry | null {
+export function buildBridges(lines: Line[], at: Placement, color: Color): PickableMesh | null {
   const m = new MeshBuilder();
+  const keys: string[] = [];
   for (const l of lines) {
     if (!l.bridge) continue;
+    m.owner = keys.push(l.id) - 1;
     const [first, last] = l.ends ?? [l.path[0], l.path[l.path.length - 1]];
     const ends = [at.elevation(first), at.elevation(last)];
     const top = (Math.max(...ends) * at.terrainScale) + BRIDGE_CLEARANCE_M * at.heightScale;
     ribbon(m, l.path, at, l.width, top - BRIDGE_DECK_M * at.heightScale, top, color);
   }
-  return m.empty ? null : m.build();
+  return m.empty ? null : { geometry: m.build(), owners: m.owners, keys };
 }
 
-export function buildTrees(trees: LngLat[], at: Placement): InstancedMesh | null {
+// One cone per tree, sized by its edit; instance i is trees[i].
+export function buildTrees(trees: EditedTree[], at: Placement, color = COLORS.tree): InstancedMesh | null {
   if (!trees.length) return null;
-  const h = TREE_HEIGHT_M * at.heightScale;
-  const cone = new ConeGeometry(TREE_RADIUS_M, h, 7);
-  const mesh = new InstancedMesh(cone, new MeshLambertMaterial({ color: COLORS.tree }), trees.length);
+  // A unit cone standing on y = 0, stretched per tree.
+  const cone = new ConeGeometry(1, 1, 7).translate(0, 0.5, 0);
+  const mesh = new InstancedMesh(cone, new MeshLambertMaterial({ color }), trees.length);
   const matrix = new Matrix4();
-  trees.forEach((p, i) => {
-    const [x, z] = at.frame.toLocal(p);
-    mesh.setMatrixAt(i, matrix.makeTranslation(x, at.elevation(p) * at.terrainScale + h / 2, z));
+  const scale = new Matrix4();
+  trees.forEach((t, i) => {
+    const [x, z] = at.frame.toLocal(t.at);
+    const r = TREE_RADIUS_M * t.size;
+    matrix.makeTranslation(x, at.elevation(t.at) * at.terrainScale, z);
+    mesh.setMatrixAt(i, matrix.multiply(scale.makeScale(r, t.height * at.heightScale, r)));
   });
   mesh.castShadow = true;
   return mesh;
@@ -132,7 +150,7 @@ function tower(m: MeshBuilder, t: Tower, at: Placement, color: Color) {
   const [x, z] = at.frame.toLocal(t.at);
   const ground = at.elevation(t.at) * at.terrainScale;
   const top = ground + t.height * at.heightScale;
-  const r = t.kind === 'mast' ? 0.6 : t.kind === 'chimney' ? 1.5 : 3;
+  const r = (t.kind === 'mast' ? 0.6 : t.kind === 'chimney' ? 1.5 : 3) * (t.size ?? 1);
   const n = 10;
   const ring: P[] = Array.from({ length: n }, (_, i) => [x + r * Math.cos((2 * Math.PI * i) / n), z + r * Math.sin((2 * Math.PI * i) / n)]);
   walls(m, ring, ground, top, color);

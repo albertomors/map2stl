@@ -35,6 +35,22 @@ function clipPolygon(p: Polygon, shape: PcPolygon, ring: LngLat[]): Polygon[] {
   return result.map(([outer, ...holes]) => ({ outer: outer as LngLat[], holes: holes as LngLat[][] }));
 }
 
+// Just what the 3D view rebuilds after an edit: buildings, bridges and structures. (Areas
+// and ground lines don't change with edits and are cut once.)
+export function clipObjects(osm: OsmData, ring: LngLat[]): Pick<OsmData, 'buildings' | 'roads' | 'railways' | 'structureAreas' | 'structureLines' | 'towers'> {
+  const shape: PcPolygon = [ring];
+  const lines = <T extends Line>(items: T[]): T[] =>
+    items.flatMap((l) => clipLine(l.path, ring).map((path) => ({ ...l, path, ends: l.ends ?? [l.path[0], l.path[l.path.length - 1]] })));
+  return {
+    buildings: clipBuildings(osm.buildings, ring),
+    roads: lines(osm.roads.filter((l) => l.bridge)),
+    railways: lines(osm.railways.filter((l) => l.bridge)),
+    structureAreas: osm.structureAreas.flatMap((a) => clipPolygon(a, shape, ring).map((p) => ({ ...a, ...p }))),
+    structureLines: lines(osm.structureLines),
+    towers: osm.towers,
+  };
+}
+
 // Buildings crossing the edge are cut there and get a flat roof (half a pitched roof looks
 // wrong); the pieces keep their building's id, so edits still find them.
 export function clipBuildings(buildings: Building[], ring: LngLat[]): Building[] {

@@ -30,6 +30,8 @@ export interface Building extends Polygon {
 }
 
 export interface Line {
+  // OSM element ("way/123"), or a tile-data counter: edits and selection key on it.
+  id: string;
   path: LngLat[];
   kind: string;
   // Meters.
@@ -51,13 +53,17 @@ export interface StructureLine extends Line {
 }
 
 export interface StructureArea extends Area {
+  id: string;
   height: number;
 }
 
 export interface Tower {
+  id: string;
   at: LngLat;
   kind: string;
   height: number;
+  // Girth multiplier from an edit (1 when untouched).
+  size?: number;
 }
 
 export interface OsmData {
@@ -140,7 +146,7 @@ export function parse(elements: OverpassElement[], ring: LngLat[]): OsmData {
       const p: LngLat = [el.lon, el.lat];
       if (!pointInRing(p, ring)) continue;
       if (t.natural === 'tree') data.trees.push(p);
-      else if (t.man_made) data.towers.push({ at: p, kind: t.man_made, height: towerHeight(t) });
+      else if (t.man_made) data.towers.push({ id: `node/${el.id}`, at: p, kind: t.man_made, height: towerHeight(t) });
       continue;
     }
 
@@ -190,21 +196,21 @@ export function parse(elements: OverpassElement[], ring: LngLat[]): OsmData {
     } else if (t.man_made === 'bridge') {
       // The deck outline; the roads on it carry bridge=yes too.
       for (const poly of polygons(el)) {
-        if (intersectsRing(poly.outer, ring, true)) data.structureAreas.push({ ...poly, kind: 'bridge', height: 1 });
+        if (intersectsRing(poly.outer, ring, true)) data.structureAreas.push({ ...poly, id: `${el.type}/${el.id}`, kind: 'bridge', height: 1 });
       }
     } else if (t.man_made && new RegExp(`^(${PIER})$`).test(t.man_made)) {
       const height = parseLength(t.height) ?? 1;
       // Closed outlines are the pier itself; open ways are its center line.
       const polys = polygons(el);
       if (polys.length) {
-        for (const poly of polys) if (intersectsRing(poly.outer, ring, true)) data.structureAreas.push({ ...poly, kind: t.man_made, height });
+        for (const poly of polys) if (intersectsRing(poly.outer, ring, true)) data.structureAreas.push({ ...poly, id: `${el.type}/${el.id}`, kind: t.man_made, height });
       } else {
         addStructureLine(data.structureLines, el, t.man_made, parseLength(t.width) ?? 4, height, ring);
       }
     } else if (t.man_made && new RegExp(`^(${TOWER})$`).test(t.man_made)) {
       // Towers drawn as outlines without a building tag.
       for (const poly of polygons(el)) {
-        if (pointInRing(centroid(poly.outer), ring)) data.structureAreas.push({ ...poly, kind: t.man_made, height: towerHeight(t) });
+        if (pointInRing(centroid(poly.outer), ring)) data.structureAreas.push({ ...poly, id: `${el.type}/${el.id}`, kind: t.man_made, height: towerHeight(t) });
       }
     } else if (new RegExp(`^(${WALL})$`).test(t.barrier ?? '') || t.historic === 'city_walls') {
       const kind = t.historic === 'city_walls' ? 'city_wall' : t.barrier;
@@ -310,12 +316,12 @@ export function parseLength(v: string | undefined): number | undefined {
 
 function addLine(out: Line[], el: OverpassElement, kind: string, width: number, ring: LngLat[], bridge = false) {
   const path = coords(el.geometry);
-  if (path.length > 1 && intersectsRing(path, ring)) out.push({ path, kind, width, ...(bridge ? { bridge } : {}) });
+  if (path.length > 1 && intersectsRing(path, ring)) out.push({ id: `${el.type}/${el.id}`, path, kind, width, ...(bridge ? { bridge } : {}) });
 }
 
 function addStructureLine(out: StructureLine[], el: OverpassElement, kind: string, width: number, height: number, ring: LngLat[]) {
   const path = coords(el.geometry);
-  if (path.length > 1 && intersectsRing(path, ring)) out.push({ path, kind, width, height });
+  if (path.length > 1 && intersectsRing(path, ring)) out.push({ id: `${el.type}/${el.id}`, path, kind, width, height });
 }
 
 function addAreas(out: Area[], el: OverpassElement, kind: string, ring: LngLat[]) {

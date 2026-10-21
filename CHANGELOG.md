@@ -11,9 +11,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - README with screenshots and a quick start, a user guide (`docs/guide.md`) and an
   architecture overview (`docs/architecture.md`).
-- **Building editing** (milestone 4): click a building in the 3D view to select it, then
-  delete it or enlarge it ×1–4 from its base; Reset and Restore all. Multi-part buildings
-  are edited as one.
+- **Object editing** (milestone 4): click a building, tree, bridge or structure (pier,
+  wall, tower…) in the 3D view to select it, then delete it, enlarge it ×1–4 from its base
+  (all dimensions), or stretch its height alone; Reset per object. Multi-part buildings are
+  edited as one.
+- **Restore deleted** brings back deleted objects; **Reset all** clears every edit and puts
+  both height multipliers back to their defaults.
+
+### Changed
+
+- The selected object is tinted orange instead of outlined with its 3D edges.
+- Selecting waits for the detailed data: the quick tile data has buildings split at tile
+  seams and without their parts.
+- The 3D sliders are now named "Terrain height multiplier" and "Building height
+  multiplier".
 
 ## [0.3.0] - 2026-10-21
 

@@ -1,55 +1,99 @@
-// Changes the user makes to buildings in the 3D view: delete, or enlarge from the base.
-// Keyed by building (a multi-part building is one key), applied to the data before it's cut
-// to the selection, so an enlarged landmark is still trimmed at the tile edge. The export
-// applies the same edits.
+// Changes the user makes to objects in the 3D view: delete, enlarge (all dimensions, keeping
+// the ratio) and stretch the height alone. Keyed by object: a multi-part building is one key,
+// trees are keyed by their index. Applied to the data before it's cut to the selection, so
+// an enlarged landmark is still trimmed at the tile edge. The export applies the same edits.
 
 import type { LngLat } from './geo';
-import type { Building } from './osm';
+import type { Building, OsmData, Polygon } from './osm';
 
-export interface BuildingEdit {
+export interface ObjectEdit {
   deleted?: boolean;
-  // Uniform scale from the center of the footprint's base: footprint and heights together.
+  // Uniform scale from the center of the base: footprint and heights together.
   scale?: number;
+  // Height only, on top of `scale`.
+  heightScale?: number;
 }
 
-export type Edits = Map<string, BuildingEdit>;
+export type Edits = Map<string, ObjectEdit>;
 
 export function editKey(b: Building): string {
   return b.group ?? b.id;
 }
 
-export function applyEdits(buildings: Building[], edits: Edits): Building[] {
-  if (!edits.size) return buildings;
-  // All parts of a building scale around one center, so they stay together.
-  const centers = new Map<string, LngLat>();
-  for (const [key, edit] of edits) {
-    if (!edit.scale || edit.scale === 1) continue;
-    let x = 0, y = 0, n = 0;
-    for (const b of buildings) {
-      if (editKey(b) !== key) continue;
-      for (const [lng, lat] of b.outer) {
-        x += lng;
-        y += lat;
-        n++;
-      }
-    }
-    if (n) centers.set(key, [x / n, y / n]);
-  }
-  return buildings.flatMap((b): Building[] => {
-    const edit = edits.get(editKey(b));
-    if (edit?.deleted) return [];
-    const center = centers.get(editKey(b));
-    if (!center || !edit?.scale) return [b];
-    const k = edit.scale;
-    // Scaling longitude and latitude offsets by the same factor scales meters evenly too.
-    const scale = (ring: LngLat[]) => ring.map(([lng, lat]): LngLat => [center[0] + (lng - center[0]) * k, center[1] + (lat - center[1]) * k]);
-    return [{
-      ...b,
-      outer: scale(b.outer),
-      holes: b.holes.map(scale),
-      height: b.height * k,
-      minHeight: b.minHeight * k,
-      roofHeight: b.roofHeight !== undefined ? b.roofHeight * k : undefined,
-    }];
+export const treeKey = (index: number) => `tree/${index}`;
+
+// A tree with its edit applied, for the tree builder.
+export interface EditedTree {
+  key: string;
+  at: LngLat;
+  size: number;
+  height: number;
+}
+
+export function applyEdits(osm: OsmData, edits: Edits): OsmData {
+  if (!edits.size) return osm;
+  const keep = <T>(items: T[], key: (t: T) => string) => items.filter((t) => !edits.get(key(t))?.deleted);
+  const k = (key: string) => edits.get(key)?.scale ?? 1;
+  const h = (key: string) => (edits.get(key)?.scale ?? 1) * (edits.get(key)?.heightScale ?? 1);
+
+  const buildingCenters = centers(osm.buildings, editKey, edits);
+  const areaCenters = centers(osm.structureAreas, (a) => a.id, edits);
+  return {
+    ...osm,
+    buildings: keep(osm.buildings, editKey).map((b) => {
+      const key = editKey(b);
+      const c = buildingCenters.get(key);
+      return c || h(key) !== 1
+        ? {
+            ...b,
+            ...(c ? scalePolygon(b, c, k(key)) : {}),
+            height: b.height * h(key),
+            minHeight: b.minHeight * h(key),
+            roofHeight: b.roofHeight !== undefined ? b.roofHeight * h(key) : undefined,
+          }
+        : b;
+    }),
+    roads: keep(osm.roads, (l) => l.id),
+    railways: keep(osm.railways, (l) => l.id),
+    structureAreas: keep(osm.structureAreas, (a) => a.id).map((a) => {
+      const c = areaCenters.get(a.id);
+      return { ...a, ...(c ? scalePolygon(a, c, k(a.id)) : {}), height: a.height * h(a.id) };
+    }),
+    // Walls are lines: only their height changes.
+    structureLines: keep(osm.structureLines, (l) => l.id).map((l) => ({ ...l, height: l.height * (edits.get(l.id)?.heightScale ?? 1) })),
+    towers: keep(osm.towers, (t) => t.id).map((t) => ({ ...t, height: t.height * h(t.id), size: k(t.id) })),
+  };
+}
+
+export function editedTrees(trees: LngLat[], edits: Edits, baseHeight: number): EditedTree[] {
+  return trees.flatMap((at, i): EditedTree[] => {
+    const key = treeKey(i);
+    const e = edits.get(key);
+    if (e?.deleted) return [];
+    const size = e?.scale ?? 1;
+    return [{ key, at, size, height: baseHeight * size * (e?.heightScale ?? 1) }];
   });
+}
+
+// The center each scaled object grows from (all parts of one key share it).
+function centers<T extends Polygon>(items: T[], key: (t: T) => string, edits: Edits): Map<string, LngLat> {
+  const sums = new Map<string, [number, number, number]>();
+  for (const it of items) {
+    const kk = key(it);
+    if ((edits.get(kk)?.scale ?? 1) === 1) continue;
+    const s = sums.get(kk) ?? [0, 0, 0];
+    for (const [lng, lat] of it.outer) {
+      s[0] += lng;
+      s[1] += lat;
+      s[2]++;
+    }
+    sums.set(kk, s);
+  }
+  return new Map([...sums].map(([kk, [x, y, n]]) => [kk, [x / n, y / n] as LngLat]));
+}
+
+// Scaling longitude and latitude offsets by the same factor scales meters evenly too.
+function scalePolygon(p: Polygon, c: LngLat, k: number): Polygon {
+  const scale = (ring: LngLat[]) => ring.map(([lng, lat]): LngLat => [c[0] + (lng - c[0]) * k, c[1] + (lat - c[1]) * k]);
+  return { outer: scale(p.outer), holes: p.holes.map(scale) };
 }
