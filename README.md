@@ -30,10 +30,14 @@ npm run build    # type-check + production build in dist/
 - **Area selection**: pick a shape and drag on the map.
   - Rectangle: drag corner to corner.
   - Hexagon (flat top) and circle: drag from the center outward.
+  - Free shape: click points (drag to pan between clicks); double-click, or click the first
+    point, to close it. The area shows while drawing; an edge that would cross another
+    turns the outline red and the click is refused.
   - Shapes are drawn aligned to the current view, not to north: rotate the map first,
     then draw.
-  - Edit after drawing with the handles: **center** moves, **corner** scales (keeps the
-    ratio), **top** rotates in place.
+  - Edit after drawing with the handles: **center** moves, **corner** resizes (rectangles
+    and free shapes stretch freely, hexagons and circles keep their ratio), **top** rotates
+    in place.
   - Click outside the shape to clear it. Esc cancels drawing.
   - The panel shows size, area, radius, rotation and center, and warns above 10 km².
   - The selection survives reloads (localStorage).
@@ -64,11 +68,33 @@ colored by category, with a checkbox per layer:
   - Outlines that contain `building:part`s are replaced by their parts.
   - Answers are cached in the browser for a week. Busy servers (429/5xx, or no answer in
     100 s) are skipped for the next mirror; dense city centers take 30–60 s.
+  - The progress bar shows an **estimated time left**: `28 s + 12.6 s per km²` to start
+    with, fitted on timed requests (0.25–3.2 km², dense centers and a suburb; typically
+    ±17 s, because server load varies a lot: the same km² took 17–39 s). Each real
+    download is remembered and the fit moves toward this browser's experience, including a
+    term for the building count read from the base map's tiles.
 - **Terrain** from [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/)
   (Terrarium PNG): an elevation grid over the selection, at most 16 tiles, up to zoom 14
   (a few meters per sample; the source data is coarser in many places).
 
-The result (`AreaData` in `src/area-data.ts`) is what the 3D viewer will build from.
+The result (`AreaData` in `src/area-data.ts`) is what the 3D view builds from.
+
+### 3. 3D view
+
+**Open 3D view** builds the area in Three.js (loaded only when first opened):
+
+- **Terrain tile** cut to the selection shape, with side walls and a flat base, like the
+  print will be. Where there's sea, the sea floor in the terrain data is flattened to the
+  water surface.
+- **Ground layers** (water, green areas, squares, sand, roads, rails) painted onto the
+  terrain as one texture, so they follow every slope.
+- **Buildings** on the lowest ground under them, with roofs from `roof:shape`: gabled,
+  hipped, pyramidal, dome, onion, skillion (others approximated as hipped), and colors from
+  `building:colour` / `roof:colour`.
+- **Bridges** as decks level with the higher bank; **piers, walls, towers** as solids;
+  **trees** as cones. Shadows from a low sun.
+- The layer checkboxes switch layers in 3D too. Sliders: **terrain height** (×1–5) and
+  **building height** (×0.5–3). Left-drag orbits, right-drag pans, scroll zooms.
 
 ## Code
 
@@ -78,7 +104,7 @@ The result (`AreaData` in `src/area-data.ts`) is what the 3D viewer will build f
 | `src/search.ts` | Photon city search box |
 | `src/nav.ts` | Orbit drag and the on-screen navigation control |
 | `src/draw.ts` | Drag-to-draw on the map, edit handles |
-| `src/selection.ts` | The `Selection` type (center, size, rotation) passed to later steps, persistence |
+| `src/selection.ts` | The `Selection` type (center, size, rotation; points for free shapes), persistence |
 | `src/geo.ts` | Spherical geometry: distance, destination, bearing, area, point in polygon |
 | `src/area-data.ts` | Fetches OSM data and terrain for a selection, per-layer summary |
 | `src/overpass.ts` | Overpass client: mirrors, retries, timeout, browser cache |
@@ -86,6 +112,14 @@ The result (`AreaData` in `src/area-data.ts`) is what the 3D viewer will build f
 | `src/coast.ts` | Sea polygons from coastline lines |
 | `src/terrain.ts` | Terrarium tiles → elevation grid |
 | `src/preview.ts` | Map layers showing the fetched data |
+| `src/eta.ts` | Download time estimate, learning from past downloads |
+| `src/local.ts` | Local metric frame (meters east/south of the selection center) |
+| `src/viewer/viewer.ts` | Three.js scene, lights, camera, layer toggles |
+| `src/viewer/terrain-mesh.ts` | Terrain tile: grid cut to the shape, walls, base |
+| `src/viewer/ground.ts` | Flat layers painted into the terrain texture |
+| `src/viewer/objects.ts` | Buildings, structures, bridges, trees |
+| `src/viewer/roofs.ts` | Roof shapes |
+| `src/viewer/mesh.ts` | Triangle collector, OSM color parsing |
 
 ## Data sources and terms
 

@@ -1,4 +1,4 @@
-<!doctype html>
+nom<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -7,6 +7,7 @@
   </head>
   <body>
     <div id="map"></div>
+    <div id="viewer" hidden></div>
 
     <aside id="panel">
       <header>
@@ -14,7 +15,7 @@
         <p>Any place on Earth, ready to 3D print.</p>
       </header>
 
-      <form id="search" role="search" autocomplete="off">
+      <form id="search" class="map-only" role="search" autocomplete="off">
         <input id="search-input" type="search" placeholder="Search a city…" aria-label="Search a city" />
         <button type="submit" aria-label="Search">
           <svg viewBox="0 0 24 24" width="18" height="18"><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></svg>
@@ -22,7 +23,7 @@
         <ul id="search-results" hidden></ul>
       </form>
 
-      <section>
+      <section class="map-only">
         <h2>Select an area</h2>
         <div class="tools">
           <button data-tool="rectangle" title="Rectangle">
@@ -37,15 +38,19 @@
             <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" /></svg>
             Circle
           </button>
+          <button data-tool="polygon" title="Free shape: click points">
+            <svg viewBox="0 0 24 24"><path d="M3.5 18.5 8 5.5h8.5l4 13Z" /><g class="vertex"><circle cx="3.5" cy="18.5" r="1.8" /><circle cx="8" cy="5.5" r="1.8" /><circle cx="16.5" cy="5.5" r="1.8" /><circle cx="20.5" cy="18.5" r="1.8" /></g></svg>
+            Free
+          </button>
         </div>
         <p id="tool-hint" class="hint">Pick a shape, then drag on the map.</p>
       </section>
 
-      <p class="hint nav-hint">
+      <p class="hint nav-hint map-only">
         Drag to pan · scroll to zoom · <b>right-drag</b> or <b>Ctrl+drag</b> to orbit and tilt
       </p>
 
-      <section id="selection" hidden>
+      <section id="selection" class="map-only" hidden>
         <h2>Selection</h2>
         <dl id="selection-info"></dl>
         <p id="selection-warning" class="warning" hidden>
@@ -55,6 +60,20 @@
           <button id="clear" class="secondary">Clear</button>
         </div>
         <button id="fetch" class="primary">Fetch 3D data</button>
+      </section>
+
+      <section id="view3d" class="view3d-only">
+        <button id="close-3d" class="secondary back">← Back to map</button>
+        <h2>3D view</h2>
+        <label class="slider">
+          <span>Terrain height</span><output id="terrain-scale-value"></output>
+          <input id="terrain-scale" type="range" min="1" max="5" step="0.1" value="1.5" />
+        </label>
+        <label class="slider">
+          <span>Building height</span><output id="height-scale-value"></output>
+          <input id="height-scale" type="range" min="0.5" max="3" step="0.1" value="1" />
+        </label>
+        <p class="hint">Left-drag to orbit · right-drag to pan · scroll to zoom</p>
       </section>
 
       <section id="data" hidden>
@@ -74,6 +93,7 @@
         <p id="data-status" class="hint" aria-live="polite"></p>
         <ul id="data-layers"></ul>
         <p id="data-terrain" class="hint"></p>
+        <button id="open-3d" class="primary map-only" hidden>Open 3D view</button>
         <p class="hint credit">© OpenStreetMap contributors · terrain: AWS Terrain Tiles</p>
       </section>
     </aside>

@@ -74,7 +74,7 @@ export function pointInRing(p: LngLat, ring: LngLat[]): boolean {
   return inside;
 }
 
-function segmentsCross(a: LngLat, b: LngLat, c: LngLat, d: LngLat): boolean {
+export function segmentsCross(a: LngLat, b: LngLat, c: LngLat, d: LngLat): boolean {
   const side = (p: LngLat, q: LngLat, r: LngLat) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
   return side(a, b, c) * side(a, b, d) < 0 && side(c, d, a) * side(c, d, b) < 0;
 }
@@ -108,4 +108,10 @@ export function pathLength(path: LngLat[]): number {
   let total = 0;
   for (let i = 1; i < path.length; i++) total += distance(path[i - 1], path[i]);
   return total;
+}
+
+// Whether segment a–b crosses any segment of an open path (touching at shared ends doesn't count).
+export function crossesPath(a: LngLat, b: LngLat, path: LngLat[]): boolean {
+  for (let i = 1; i < path.length; i++) if (segmentsCross(a, b, path[i - 1], path[i])) return true;
+  return false;
 }

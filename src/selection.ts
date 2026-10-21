@@ -4,7 +4,7 @@
 
 import { bbox, bearingTo, destination, distance, pointInRing, ringArea, type LngLat } from './geo';
 
-export type ShapeKind = 'rectangle' | 'hexagon' | 'circle';
+export type ShapeKind = 'rectangle' | 'hexagon' | 'circle' | 'polygon';
 
 export interface Selection {
   kind: ShapeKind;
@@ -14,6 +14,9 @@ export interface Selection {
   halfHeight: number;
   // Compass direction (degrees) of the shape's "up": the map bearing when it was drawn.
   rotation: number;
+  // Free shapes only: the clicked points in the shape's own frame, scaled to -1…1 on each
+  // axis, so scaling and rotating the shape just changes the fields above.
+  points?: [number, number][];
 }
 
 // Point at (x right, y up) meters in the shape's own frame.
@@ -23,7 +26,7 @@ export function offset(sel: Pick<Selection, 'center' | 'rotation'>, x: number, y
 }
 
 // Position of `p` in a frame centered on `origin` whose up points at `rotation`.
-function toFrame(origin: LngLat, rotation: number, p: LngLat): { x: number; y: number } {
+export function toFrame(origin: LngLat, rotation: number, p: LngLat): { x: number; y: number } {
   const d = distance(origin, p);
   const a = ((bearingTo(origin, p) - rotation) * Math.PI) / 180;
   return { x: d * Math.sin(a), y: d * Math.cos(a) };
@@ -47,10 +50,39 @@ export function fromDrag(kind: ShapeKind, a: LngLat, b: LngLat, viewBearing: num
   return { kind, center: a, halfWidth: r, halfHeight: r, rotation: viewBearing };
 }
 
+// A free shape from clicked points, its up facing the top of the screen: framed by the
+// points' bounding box in that orientation. The points are measured from the final center
+// (directions on a sphere change with the origin, so re-centering by subtraction would
+// shift and twist the shape slightly).
+export function fromPoints(points: LngLat[], viewBearing: number): Selection {
+  const n = points.length;
+  let center: LngLat = [points.reduce((a, p) => a + p[0], 0) / n, points.reduce((a, p) => a + p[1], 0) / n];
+  // Move the center to the middle of the bounding box; twice is plenty to settle.
+  for (let i = 0; i < 2; i++) {
+    const local = points.map((p) => toFrame(center, viewBearing, p));
+    const cx = (Math.min(...local.map((p) => p.x)) + Math.max(...local.map((p) => p.x))) / 2;
+    const cy = (Math.min(...local.map((p) => p.y)) + Math.max(...local.map((p) => p.y))) / 2;
+    center = offset({ center, rotation: viewBearing }, cx, cy);
+  }
+  const local = points.map((p) => toFrame(center, viewBearing, p));
+  const halfWidth = Math.max(...local.map((p) => Math.abs(p.x)), 1);
+  const halfHeight = Math.max(...local.map((p) => Math.abs(p.y)), 1);
+  return {
+    kind: 'polygon',
+    center,
+    halfWidth,
+    halfHeight,
+    rotation: viewBearing,
+    points: local.map((p) => [p.x / halfWidth, p.y / halfHeight]),
+  };
+}
+
 export function ring(sel: Selection): LngLat[] {
   const { halfWidth: w, halfHeight: h } = sel;
   let pts: [number, number][];
-  if (sel.kind === 'rectangle') {
+  if (sel.kind === 'polygon') {
+    pts = (sel.points ?? []).map(([x, y]) => [x * w, y * h]);
+  } else if (sel.kind === 'rectangle') {
     pts = [[-w, -h], [w, -h], [w, h], [-w, h]];
   } else {
     // Hexagon vertices at 30°, 90°... from up give a flat top; the circle uses 96 points.
@@ -69,7 +101,7 @@ export function ring(sel: Selection): LngLat[] {
 // Where the edit handles sit, in the shape's own frame.
 export function scaleHandle(sel: Selection): LngLat {
   const { halfWidth: w, halfHeight: h } = sel;
-  if (sel.kind === 'rectangle') return offset(sel, w, h);
+  if (sel.kind === 'rectangle' || sel.kind === 'polygon') return offset(sel, w, h);
   // Top-right vertex of the hexagon, or the matching point on the circle.
   const a = sel.kind === 'hexagon' ? Math.PI / 6 : Math.PI / 4;
   return offset(sel, w * Math.sin(a), w * Math.cos(a));
@@ -131,7 +163,8 @@ export function loadSelection(): Selection | null {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     const sel = raw ? (JSON.parse(raw) as Selection) : null;
-    return sel && Array.isArray(sel.center) && typeof sel.rotation === 'number' ? sel : null;
+    if (!sel || !Array.isArray(sel.center) || typeof sel.rotation !== 'number') return null;
+    return sel.kind !== 'polygon' || (sel.points?.length ?? 0) >= 3 ? sel : null;
   } catch {
     return null;
   }

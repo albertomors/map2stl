@@ -89,6 +89,29 @@ export async function fetchTerrain(
   };
 }
 
+// Ground height at a point, bilinear between the grid's pixel centers (clamped at the edges).
+export function elevationAt(t: Terrain, lng: number, lat: number): number {
+  const x0 = worldX(t.bbox[0], t.zoom);
+  const y0 = worldY(t.bbox[3], t.zoom);
+  const px = Math.min(Math.max(worldX(lng, t.zoom) - x0 - 0.5, 0), t.width - 1);
+  const py = Math.min(Math.max(worldY(lat, t.zoom) - y0 - 0.5, 0), t.height - 1);
+  const c = Math.min(Math.floor(px), t.width - 2);
+  const r = Math.min(Math.floor(py), t.height - 2);
+  const fx = px - c;
+  const fy = py - r;
+  const h = (row: number, col: number) => t.heights[row * t.width + col];
+  const top = h(r, c) * (1 - fx) + h(r, c + 1) * fx;
+  const bottom = h(r + 1, c) * (1 - fx) + h(r + 1, c + 1) * fx;
+  return top * (1 - fy) + bottom * fy;
+}
+
+// Longitude/latitude of the center of grid pixel (col, row).
+export function pixelLngLat(t: Terrain, col: number, row: number): [number, number] {
+  const x0 = worldX(t.bbox[0], t.zoom);
+  const y0 = worldY(t.bbox[3], t.zoom);
+  return [lngOf(x0 + col + 0.5, t.zoom), latOf(y0 + row + 0.5, t.zoom)];
+}
+
 async function loadTile(z: number, x: number, y: number, signal: AbortSignal): Promise<Uint8ClampedArray> {
   const res = await fetch(`${TILE_URL}/${z}/${x}/${y}.png`, { signal });
   if (!res.ok) throw new Error(`Terrain tile ${z}/${x}/${y} failed (${res.status})`);

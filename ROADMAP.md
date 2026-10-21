@@ -2,12 +2,6 @@
 
 Open work only: built items move to the README and CHANGELOG.
 
-## Milestone 3: 3D viewer
-
-- Three.js scene: terrain mesh, extruded buildings sitting on it, flat or raised roads and water.
-- Toggle each category layer on and off.
-- Sliders: vertical exaggeration, model scale.
-
 ## Milestone 4: object editing
 
 - Each OSM building is its own object: click to select (outline), then delete, scale up or reset.
@@ -17,21 +11,29 @@ Open work only: built items move to the README and CHANGELOG.
 ## Milestone 5: export
 
 - Physical size in mm, base thickness, minimum feature size so nothing prints too thin.
+- Roofs that follow concave footprints exactly (straight skeleton); today gabled and hipped
+  roofs are exact only for rectangular footprints.
 - Merge into a watertight solid with `manifold-3d` (WASM).
 - STL (single solid) and 3MF (one part per category, for multi-color printing).
 - Embed the "© OpenStreetMap contributors" credit.
 
+## Faster, more reliable data
+
+Overpass is the most complete OSM source but the slowest part of the app (40–100 s for a
+city center, and the public servers are often busy).
+
+- Instant first preview from the base map's vector tiles (OpenMapTiles z14, already loaded):
+  buildings with heights, roads with bridges, water, landuse. Fetch Overpass in the
+  background and swap in the detailed version (roofs, colors, trees, walls) when it arrives.
+- Add the `overpass.kumi.systems` mirror.
+- Overture Maps buildings to fill gaps in OSM heights (cloud GeoParquet, no API).
+- Our own Overpass instance (or a commercial extract service) before going public.
+- National LiDAR terrain where available (e.g. Norway's høydedata, 1 m), Copernicus GLO-30
+  elsewhere when the AWS tiles are coarse.
+
 ## Later
 
-- Free-shape selection: click points on the map to build a polygon; double-click closes it
-  back to the first point. Same edit handles (move, scale, rotate) afterwards.
-- Download ETA: time Overpass on selections of different sizes and densities, fit how long
-  a request takes per km² (and per building density), and show an estimated time left
-  instead of only the elapsed seconds.
 - Sea when the selection is entirely water, or the coast is broken near it (today: land).
-- Copernicus GLO-30 terrain where the AWS tiles are coarse.
 - Clip the base map's buildings to the selection while previewing, instead of hiding all.
-
-- Overture Maps buildings to fill gaps in OSM heights.
 - Segmentation for mesh sources (photogrammetry) where objects aren't already separate.
 - Deploy as a public site.

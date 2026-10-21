@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **3D view** (milestone 3): the selection as a terrain tile with side walls and base,
+  ground layers painted on, buildings with roof shapes and OSM colors, bridges, piers,
+  walls, towers and trees, with shadows. Layer checkboxes work in 3D; sliders for terrain
+  and building height.
+- **Free shape** selection: click points, double-click or click the first point to close.
+  The area shows while drawing; edges that would cross are refused.
+- **Estimated time left** for the OSM download, from the area (fitted on timed requests)
+  and learning from each real download.
+
+### Changed
+
+- Rectangles and free shapes resize freely from the corner handle; hexagons and circles
+  keep their ratio.
+
+### Fixed
+
+- Clicks with a small mouse wobble (4–8 px) no longer get lost while drawing a free shape.
+
 ## [0.2.0] - 2026-10-19
 
 Milestone 2: fetch the 3D data for the selected area.

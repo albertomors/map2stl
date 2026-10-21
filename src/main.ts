@@ -2,13 +2,15 @@ import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import './style.css';
-import { fetchAreaData, summarize, type AreaData, type FetchProgress } from './area-data';
+import { fetchAreaData, summarize, type AreaData, type FetchProgress, type Layer } from './area-data';
 import { DrawController } from './draw';
+import { countBuildings, estimateSeconds, recordSample, type EtaInput } from './eta';
 import { distance } from './geo';
 import { setupNavigation } from './nav';
 import { DataPreview, LAYER_COLORS } from './preview';
 import { setupSearch } from './search';
 import { describe, loadSelection, saveSelection, type Selection, type ShapeKind } from './selection';
+import type { Viewer, ViewScales } from './viewer/viewer';
 
 // Above this, OSM downloads in dense cities get slow and the print loses detail.
 const LARGE_AREA_M2 = 10e6;
@@ -17,7 +19,10 @@ const HINTS: Record<ShapeKind, string> = {
   rectangle: 'Drag from one corner to the opposite corner.',
   hexagon: 'Drag from the center outward. Up on screen becomes the flat top.',
   circle: 'Drag from the center outward.',
+  polygon: 'Click to add points; double-click, or click the first point, to finish.',
 };
+
+const SHAPE_NAMES: Record<ShapeKind, string> = { rectangle: 'Rectangle', hexagon: 'Hexagon', circle: 'Circle', polygon: 'Free shape' };
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -44,6 +49,9 @@ let preview: DataPreview | null = null;
 let selection: Selection | null = null;
 // The download in progress, if any.
 let loading: AbortController | null = null;
+let areaData: AreaData | null = null;
+const visibleLayers = new Set<Layer>();
+let viewer: Viewer | null = null;
 
 // Wired right away: a click before the map is ready says so instead of doing nothing.
 toolButtons.forEach((btn) =>
@@ -55,6 +63,18 @@ toolButtons.forEach((btn) =>
 );
 $('clear').addEventListener('click', () => draw?.clear());
 $('fetch').addEventListener('click', () => (loading ? loading.abort() : selection && fetchData(selection)));
+$('open-3d').addEventListener('click', () => open3d());
+$('close-3d').addEventListener('click', () => close3d());
+for (const id of ['terrain-scale', 'height-scale']) {
+  // Rebuilding takes a moment on big areas: wait until the slider rests.
+  let timer: number | undefined;
+  $(id).addEventListener('input', () => {
+    showScales();
+    clearTimeout(timer);
+    timer = window.setTimeout(() => viewer?.setScales(scales()), 120);
+  });
+}
+showScales();
 
 map.on('error', (e) => console.error('Map error', e.error));
 
@@ -65,7 +85,7 @@ map.on('load', () => {
     selection = sel;
     showSelection(sel);
     if (final) saveSelection(sel);
-  });
+  }, (message) => (message ? ($('tool-hint').textContent = message) : showTool(draw?.activeTool ?? null)));
 
   const saved = loadSelection();
   preview = new DataPreview(map, 'selection-fill');
@@ -88,11 +108,11 @@ function showSelection(sel: Selection | null) {
   if (!sel) return;
   const info = describe(sel);
   const rows: [string, string][] = [
-    ['Shape', sel.kind[0].toUpperCase() + sel.kind.slice(1)],
+    ['Shape', SHAPE_NAMES[sel.kind]],
     ['Size', `${formatLength(info.widthM)} × ${formatLength(info.heightM)}`],
     ['Area', formatArea(info.areaM2)],
   ];
-  if (sel.kind !== 'rectangle') rows.splice(2, 0, ['Radius', formatLength(sel.halfWidth)]);
+  if (sel.kind === 'hexagon' || sel.kind === 'circle') rows.splice(2, 0, ['Radius', formatLength(sel.halfWidth)]);
   rows.push(['Rotation', `${Math.round(((sel.rotation % 360) + 360) % 360)}°`]);
   rows.push(['Center', `${sel.center[1].toFixed(5)}, ${sel.center[0].toFixed(5)}`]);
   $('selection-info').replaceChildren(
@@ -116,6 +136,9 @@ function formatArea(m2: number): string {
 }
 
 async function fetchData(sel: Selection) {
+  // Counted from the base map before the preview of old data (which hides it) is cleared.
+  const info = describe(sel);
+  const etaInput: EtaInput = { km2: info.areaM2 / 1e6, buildings: countBuildings(map, info.ring) };
   resetData();
   const controller = new AbortController();
   loading = controller;
@@ -126,7 +149,7 @@ async function fetchData(sel: Selection) {
   status.textContent = '';
   $('data-progress').hidden = false;
   // Re-render every second too, so a slow server shows a running clock instead of looking stuck.
-  const wait: ServerWait = { since: Date.now() };
+  const wait: ServerWait = { since: Date.now(), eta: estimateSeconds(etaInput) };
   let last: FetchProgress = { osmBytes: 0, osmCached: false, osmDone: false, tilesDone: 0, tilesTotal: 0 };
   const render = () => showProgress(last, wait);
   render();
@@ -137,6 +160,8 @@ async function fetchData(sel: Selection) {
       render();
     });
     $('data-progress').hidden = true;
+    // Teach the estimate how long this server really took (cache hits say nothing).
+    if (!last.osmCached && wait.doneAt) recordSample(etaInput, (wait.doneAt - wait.since) / 1000);
     showData(data);
   } catch (err) {
     if (controller.signal.aborted) {
@@ -160,6 +185,9 @@ async function fetchData(sel: Selection) {
 function resetData() {
   loading?.abort();
   loading = null;
+  close3d();
+  areaData = null;
+  $('open-3d').hidden = true;
   $('fetch').textContent = 'Fetch 3D data';
   preview?.clear();
   $('data').hidden = true;
@@ -169,7 +197,10 @@ function resetData() {
 }
 
 function showData(data: AreaData) {
+  areaData = data;
   preview?.show(data);
+  visibleLayers.clear();
+  $('open-3d').hidden = false;
   $('data-layers').replaceChildren(
     ...summarize(data).map(({ layer, label, count, detail }) => {
       const li = document.createElement('li');
@@ -178,7 +209,13 @@ function showData(data: AreaData) {
       box.type = 'checkbox';
       box.checked = true;
       box.disabled = count === 0;
-      box.addEventListener('change', () => preview?.setVisible(layer, box.checked));
+      if (count) visibleLayers.add(layer);
+      box.addEventListener('change', () => {
+        if (box.checked) visibleLayers.add(layer);
+        else visibleLayers.delete(layer);
+        preview?.setVisible(layer, box.checked);
+        viewer?.setLayerVisible(layer, box.checked);
+      });
       const swatch = document.createElement('span');
       swatch.className = 'swatch';
       swatch.style.background = LAYER_COLORS[layer];
@@ -211,6 +248,9 @@ interface ServerWait {
   server?: string;
   previous?: string;
   since: number;
+  // Expected seconds for the OSM answer, and when it actually arrived.
+  eta: number;
+  doneAt?: number;
 }
 
 function showProgress(p: FetchProgress, wait: ServerWait) {
@@ -219,17 +259,22 @@ function showProgress(p: FetchProgress, wait: ServerWait) {
     wait.server = p.osmServer;
     wait.since = Date.now();
   }
+  if (p.osmDone && !wait.doneAt) wait.doneAt = Date.now();
   const seconds = Math.round((Date.now() - wait.since) / 1000);
   if (p.osmDone || p.osmCached) {
     setBar('progress-osm', p.osmCached ? 'From cache' : 'Done', 1, '');
   } else if (p.osmBytes) {
     // The server doesn't say how big the answer is: count the bytes instead of a percentage.
     setBar('progress-osm', `Downloading ${formatBytes(p.osmBytes)}`, null, `from ${wait.server}`);
-  } else {
+  } else if (seconds < wait.eta) {
+    // Fills toward the estimate but never claims to be finished before the data arrives.
     const note = wait.previous
       ? `${wait.previous} was busy, now asking ${wait.server}.`
-      : `${wait.server ?? 'The server'} collects every feature in the area first: dense city centers take up to a minute.`;
-    setBar('progress-osm', `Waiting for server… ${seconds} s`, null, note);
+      : `${wait.server ?? 'The server'} is collecting every feature in the area.`;
+    setBar('progress-osm', `About ${formatDuration(wait.eta - seconds)} left`, Math.min(seconds / wait.eta, 0.95), note);
+  } else {
+    const note = `${wait.server ?? 'The server'} is busier than usual. It gives up after 100 s and the next server is tried.`;
+    setBar('progress-osm', `Taking longer than usual… ${formatDuration(seconds)}`, null, note);
   }
   if (p.tilesTotal) {
     const done = p.tilesDone === p.tilesTotal;
@@ -249,6 +294,54 @@ function setBar(id: string, text: string, fraction: number | null, note: string)
   (row.querySelector('.bar > div') as HTMLElement).style.width = fraction === null ? '' : `${fraction * 100}%`;
 }
 
+function formatDuration(seconds: number): string {
+  const s = Math.max(1, Math.round(seconds));
+  return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min ${s % 60} s`;
+}
+
 function formatBytes(n: number): string {
   return n < 1e6 ? `${Math.round(n / 1e3)} kB` : `${(n / 1e6).toFixed(1)} MB`;
+}
+
+// Three.js is loaded only when the 3D view is first opened.
+async function open3d() {
+  if (!areaData || viewer) return;
+  const button = $<HTMLButtonElement>('open-3d');
+  button.disabled = true;
+  button.textContent = 'Building 3D view…';
+  try {
+    const { Viewer } = await import('./viewer/viewer');
+    document.body.classList.add('mode-3d');
+    $('viewer').hidden = false;
+    viewer = new Viewer($('viewer'));
+    viewer.show(areaData, visibleLayers, scales());
+  } catch (err) {
+    console.error('3D view failed', err);
+    close3d();
+    $('data-status').classList.add('error');
+    $('data-status').textContent = `The 3D view failed to start: ${(err as Error).message}`;
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Open 3D view';
+  }
+}
+
+function close3d() {
+  viewer?.dispose();
+  viewer = null;
+  $('viewer').hidden = true;
+  document.body.classList.remove('mode-3d');
+}
+
+function scales(): ViewScales {
+  return {
+    terrain: Number($<HTMLInputElement>('terrain-scale').value),
+    heights: Number($<HTMLInputElement>('height-scale').value),
+  };
+}
+
+function showScales() {
+  const { terrain, heights } = scales();
+  $('terrain-scale-value').textContent = `×${terrain.toFixed(1)}`;
+  $('height-scale-value').textContent = `×${heights.toFixed(1)}`;
 }

@@ -44,6 +44,7 @@ body {
 
 #panel {
   position: absolute;
+  z-index: 4;
   top: 12px;
   left: 12px;
   width: 320px;
@@ -198,7 +199,7 @@ button.secondary {
 
 .tools {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 8px;
 }
 
@@ -218,6 +219,12 @@ button.secondary {
   stroke: currentColor;
   stroke-width: 1.8;
   stroke-linejoin: round;
+}
+
+/* Corner dots on the free-shape icon: you build it by clicking points. */
+.tools .vertex {
+  fill: currentColor;
+  stroke: none;
 }
 
 .tools button.active {
@@ -503,4 +510,51 @@ dd {
 
 .progress-note:empty {
   display: none;
+}
+
+/* 3D view */
+
+#viewer {
+  position: absolute;
+  inset: 0;
+  /* Above the map's own controls (zoom, compass, scale), below the panel. */
+  z-index: 3;
+}
+
+#viewer[hidden] {
+  display: none;
+}
+
+#viewer canvas {
+  display: block;
+}
+
+/* !important: some of these elements set their own display by id (#search). */
+body:not(.mode-3d) .view3d-only,
+body.mode-3d .map-only {
+  display: none !important;
+}
+
+.back {
+  align-self: flex-start;
+  margin-bottom: 12px;
+}
+
+.slider {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2px 8px;
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+
+.slider output {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.slider input {
+  grid-column: 1 / -1;
+  width: 100%;
+  accent-color: var(--accent);
 }
