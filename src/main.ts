@@ -436,5 +436,5 @@ function showEditsSummary() {
   const parts = [deleted && `${deleted} deleted`, enlarged && `${enlarged} enlarged`].filter(Boolean);
   $('edits-summary').hidden = !parts.length;
   $('edits-count').textContent = `${parts.join(', ')} ${deleted + enlarged === 1 ? 'building' : 'buildings'}`;
-  $('restore-all').hidden = !deleted;
+  $('restore-all-group').hidden = !deleted;
 }

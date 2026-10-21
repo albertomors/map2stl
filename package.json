@@ -3,6 +3,25 @@
   "version": "0.3.0",
   "private": true,
   "description": "Pick any place on Earth and turn it into a 3D-printable model (STL / 3MF)",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/albertomors/map2stl.git"
+  },
+  "homepage": "https://github.com/albertomors/map2stl#readme",
+  "bugs": "https://github.com/albertomors/map2stl/issues",
+  "keywords": [
+    "3d-printing",
+    "stl",
+    "3mf",
+    "openstreetmap",
+    "maplibre",
+    "threejs",
+    "map",
+    "terrain"
+  ],
+  "engines": {
+    "node": "^20.19.0 || >=22.12.0"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",

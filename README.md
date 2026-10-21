@@ -1,165 +1,119 @@
 # map2stl
 
-Pick any place on Earth and turn it into a 3D-printable model.
+**Pick any place on Earth and turn it into a 3D-printable model.**
 
-Search a place, draw the area you want (rectangle, hexagon or circle), and later steps will
-download its buildings, terrain, water and greenery, let you toggle and edit them in 3D
-(delete buildings, enlarge monuments), and export STL or 3MF.
+Search a city, draw the area you want, and map2stl downloads its buildings, terrain, water,
+roads and greenery from open data, shows them in 3D, and lets you remove or enlarge buildings
+before printing.
 
-## Run
+![The 3D view of Trondheim's harbor: terrain tile with the sea, river, bridges, rail yard, buildings with pitched roofs and trees](docs/screenshots/01-3d-view.png)
+
+> **Status:** work in progress. Selecting an area, downloading the data, the 3D view and
+> building editing work today. **Export to STL / 3MF is the next milestone** (see the
+> [roadmap](ROADMAP.md)).
+
+## Features
+
+- **Any place, no account, no API keys.** Everything comes from open data: OpenStreetMap,
+  OpenFreeMap tiles and AWS Terrain Tiles.
+- **Four selection shapes**: rectangle, hexagon, circle, or a free shape you click point by
+  point. Move, resize and rotate them with handles.
+- **Quick version in seconds**, detailed version in under a minute: buildings with real
+  heights, roof shapes and colors, bridges, piers, walls, towers, roads, rails, water
+  (including the sea), parks and single trees.
+- **3D preview** of the model as it will be printed: a terrain tile cut exactly to your
+  shape, everything trimmed at the edge, with layer toggles and height exaggeration.
+- **Edit buildings**: click one to delete it, or enlarge a landmark so it stands out in the
+  print.
+
+## Quick start
+
+You need [Node.js](https://nodejs.org) 20.19+ (or 22.12+).
 
 ```sh
+git clone https://github.com/albertomors/map2stl.git
+cd map2stl
 npm install
-npm run dev      # http://localhost:5173
-npm run build    # type-check + production build in dist/
+npm run dev
 ```
 
-## What works now
+Then open **http://localhost:5173**.
 
-### 1. Find the place and select the area
+To build a static site instead: `npm run build`. The output in `dist/` can be hosted on any
+static web server.
 
+## How to use it
 
-- **Map**: OpenStreetMap vector tiles from [OpenFreeMap](https://openfreemap.org), no API key.
-  The URL keeps the map position (`#zoom/lat/lng`), so links can be shared.
-- **Search**: cities, regions and countries, with suggestions while you type, from
-  [Photon](https://photon.komoot.io) (OSM data, no API key). Arrow keys + Enter pick a result.
-- **Navigation**: drag to pan, scroll to zoom, **right-drag or Ctrl+drag to orbit and tilt**:
-  horizontal turns, vertical tilts, and the point you grabbed stays under the cursor
-  (replaces MapLibre's center-spinning rotate).
-  On-screen: zoom buttons, a compass you drag to rotate (click to face north), 2D/3D toggle.
-- **Area selection**: pick a shape and drag on the map.
-  - Rectangle: drag corner to corner.
-  - Hexagon (flat top) and circle: drag from the center outward.
-  - Free shape: click points (drag to pan between clicks); double-click, or click the first
-    point, to close it. The area shows while drawing; an edge that would cross another
-    turns the outline red and the click is refused.
-  - Shapes are drawn aligned to the current view, not to north: rotate the map first,
-    then draw.
-  - Edit after drawing with the handles: **center** moves, **corner** resizes (rectangles
-    and free shapes stretch freely, hexagons and circles keep their ratio), **top** rotates
-    in place.
-  - Click outside the shape to clear it. Esc cancels drawing.
-  - The panel shows size, area, radius, rotation and center, and warns above 10 km².
-  - The selection survives reloads (localStorage).
+### 1. Find the place and select an area
+
+Search a city in the box at the top left, or pan and zoom the map. Pick a shape and drag on
+the map: rectangles from corner to corner, hexagons and circles from the center outward.
+Shapes follow the current view, so rotate the map first if you want the area tilted.
+
+Afterwards, drag the handles: **center** moves the shape, **corner** resizes it, **top**
+rotates it. Click outside the shape to clear it.
+
+![A circle selected over Trondheim's harbor, with the move, resize and rotate handles](docs/screenshots/02-select-area.png)
+
+For any other outline, choose **Free**: click point by point, then double-click (or click
+the first point) to close it.
+
+![A free shape being drawn point by point over Trondheim's old town](docs/screenshots/03-free-shape.png)
 
 ### 2. Fetch the 3D data
 
-**Fetch 3D data** downloads everything inside the selection and shows it on the map,
-colored by category, with a checkbox per layer. It comes in two steps:
+Press **Fetch 3D data**. A quick version from the map tiles appears in a couple of seconds.
+The detailed version (roof shapes, trees, walls, parking…) follows, usually in 30–90 s,
+with an estimate of the time left, and replaces the quick version in place.
 
-- **Quick version in 1–3 s**, from the base map's own vector tiles (OpenMapTiles zoom 14,
-  OpenFreeMap CDN): buildings with heights and colors, roads and rails with bridges, water
-  including the sea, parks, landcover, piers, runways. The map preview and the 3D view work
-  right away.
-- **Full version** from Overpass (below) replaces it when it arrives, 30–90 s later, adding
-  roof shapes, trees, walls, towers, parking and more. Layers you switched off stay off,
-  and an open 3D view updates in place. If every Overpass server fails, the quick version
-  stays and you can fetch again later.
+![The quick version shown on the map while the detailed data downloads, with the time left](docs/screenshots/04-quick-data-loading.png)
 
-- **OpenStreetMap features** from the [Overpass API](https://overpass-api.de) (full
-  version), one toggleable layer each:
-  - **Buildings** and `building:part`s, with roof shape, roof height and colors when tagged.
-  - **Bridges, piers, walls, towers**: bridge decks, piers and breakwaters, walls and city
-    walls, towers, chimneys, masts and lighthouses, each with a height.
-  - **Roads & paths** and **railways & trams**, with bridges marked (darker on the map).
-  - **Squares, parking, sports**: pedestrian squares, car parks, pitches and tracks,
-    airport runways, taxiways and aprons.
-  - **Water**: lakes, rivers and streams, plus the **sea**, rebuilt from the coastline
-    (OSM stores coasts as lines with the water on their right, not as areas).
-  - **Green areas**, **sand, rock, glacier** and single **trees**.
-  - Tunnels and underground features are skipped.
-  - Everything touching the shape is kept; the 3D view cuts it at the edge like a cookie
-    cutter (buildings get a flat face and a flat roof there, bridges keep their deck
-    height from their real banks).
-  - Building height: `height` tag, else `building:levels` × 3 m, else an estimate from the
-    building type (1–3 floors). The panel shows how many have real heights.
-  - Untagged structures get typical heights (city wall 6 m, chimney 40 m, mast 12 m…).
-  - Outlines that contain `building:part`s are replaced by their parts.
-  - Answers are cached in the browser for a week. Busy servers (429/5xx, or no answer in
-    100 s) are skipped for the next mirror; dense city centers take 30–60 s.
-  - The progress bar shows an **estimated time left**: `28 s + 12.6 s per km²` to start
-    with, fitted on timed requests (0.25–3.2 km², dense centers and a suburb; typically
-    ±17 s, because server load varies a lot: the same km² took 17–39 s). Each real
-    download is remembered and the fit moves toward this browser's experience, including a
-    term for the building count read from the base map's tiles.
-- **Terrain** from [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/)
-  (Terrarium PNG): an elevation grid over the selection, at most 16 tiles, up to zoom 14
-  (a few meters per sample; the source data is coarser in many places).
+Each category gets a checkbox and a count. Uncheck what you don't want in the model.
 
-The result (`AreaData` in `src/area-data.ts`) is what the 3D view builds from.
+![The detailed data previewed on the map: buildings, bridges, piers, roads, water, parks and trees](docs/screenshots/05-data-preview.png)
 
-### 3. 3D view
+### 3. Look at it in 3D
 
-**Open 3D view** builds the area in Three.js (loaded only when first opened):
-
-- **Terrain tile** cut exactly along the selection outline (edge cells are cut, not
-  dropped), with side walls and a flat base, like the print will be. Where there's sea, the sea floor in the terrain data is flattened to the
-  water surface.
-- **Ground layers** (water, green areas, squares, sand, roads, rails) painted onto the
-  terrain as one texture, so they follow every slope.
-- **Buildings** on the lowest ground under them, with roofs from `roof:shape`: gabled,
-  hipped, pyramidal, dome, onion, skillion (others approximated as hipped), and colors from
-  `building:colour` / `roof:colour`.
-- **Bridges** as decks level with the higher bank; **piers, walls, towers** as solids;
-  **trees** as cones. Shadows from a low sun.
-- The layer checkboxes switch layers in 3D too. Sliders: **terrain height** (×1–5) and
-  **building height** (×0.5–3). Left-drag orbits, right-drag pans, scroll zooms.
+Press **Open 3D view**. Left-drag to orbit, right-drag to pan, scroll to zoom. The sliders
+exaggerate the terrain and the buildings; the checkboxes hide layers.
 
 ### 4. Edit buildings
 
-In the 3D view, **click a building** to select it (orange outline; a drag still orbits).
-The panel shows its name, height (and where it comes from), roof and number of parts.
+Click a building to select it. **Delete** removes it; **Size** enlarges it from its base
+(×1–4), handy for making a cathedral or a tower stand out. **Reset** and **Restore all**
+undo.
 
-- **Delete** (button or the Delete key). **Restore all** brings deleted buildings back.
-- **Size** ×1–4 enlarges it from the center of its base: footprint, height and roof grow
-  together and it stays on the ground. **Reset** puts it back.
-- Multi-part buildings (`building:part`, e.g. a cathedral's nave, towers and spires) are
-  selected and edited as one.
-- Edits are applied before the cut at the tile edge, so an enlarged landmark is still
-  trimmed there. They last until a new area is fetched; the export will use them.
-- On the quick tile data editing waits for the detailed data, whose building ids differ.
+![A building selected in 3D and enlarged 2.5 times, with the edit panel](docs/screenshots/06-edit-building.png)
 
-## Code
+### 5. Export *(coming next)*
 
-| File | Role |
-|---|---|
-| `src/main.ts` | Map setup, panel wiring |
-| `src/search.ts` | Photon city search box |
-| `src/nav.ts` | Orbit drag and the on-screen navigation control |
-| `src/draw.ts` | Drag-to-draw on the map, edit handles |
-| `src/selection.ts` | The `Selection` type (center, size, rotation; points for free shapes), persistence |
-| `src/geo.ts` | Spherical geometry: distance, destination, bearing, area, point in polygon |
-| `src/area-data.ts` | Fetches OSM data and terrain for a selection, per-layer summary |
-| `src/overpass.ts` | Overpass client: mirrors, retries, timeout, browser cache |
-| `src/osm.ts` | Overpass query, sorting into categories, multipolygons, building heights |
-| `src/coast.ts` | Sea polygons from coastline lines |
-| `src/terrain.ts` | Terrarium tiles → elevation grid |
-| `src/preview.ts` | Map layers showing the fetched data |
-| `src/eta.ts` | Download time estimate, learning from past downloads |
-| `src/vector-tiles.ts` | Quick data from the base map's vector tiles |
-| `src/clip.ts` | Cuts the data to the selection outline |
-| `src/edits.ts` | Building edits (delete, enlarge) and applying them |
-| `src/local.ts` | Local metric frame (meters east/south of the selection center) |
-| `src/viewer/viewer.ts` | Three.js scene, lights, camera, layer toggles |
-| `src/viewer/terrain-mesh.ts` | Terrain tile: grid cut to the shape, walls, base |
-| `src/viewer/ground.ts` | Flat layers painted into the terrain texture |
-| `src/viewer/objects.ts` | Buildings, structures, bridges, trees |
-| `src/viewer/roofs.ts` | Roof shapes |
-| `src/viewer/mesh.ts` | Triangle collector, OSM color parsing |
+STL and 3MF export, with print size in millimeters and a base, is the next milestone.
 
-## Data sources and terms
+The **[user guide](docs/guide.md)** covers every control, what the data contains and
+the known limits.
 
-Going public means respecting each service's terms:
+## Data and credits
 
-- **OpenFreeMap**: free, no limits; keep the OSM attribution.
-- **Photon** (komoot's public instance): fair use only. For heavy public traffic,
-  self-host Photon or move to a commercial geocoder.
-- **OpenFreeMap vector tiles** (quick data): same terms as the base map.
-- **Overpass API**: shared public servers, fair use. Heavy public traffic needs our own
-  instance or a commercial OSM extract service.
-- **AWS Terrain Tiles**: open data, free, no key.
-- **OSM data** is ODbL: exported models must credit "© OpenStreetMap contributors".
-- **Google Photorealistic 3D Tiles** are deliberately **not** used: their terms forbid
-  exporting the meshes, which is the whole point here.
+| What | Source | Terms |
+|---|---|---|
+| Map, building and road data | [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors | ODbL: credit "© OpenStreetMap contributors" |
+| Map tiles and quick data | [OpenFreeMap](https://openfreemap.org) | Free, no key |
+| City search | [Photon](https://photon.komoot.io) by komoot | Fair use |
+| Detailed OSM data | [Overpass API](https://overpass-api.de) public servers | Fair use |
+| Terrain | [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) | Open data |
 
-See [ROADMAP.md](ROADMAP.md) for what's next.
+Models made with map2stl contain OpenStreetMap data and must credit
+**"© OpenStreetMap contributors"**.
+
+Google's photorealistic 3D tiles are deliberately not used: their terms forbid exporting
+the meshes, which is the whole point here.
+
+## Project
+
+- [User guide](docs/guide.md): every feature in detail.
+- [Architecture](docs/architecture.md): how the code is organized, for contributors.
+- [Roadmap](ROADMAP.md): what's next.
+- [Changelog](CHANGELOG.md): what changed in each version.
+
+Built with [MapLibre GL JS](https://maplibre.org), [Three.js](https://threejs.org),
+[Vite](https://vite.dev) and TypeScript.
