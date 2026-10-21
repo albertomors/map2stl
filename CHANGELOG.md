@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-21
+
+Milestone 3: the 3D view, plus free shapes and quick data.
+
 ### Added
 
 - **3D view** (milestone 3): the selection as a terrain tile with side walls and base,
