@@ -6,7 +6,7 @@ Search a city, draw the area you want, and map2stl downloads its buildings, terr
 roads and greenery from open data, shows them in 3D, and lets you remove, enlarge or
 stretch any object before printing.
 
-![Nidarosdomen and the Nidelva river loop in Trondheim, as a 3D tile: the cathedral, old town, bridges, parks and trees](docs/screenshots/01-3d-view.png)
+![Nidarosdomen and the Nidelva river loop in Trondheim, as a 3D tile: the cathedral, old town, bridges, parks and trees](docs/screenshots/trondheim-01-3d-view.png)
 
 > **Status:** work in progress. Selecting an area, downloading the data, the 3D view and
 > object editing work today. **Export to STL / 3MF is the next milestone** (see the
@@ -56,12 +56,12 @@ the area tilted: this hexagon was drawn on a map turned 44°, and it covers 1.34
 Afterwards, drag the handles: **center** moves the shape, **corner** resizes it, **top**
 rotates it. Click outside the shape to clear it.
 
-![A hexagon over Nidarosdomen and the Nidelva loop, with the move, resize and rotate handles and the size, area and rotation in the panel](docs/screenshots/02-select-area.png)
+![A hexagon over Nidarosdomen and the Nidelva loop, with the move, resize and rotate handles and the size, area and rotation in the panel](docs/screenshots/trondheim-02-select-area.png)
 
 For any other outline, choose **Free**: click point by point, then double-click (or click
 the first point) to close it. Here, just the cathedral grounds:
 
-![A free shape being drawn point by point around the cathedral grounds](docs/screenshots/03-free-shape.png)
+![A free shape being drawn point by point around the cathedral grounds](docs/screenshots/trondheim-03-free-shape.png)
 
 ### 2. Fetch the 3D data
 
@@ -70,12 +70,12 @@ so you can already look around. The detailed version (roof shapes, the cathedral
 parts, trees, walls, parking…) follows, usually in 30–90 s, with an estimate of the time
 left, and replaces the quick one in place.
 
-![The quick version on the map while the detailed data downloads, with about 35 s left](docs/screenshots/04-quick-data-loading.png)
+![The quick version on the map while the detailed data downloads, with about 35 s left](docs/screenshots/trondheim-04-quick-data-loading.png)
 
 Each category gets a checkbox and a count: here 1,666 buildings, 1,362 roads and paths,
 1,265 trees. Uncheck what you don't want in the model.
 
-![The detailed data on the map: buildings, bridges, roads, the river, parks and trees inside the hexagon](docs/screenshots/05-data-preview.png)
+![The detailed data on the map: buildings, bridges, roads, the river, parks and trees inside the hexagon](docs/screenshots/trondheim-05-data-preview.png)
 
 ### 3. Look at it in 3D
 
@@ -90,7 +90,7 @@ Click an object to select it. **Delete** removes it; **Size** enlarges it from i
 selected as one building) is enlarged ×1.5 so it stands out in the print. **Reset**,
 **Restore deleted** and **Reset all** undo.
 
-![Nidarosdomen selected in 3D and enlarged 1.5 times, with the edit panel showing 82 m, pyramidal roof, 161 parts](docs/screenshots/06-edit-building.png)
+![Nidarosdomen selected in 3D and enlarged 1.5 times, with the edit panel showing 82 m, pyramidal roof, 161 parts](docs/screenshots/trondheim-06-edit-building.png)
 
 ### 5. Export *(coming next)*
 
