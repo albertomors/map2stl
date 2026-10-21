@@ -7,16 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-21
+
+Milestone 4: editing objects in the 3D view.
+
 ### Added
 
-- README with screenshots and a quick start, a user guide (`docs/guide.md`) and an
-  architecture overview (`docs/architecture.md`).
+- README walkthrough of Nidarosdomen in Trondheim with screenshots, a user guide
+  (`docs/guide.md`) and an architecture overview (`docs/architecture.md`).
 - **Object editing** (milestone 4): click a building, tree, bridge or structure (pier,
   wall, tower…) in the 3D view to select it, then delete it, enlarge it ×1–4 from its base
   (all dimensions), or stretch its height alone; Reset per object. Multi-part buildings are
   edited as one.
 - **Restore deleted** brings back deleted objects; **Reset all** clears every edit and puts
   both height multipliers back to their defaults.
+
+### Fixed
+
+- A multi-part building shows the name of the whole building (Nidarosdomen), not of its
+  first named part.
 
 ### Changed
 

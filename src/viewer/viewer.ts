@@ -344,9 +344,11 @@ export class Viewer {
       const from = { height: 'tagged', levels: 'from floors', estimate: 'estimated' }[tallest.heightFrom];
       const roof = tallest.roofShape && tallest.roofShape !== 'flat' ? `${tallest.roofShape} roof` : 'flat roof';
       const count = parts.length > 1 ? ` · ${parts.length} parts` : '';
-      return { key, title: parts.find((b) => b.name)?.name ?? 'Unnamed building', info: `${m(tallest.height)} (${from}) · ${roof}${count}`, canSize: true, canHeight: true };
+      return { key, title: parts[0].groupName ?? parts.find((b) => b.name)?.name ?? 'Unnamed building', info: `${m(tallest.height)} (${from}) · ${roof}${count}`, canSize: true, canHeight: true };
     }
     const area = osm.structureAreas.find((s) => s.id === key);
+    // A bridge deck spans between banks: resizing it would lift it off them.
+    if (area?.kind === 'bridge') return { key, title: 'Bridge deck', info: 'Deck outline', canSize: false, canHeight: false };
     if (area) return { key, title: nice(area.kind), info: m(area.height), canSize: true, canHeight: true };
     const wall = osm.structureLines.find((s) => s.id === key);
     if (wall) return { key, title: nice(wall.kind), info: `${m(wall.height)} tall`, canSize: false, canHeight: true };

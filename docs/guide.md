@@ -108,8 +108,8 @@ How heights are decided:
 Press **Open 3D view**. Three.js loads the first time, which takes a moment.
 
 - **Left-drag:** orbit. **Right-drag:** pan. **Scroll:** zoom.
-- **Terrain height** (×1–5) exaggerates the terrain; **Building height** (×0.5–3) everything
-  standing on it. Both rebuild the scene, which takes a moment on big areas (making them
+- **Terrain height multiplier** (×1–5) exaggerates the terrain; **Building height
+  multiplier** (×0.5–3) everything standing on it. Both rebuild the scene, which takes a moment on big areas (making them
   instant is on the roadmap).
 - The layer **checkboxes** work in 3D too.
 - **Back to map** returns to the map.
@@ -129,22 +129,28 @@ What you see:
 - **Everything is cut at the tile edge.** Buildings crossing it get a flat face and a flat
   roof there.
 
-## 5. Editing buildings
+## 5. Editing objects
 
-In the 3D view, **click a building** to select it. It gets an orange outline, and the panel
-shows its name, height (and whether it's tagged, from floors or estimated), roof and number
-of parts. Click empty space or press **Esc** to deselect.
+In the 3D view, **click a building, tree, bridge or structure** (pier, wall, tower, mast…)
+to select it. It turns orange, and the panel shows its name, height (and whether it's
+tagged, from floors or estimated), roof and number of parts. Click empty space or press
+**Esc** to deselect.
 
-- **Delete**, or the Delete key, removes it.
-- **Size** (×1–4) enlarges it from the center of its base: footprint, height and roof grow
-  together and it stays on the ground. **Reset** puts it back.
-- **Restore all** (under the 3D controls) brings back every deleted building.
-- A building made of several parts is selected and edited as one.
+| Control | Effect | Available for |
+|---|---|---|
+| **Delete** (or the Delete key) | Removes it | Everything |
+| **Size** ×1–4 | Enlarges it from the center of its base, all dimensions together | Buildings, trees, towers, piers |
+| **Height only** ×0.5–4 | Stretches it vertically, on top of Size | Buildings, trees, towers, piers, walls |
+| **Reset** | Puts this object back | Everything |
+
+- **Restore deleted** (under the 3D controls) brings back every deleted object.
+  **Reset all** clears every edit and puts both height multipliers back to their defaults.
+- A building made of several parts (Nidarosdomen has 161) is selected and edited as one,
+  under the name of the whole building.
 - Edits are applied before the cut at the tile edge, so an enlarged landmark is still
-  trimmed there.
-- Edits last until you fetch a new area; the export will use them.
-- On the quick version, editing waits for the detailed data, because building identities
-  change when it arrives.
+  trimmed there. They last until you fetch a new area; the export will use them.
+- Selecting waits for the detailed data: the quick version's buildings are split at tile
+  seams and have no parts, and their identities change when the detailed data arrives.
 
 ## Known limits
 

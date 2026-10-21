@@ -3,13 +3,13 @@
 **Pick any place on Earth and turn it into a 3D-printable model.**
 
 Search a city, draw the area you want, and map2stl downloads its buildings, terrain, water,
-roads and greenery from open data, shows them in 3D, and lets you remove or enlarge buildings
-before printing.
+roads and greenery from open data, shows them in 3D, and lets you remove, enlarge or
+stretch any object before printing.
 
-![The 3D view of Trondheim's harbor: terrain tile with the sea, river, bridges, rail yard, buildings with pitched roofs and trees](docs/screenshots/01-3d-view.png)
+![Nidarosdomen and the Nidelva river loop in Trondheim, as a 3D tile: the cathedral, old town, bridges, parks and trees](docs/screenshots/01-3d-view.png)
 
 > **Status:** work in progress. Selecting an area, downloading the data, the 3D view and
-> building editing work today. **Export to STL / 3MF is the next milestone** (see the
+> object editing work today. **Export to STL / 3MF is the next milestone** (see the
 > [roadmap](ROADMAP.md)).
 
 ## Features
@@ -19,12 +19,12 @@ before printing.
 - **Four selection shapes**: rectangle, hexagon, circle, or a free shape you click point by
   point. Move, resize and rotate them with handles.
 - **Quick version in seconds**, detailed version in under a minute: buildings with real
-  heights, roof shapes and colors, bridges, piers, walls, towers, roads, rails, water
-  (including the sea), parks and single trees.
+  heights, roof shapes and colors, multi-part landmarks, bridges, piers, walls, towers,
+  roads, water (including the sea), parks and single trees.
 - **3D preview** of the model as it will be printed: a terrain tile cut exactly to your
-  shape, everything trimmed at the edge, with layer toggles and height exaggeration.
-- **Edit buildings**: click one to delete it, or enlarge a landmark so it stands out in the
-  print.
+  shape, everything trimmed at the edge, with layer toggles and height multipliers.
+- **Edit objects**: click a building, tree, bridge or structure to delete it, enlarge it,
+  or stretch its height, so a cathedral or a tower stands out in the print.
 
 ## Quick start
 
@@ -44,46 +44,53 @@ static web server.
 
 ## How to use it
 
+The walkthrough below models the heart of Trondheim, Norway: Nidarosdomen cathedral and the
+old town inside the loop of the Nidelva river.
+
 ### 1. Find the place and select an area
 
-Search a city in the box at the top left, or pan and zoom the map. Pick a shape and drag on
-the map: rectangles from corner to corner, hexagons and circles from the center outward.
-Shapes follow the current view, so rotate the map first if you want the area tilted.
+Search **Trondheim** in the box at the top left. Pick **Hexagon** and drag from the center
+outward. Shapes follow the current view, so rotate the map first (right-drag) if you want
+the area tilted: this hexagon was drawn on a map turned 44°, and it covers 1.34 km².
 
 Afterwards, drag the handles: **center** moves the shape, **corner** resizes it, **top**
 rotates it. Click outside the shape to clear it.
 
-![A circle selected over Trondheim's harbor, with the move, resize and rotate handles](docs/screenshots/02-select-area.png)
+![A hexagon over Nidarosdomen and the Nidelva loop, with the move, resize and rotate handles and the size, area and rotation in the panel](docs/screenshots/02-select-area.png)
 
 For any other outline, choose **Free**: click point by point, then double-click (or click
-the first point) to close it.
+the first point) to close it. Here, just the cathedral grounds:
 
-![A free shape being drawn point by point over Trondheim's old town](docs/screenshots/03-free-shape.png)
+![A free shape being drawn point by point around the cathedral grounds](docs/screenshots/03-free-shape.png)
 
 ### 2. Fetch the 3D data
 
-Press **Fetch 3D data**. A quick version from the map tiles appears in a couple of seconds.
-The detailed version (roof shapes, trees, walls, parking…) follows, usually in 30–90 s,
-with an estimate of the time left, and replaces the quick version in place.
+Press **Fetch 3D data**. A quick version from the map tiles appears in a couple of seconds,
+so you can already look around. The detailed version (roof shapes, the cathedral's 161
+parts, trees, walls, parking…) follows, usually in 30–90 s, with an estimate of the time
+left, and replaces the quick one in place.
 
-![The quick version shown on the map while the detailed data downloads, with the time left](docs/screenshots/04-quick-data-loading.png)
+![The quick version on the map while the detailed data downloads, with about 35 s left](docs/screenshots/04-quick-data-loading.png)
 
-Each category gets a checkbox and a count. Uncheck what you don't want in the model.
+Each category gets a checkbox and a count: here 1,666 buildings, 1,362 roads and paths,
+1,265 trees. Uncheck what you don't want in the model.
 
-![The detailed data previewed on the map: buildings, bridges, piers, roads, water, parks and trees](docs/screenshots/05-data-preview.png)
+![The detailed data on the map: buildings, bridges, roads, the river, parks and trees inside the hexagon](docs/screenshots/05-data-preview.png)
 
 ### 3. Look at it in 3D
 
-Press **Open 3D view**. Left-drag to orbit, right-drag to pan, scroll to zoom. The sliders
-exaggerate the terrain and the buildings; the checkboxes hide layers.
+Press **Open 3D view**. Left-drag to orbit, right-drag to pan, scroll to zoom. The two
+**height multipliers** exaggerate the terrain and the buildings; the checkboxes hide
+layers.
 
-### 4. Edit buildings
+### 4. Edit objects
 
-Click a building to select it. **Delete** removes it; **Size** enlarges it from its base
-(×1–4), handy for making a cathedral or a tower stand out. **Reset** and **Restore all**
-undo.
+Click an object to select it. **Delete** removes it; **Size** enlarges it from its base
+(×1–4); **Height only** stretches it vertically. Here Nidarosdomen (82 m spire, 161 parts,
+selected as one building) is enlarged ×1.5 so it stands out in the print. **Reset**,
+**Restore deleted** and **Reset all** undo.
 
-![A building selected in 3D and enlarged 2.5 times, with the edit panel](docs/screenshots/06-edit-building.png)
+![Nidarosdomen selected in 3D and enlarged 1.5 times, with the edit panel showing 82 m, pyramidal roof, 161 parts](docs/screenshots/06-edit-building.png)
 
 ### 5. Export *(coming next)*
 
