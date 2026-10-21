@@ -6,39 +6,53 @@ import { buildQuery, parse, type OsmData } from './osm';
 import { overpass } from './overpass';
 import { describe, type Selection } from './selection';
 import { fetchTerrain, type Terrain } from './terrain';
+import { fetchTileData } from './vector-tiles';
 
 export interface AreaData {
   selection: Selection;
   osm: OsmData;
   terrain: Terrain;
+  // 'tiles': the quick version from the base map's vector tiles, while 'full' (Overpass:
+  // roofs, colors, trees, walls…) is still on its way, or if it failed.
+  detail: 'tiles' | 'full';
 }
 
+// Progress of the detailed (Overpass) download, the only slow part.
 export interface FetchProgress {
   osmServer?: string;
   osmBytes: number;
   osmCached: boolean;
   osmDone: boolean;
-  tilesDone: number;
-  tilesTotal: number;
 }
 
+// Calls `onQuick` with the tile version as soon as it's ready (a second or two), then
+// resolves with the full version. If the full version fails, the quick one stays usable.
 export async function fetchAreaData(
   selection: Selection,
   signal: AbortSignal,
   onProgress: (p: FetchProgress) => void,
+  onQuick: (data: AreaData) => void,
 ): Promise<AreaData> {
   const { ring, bbox } = describe(selection);
-  const progress: FetchProgress = { osmBytes: 0, osmCached: false, osmDone: false, tilesDone: 0, tilesTotal: 0 };
+  const progress: FetchProgress = { osmBytes: 0, osmCached: false, osmDone: false };
   const report = (change: Partial<FetchProgress>) => onProgress(Object.assign(progress, change));
 
-  const [osm, terrain] = await Promise.all([
-    overpass(buildQuery(bbox), signal, ({ server, bytes, cached }) => report({ osmServer: server, osmBytes: bytes, osmCached: cached })).then((res) => {
-      report({ osmDone: true });
-      return parse(res.elements, ring);
-    }),
-    fetchTerrain(bbox, signal, (tilesDone, tilesTotal) => report({ tilesDone, tilesTotal })),
-  ]);
-  return { selection, osm, terrain };
+  const terrain = fetchTerrain(bbox, signal, () => {});
+  let fullArrived = false;
+  Promise.all([fetchTileData(bbox, ring, signal), terrain])
+    .then(([osm, t]) => {
+      if (!fullArrived) onQuick({ selection, osm, terrain: t, detail: 'tiles' });
+    })
+    // Quick data is a bonus: without it the full download still comes.
+    .catch((err) => signal.aborted || console.warn('Quick tile data failed', err));
+
+  const res = await overpass(buildQuery(bbox), signal, ({ server, bytes, cached }) =>
+    report({ osmServer: server, osmBytes: bytes, osmCached: cached }),
+  );
+  report({ osmDone: true });
+  const osm = parse(res.elements, ring);
+  fullArrived = true;
+  return { selection, osm, terrain: await terrain, detail: 'full' };
 }
 
 export type Layer = 'buildings' | 'structures' | 'roads' | 'railways' | 'paved' | 'water' | 'green' | 'surfaces' | 'trees';
@@ -50,7 +64,7 @@ export interface LayerSummary {
   detail: string;
 }
 
-export function summarize({ osm }: AreaData): LayerSummary[] {
+export function summarize({ osm, detail }: AreaData): LayerSummary[] {
   const km = (lines: { path: [number, number][] }[]) =>
     `${(lines.reduce((sum, l) => sum + pathLength(l.path), 0) / 1000).toFixed(1)} km`;
   const pct = (n: number) => (osm.buildings.length ? Math.round((100 * n) / osm.buildings.length) : 0);
@@ -65,8 +79,11 @@ export function summarize({ osm }: AreaData): LayerSummary[] {
       layer: 'buildings',
       label: 'Buildings',
       count: osm.buildings.length,
-      detail: `${pct(osm.buildings.filter((b) => b.heightFrom !== 'estimate').length)}% real heights, ` +
-        `${pct(osm.buildings.filter((b) => b.roofShape && b.roofShape !== 'flat').length)}% shaped roofs`,
+      detail:
+        detail === 'tiles'
+          ? 'heights from map tiles, flat roofs'
+          : `${pct(osm.buildings.filter((b) => b.heightFrom !== 'estimate').length)}% real heights, ` +
+            `${pct(osm.buildings.filter((b) => b.roofShape && b.roofShape !== 'flat').length)}% shaped roofs`,
     },
     {
       layer: 'structures',

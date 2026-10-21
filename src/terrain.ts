@@ -105,7 +105,13 @@ export function elevationAt(t: Terrain, lng: number, lat: number): number {
   return top * (1 - fy) + bottom * fy;
 }
 
-// Longitude/latitude of the center of grid pixel (col, row).
+// Grid position of a point: fractional (col, row) in pixel-center units, the inverse of
+// pixelLngLat.
+export function lngLatPixel(t: Terrain, [lng, lat]: [number, number]): [number, number] {
+  return [worldX(lng, t.zoom) - worldX(t.bbox[0], t.zoom) - 0.5, worldY(lat, t.zoom) - worldY(t.bbox[3], t.zoom) - 0.5];
+}
+
+// Longitude/latitude of the center of grid pixel (col, row); fractional positions work too.
 export function pixelLngLat(t: Terrain, col: number, row: number): [number, number] {
   const x0 = worldX(t.bbox[0], t.zoom);
   const y0 = worldY(t.bbox[3], t.zoom);

@@ -33,6 +33,9 @@ export interface Line {
   width: number;
   // Raised above what's under it: bridges must not print flat on the river.
   bridge?: boolean;
+  // The way's real end points, kept when the line is cut to the selection: a bridge's deck
+  // height comes from its banks, not from the middle of the river where it was cut.
+  ends?: [LngLat, LngLat];
 }
 
 export interface Area extends Polygon {
@@ -147,9 +150,9 @@ export function parse(elements: OverpassElement[], ring: LngLat[]): OsmData {
 
     const isPart = !!t['building:part'] && t['building:part'] !== 'no';
     if (isPart || (t.building && t.building !== 'no')) {
-      // Whole buildings only: one cut at the edge of the selection would print as a broken wall.
+      // Everything touching the selection: the 3D view and export cut it at the edge.
       for (const poly of polygons(el)) {
-        if (!pointInRing(centroid(poly.outer), ring)) continue;
+        if (!intersectsRing(poly.outer, ring, true)) continue;
         (isPart ? parts : outlines).push({ ...poly, id: `${el.type}/${el.id}`, ...buildingHeight(t, isPart), ...roof(t), name: t.name });
       }
       continue;

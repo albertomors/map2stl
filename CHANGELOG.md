@@ -15,16 +15,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and building height.
 - **Free shape** selection: click points, double-click or click the first point to close.
   The area shows while drawing; edges that would cross are refused.
+- **Quick data in 1–3 s** from the base map's vector tiles, shown on the map and in 3D
+  while the detailed Overpass download runs; the detailed version replaces it in place, and
+  the quick one stays if every server fails.
+- Everything in the 3D view is cut to the selection outline: terrain edges are exact
+  instead of stepped, and buildings, bridges, walls and areas stop at the tile edge.
 - **Estimated time left** for the OSM download, from the area (fitted on timed requests)
   and learning from each real download.
 
 ### Changed
 
+- One progress bar, for the detailed download; terrain loads in the background.
 - Rectangles and free shapes resize freely from the corner handle; hexagons and circles
   keep their ratio.
 
 ### Fixed
 
+- Striped shading on roofs and walls in 3D (faces pointing the wrong way).
 - Clicks with a small mouse wobble (4–8 px) no longer get lost while drawing a free shape.
 
 ## [0.2.0] - 2026-10-19

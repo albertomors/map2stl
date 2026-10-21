@@ -51,6 +51,8 @@ let selection: Selection | null = null;
 let loading: AbortController | null = null;
 let areaData: AreaData | null = null;
 const visibleLayers = new Set<Layer>();
+// Layers with something in them, in the data last shown.
+const shownLayers = new Set<Layer>();
 let viewer: Viewer | null = null;
 
 // Wired right away: a click before the map is ready says so instead of doing nothing.
@@ -146,20 +148,30 @@ async function fetchData(sel: Selection) {
   $('data').hidden = false;
   const status = $('data-status');
   status.classList.remove('error');
-  status.textContent = '';
+  status.textContent = 'Loading map data…';
   $('data-progress').hidden = false;
   // Re-render every second too, so a slow server shows a running clock instead of looking stuck.
   const wait: ServerWait = { since: Date.now(), eta: estimateSeconds(etaInput) };
-  let last: FetchProgress = { osmBytes: 0, osmCached: false, osmDone: false, tilesDone: 0, tilesTotal: 0 };
+  let last: FetchProgress = { osmBytes: 0, osmCached: false, osmDone: false };
   const render = () => showProgress(last, wait);
   render();
   const clock = setInterval(render, 1000);
   try {
-    const data = await fetchAreaData(sel, controller.signal, (p) => {
-      last = p;
-      render();
-    });
+    const data = await fetchAreaData(
+      sel,
+      controller.signal,
+      (p) => {
+        last = p;
+        render();
+      },
+      // The quick version from the map tiles: usable right away, replaced when the full one lands.
+      (quick) => {
+        status.textContent = 'Quick version from the map tiles. Roofs, colors, trees and walls are on their way.';
+        showData(quick);
+      },
+    );
     $('data-progress').hidden = true;
+    status.textContent = '';
     // Teach the estimate how long this server really took (cache hits say nothing).
     if (!last.osmCached && wait.doneAt) recordSample(etaInput, (wait.doneAt - wait.since) / 1000);
     showData(data);
@@ -172,7 +184,9 @@ async function fetchData(sel: Selection) {
     console.error('Fetching 3D data failed', err);
     $('data-progress').hidden = true;
     status.classList.add('error');
-    status.textContent = `${(err as Error).message}. Try again in a minute.`;
+    status.textContent = areaData
+      ? `Detailed data failed (${(err as Error).message}): showing the quick version from the map tiles. Fetch again in a minute for roofs, colors, trees and walls.`
+      : `${(err as Error).message}. Try again in a minute.`;
   } finally {
     clearInterval(clock);
     if (loading === controller) {
@@ -196,10 +210,16 @@ function resetData() {
   $('data-terrain').textContent = '';
 }
 
+// Also called a second time when the full version replaces the quick one: layers the user
+// switched off stay off, and an open 3D view updates in place.
 function showData(data: AreaData) {
+  const replacing = areaData !== null;
   areaData = data;
   preview?.show(data);
+  // Only layers that had something to show can have been switched off.
+  const hidden = new Set(replacing ? [...shownLayers].filter((l) => !visibleLayers.has(l)) : []);
   visibleLayers.clear();
+  shownLayers.clear();
   $('open-3d').hidden = false;
   $('data-layers').replaceChildren(
     ...summarize(data).map(({ layer, label, count, detail }) => {
@@ -207,9 +227,11 @@ function showData(data: AreaData) {
       li.classList.toggle('empty', count === 0);
       const box = document.createElement('input');
       box.type = 'checkbox';
-      box.checked = true;
+      box.checked = !hidden.has(layer);
       box.disabled = count === 0;
-      if (count) visibleLayers.add(layer);
+      if (count) shownLayers.add(layer);
+      if (count && box.checked) visibleLayers.add(layer);
+      else preview?.setVisible(layer, false);
       box.addEventListener('change', () => {
         if (box.checked) visibleLayers.add(layer);
         else visibleLayers.delete(layer);
@@ -241,6 +263,7 @@ function showData(data: AreaData) {
   const spacing = distance([t.bbox[0], midLat], [t.bbox[2], midLat]) / t.width;
   $('data-terrain').textContent =
     `Terrain ${Math.round(t.min)}–${Math.round(t.max)} m above sea level, ${t.width}×${t.height} grid (≈${spacing.toFixed(0)} m).`;
+  if (replacing) viewer?.show(data, visibleLayers, scales(), { keepCamera: true });
 }
 
 // Which Overpass server we're waiting on, and since when (reset when it moves to a mirror).
@@ -275,12 +298,6 @@ function showProgress(p: FetchProgress, wait: ServerWait) {
   } else {
     const note = `${wait.server ?? 'The server'} is busier than usual. It gives up after 100 s and the next server is tried.`;
     setBar('progress-osm', `Taking longer than usual… ${formatDuration(seconds)}`, null, note);
-  }
-  if (p.tilesTotal) {
-    const done = p.tilesDone === p.tilesTotal;
-    setBar('progress-terrain', done ? 'Done' : `${p.tilesDone} of ${p.tilesTotal} tiles`, p.tilesDone / p.tilesTotal, '');
-  } else {
-    setBar('progress-terrain', 'Starting…', null, '');
   }
 }
 

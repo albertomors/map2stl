@@ -45,10 +45,19 @@ npm run build    # type-check + production build in dist/
 ### 2. Fetch the 3D data
 
 **Fetch 3D data** downloads everything inside the selection and shows it on the map,
-colored by category, with a checkbox per layer:
+colored by category, with a checkbox per layer. It comes in two steps:
 
-- **OpenStreetMap features** from the [Overpass API](https://overpass-api.de), one toggleable
-  layer each:
+- **Quick version in 1–3 s**, from the base map's own vector tiles (OpenMapTiles zoom 14,
+  OpenFreeMap CDN): buildings with heights and colors, roads and rails with bridges, water
+  including the sea, parks, landcover, piers, runways. The map preview and the 3D view work
+  right away.
+- **Full version** from Overpass (below) replaces it when it arrives, 30–90 s later, adding
+  roof shapes, trees, walls, towers, parking and more. Layers you switched off stay off,
+  and an open 3D view updates in place. If every Overpass server fails, the quick version
+  stays and you can fetch again later.
+
+- **OpenStreetMap features** from the [Overpass API](https://overpass-api.de) (full
+  version), one toggleable layer each:
   - **Buildings** and `building:part`s, with roof shape, roof height and colors when tagged.
   - **Bridges, piers, walls, towers**: bridge decks, piers and breakwaters, walls and city
     walls, towers, chimneys, masts and lighthouses, each with a height.
@@ -59,9 +68,9 @@ colored by category, with a checkbox per layer:
     (OSM stores coasts as lines with the water on their right, not as areas).
   - **Green areas**, **sand, rock, glacier** and single **trees**.
   - Tunnels and underground features are skipped.
-  - Buildings are kept whole when their center is inside the shape (a building cut at the
-    edge would print as a broken wall). Lines and areas are kept when they touch it;
-    cutting them to the shape happens at export.
+  - Everything touching the shape is kept; the 3D view cuts it at the edge like a cookie
+    cutter (buildings get a flat face and a flat roof there, bridges keep their deck
+    height from their real banks).
   - Building height: `height` tag, else `building:levels` × 3 m, else an estimate from the
     building type (1–3 floors). The panel shows how many have real heights.
   - Untagged structures get typical heights (city wall 6 m, chimney 40 m, mast 12 m…).
@@ -83,8 +92,8 @@ The result (`AreaData` in `src/area-data.ts`) is what the 3D view builds from.
 
 **Open 3D view** builds the area in Three.js (loaded only when first opened):
 
-- **Terrain tile** cut to the selection shape, with side walls and a flat base, like the
-  print will be. Where there's sea, the sea floor in the terrain data is flattened to the
+- **Terrain tile** cut exactly along the selection outline (edge cells are cut, not
+  dropped), with side walls and a flat base, like the print will be. Where there's sea, the sea floor in the terrain data is flattened to the
   water surface.
 - **Ground layers** (water, green areas, squares, sand, roads, rails) painted onto the
   terrain as one texture, so they follow every slope.
@@ -113,6 +122,8 @@ The result (`AreaData` in `src/area-data.ts`) is what the 3D view builds from.
 | `src/terrain.ts` | Terrarium tiles → elevation grid |
 | `src/preview.ts` | Map layers showing the fetched data |
 | `src/eta.ts` | Download time estimate, learning from past downloads |
+| `src/vector-tiles.ts` | Quick data from the base map's vector tiles |
+| `src/clip.ts` | Cuts the data to the selection outline |
 | `src/local.ts` | Local metric frame (meters east/south of the selection center) |
 | `src/viewer/viewer.ts` | Three.js scene, lights, camera, layer toggles |
 | `src/viewer/terrain-mesh.ts` | Terrain tile: grid cut to the shape, walls, base |
@@ -128,6 +139,7 @@ Going public means respecting each service's terms:
 - **OpenFreeMap**: free, no limits; keep the OSM attribution.
 - **Photon** (komoot's public instance): fair use only. For heavy public traffic,
   self-host Photon or move to a commercial geocoder.
+- **OpenFreeMap vector tiles** (quick data): same terms as the base map.
 - **Overpass API**: shared public servers, fair use. Heavy public traffic needs our own
   instance or a commercial OSM extract service.
 - **AWS Terrain Tiles**: open data, free, no key.

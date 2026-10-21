@@ -10,7 +10,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@mapbox/vector-tile": "^3.0.0",
     "maplibre-gl": "^6.15.0",
+    "pbf": "^5.1.2",
+    "polygon-clipping": "^0.15.7",
     "three": "^0.186.1"
   },
   "devDependencies": {

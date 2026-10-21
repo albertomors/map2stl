@@ -22,9 +22,6 @@ Open work only: built items move to the README and CHANGELOG.
 Overpass is the most complete OSM source but the slowest part of the app (40–100 s for a
 city center, and the public servers are often busy).
 
-- Instant first preview from the base map's vector tiles (OpenMapTiles z14, already loaded):
-  buildings with heights, roads with bridges, water, landuse. Fetch Overpass in the
-  background and swap in the detailed version (roofs, colors, trees, walls) when it arrives.
 - Add the `overpass.kumi.systems` mirror.
 - Overture Maps buildings to fill gaps in OSM heights (cloud GeoParquet, no API).
 - Our own Overpass instance (or a commercial extract service) before going public.

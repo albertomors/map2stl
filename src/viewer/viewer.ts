@@ -18,6 +18,7 @@ import {
 } from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import type { AreaData, Layer } from '../area-data';
+import { clipToSelection } from '../clip';
 import { describe } from '../selection';
 import { LocalFrame } from '../local';
 import { elevationAt } from '../terrain';
@@ -45,6 +46,8 @@ export class Viewer {
   private layerObjects = new Map<Layer, Object3D[]>();
   private ground: GroundTexture | null = null;
   private data: AreaData | null = null;
+  // The data cut to the selection, kept across rebuilds (sliders don't change it).
+  private clipped: ReturnType<typeof clipToSelection> | null = null;
   private visible = new Set<Layer>();
   private resize: ResizeObserver;
 
@@ -59,8 +62,7 @@ export class Viewer {
     this.scene.add(new HemisphereLight('#f4f7fb', '#8a8070', 1.4));
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
-    this.sun.shadow.bias = -0.0004;
-    this.sun.shadow.normalBias = 0.6;
+    this.sun.shadow.bias = -0.0005;
     this.scene.add(this.sun, this.sun.target, this.content);
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -77,10 +79,14 @@ export class Viewer {
     });
   }
 
-  show(data: AreaData, visible: Set<Layer>, scales: ViewScales) {
+  // `keepCamera` when new data replaces what's shown (the full version after the quick one).
+  show(data: AreaData, visible: Set<Layer>, scales: ViewScales, { keepCamera = false } = {}) {
     this.data = data;
+    this.clipped = null;
+    this.ground?.dispose();
+    this.ground = null;
     this.visible = new Set(visible);
-    this.build(scales, true);
+    this.build(scales, !keepCamera);
   }
 
   setScales(scales: ViewScales) {
@@ -106,10 +112,12 @@ export class Viewer {
 
   private build(scales: ViewScales, frameCamera: boolean) {
     const data = this.data!;
-    const { osm, terrain, selection } = data;
+    const { terrain, selection } = data;
     this.clear();
 
     const ring = describe(selection).ring;
+    // Nothing may stick out past the tile edge.
+    const osm = this.clipped ??= clipToSelection(data.osm, ring);
     const frame = new LocalFrame(selection.center);
     const local = ring.map((p) => frame.toLocal(p));
     const bounds: Bounds = {
@@ -164,6 +172,9 @@ export class Viewer {
     cam.near = 1;
     cam.far = radius * 6;
     cam.updateProjectionMatrix();
+    // Push shadow lookups out by about two shadow-map pixels: less and walls shade themselves
+    // in stripes ("shadow acne"), much more and shadows detach from the buildings.
+    this.sun.shadow.normalBias = 2 * ((2.4 * radius) / this.sun.shadow.mapSize.x);
     this.sun.position.set(-radius * 1.2, radius * 2, radius * 1.4);
     this.sun.target.position.set(0, 0, 0);
 

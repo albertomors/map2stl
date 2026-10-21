@@ -87,13 +87,13 @@ function canonical(shape: string): string {
 function strip(m: MeshBuilder, lower: Vec3[], upper: Vec3[], color: Color) {
   for (let i = 0; i < lower.length; i++) {
     const j = (i + 1) % lower.length;
-    m.tri(lower[i], lower[j], upper[j], color);
-    m.tri(lower[i], upper[j], upper[i], color);
+    m.tri(lower[i], lower[j], upper[j], color, 'up');
+    m.tri(lower[i], upper[j], upper[i], color, 'up');
   }
 }
 
 function fanCap(m: MeshBuilder, ring: Vec3[], color: Color) {
-  for (let i = 1; i < ring.length - 1; i++) m.tri(ring[0], ring[i + 1], ring[i], color);
+  for (let i = 1; i < ring.length - 1; i++) m.tri(ring[0], ring[i + 1], ring[i], color, 'up');
 }
 
 // Smallest-area rectangle aligned with one of the footprint's edges.

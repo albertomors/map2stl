@@ -9,15 +9,21 @@ export class MeshBuilder {
   private positions: number[] = [];
   private colors: number[] = [];
 
-  tri(a: Vec3, b: Vec3, c: Vec3, color: Color) {
+  // `facing` makes the face point up or down whatever order the corners came in: lighting
+  // and shadow offsets go along the normal, so a roof facing down shades itself in stripes.
+  tri(a: Vec3, b: Vec3, c: Vec3, color: Color, facing?: 'up' | 'down') {
+    if (facing) {
+      const ny = (b[2] - a[2]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[2] - a[2]);
+      if ((facing === 'up') !== (ny > 0)) [b, c] = [c, b];
+    }
     this.positions.push(...a, ...b, ...c);
     for (let i = 0; i < 3; i++) this.colors.push(color.r, color.g, color.b);
   }
 
   // Corners in order around the quad.
-  quad(a: Vec3, b: Vec3, c: Vec3, d: Vec3, color: Color) {
-    this.tri(a, b, c, color);
-    this.tri(a, c, d, color);
+  quad(a: Vec3, b: Vec3, c: Vec3, d: Vec3, color: Color, facing?: 'up' | 'down') {
+    this.tri(a, b, c, color, facing);
+    this.tri(a, c, d, color, facing);
   }
 
   get empty(): boolean {

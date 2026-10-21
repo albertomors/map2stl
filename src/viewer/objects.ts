@@ -52,11 +52,15 @@ export function buildBuildings(buildings: Building[], at: Placement): BufferGeom
     const wall = tagColor(b.colour, COLORS.wall);
     const roof = tagColor(b.roofColour, shape === 'flat' ? COLORS.flatRoof : COLORS.roof);
 
-    for (const ring of [outer, ...holes]) walls(m, ring, base, eave, wall);
+    walls(m, outer, base, eave, wall);
+    for (const h of holes) walls(m, h, base, eave, wall, true);
     if (!buildRoof(m, outer, eave, rise, shape, roof, wall)) {
       flatCap(m, outer, holes, base + total, roof);
       // The rise was meant for a roof this footprint can't take: walls go all the way up.
-      if (rise > 0) for (const ring of [outer, ...holes]) walls(m, ring, eave, base + total, wall);
+      if (rise > 0) {
+        walls(m, outer, eave, base + total, wall);
+        for (const h of holes) walls(m, h, eave, base + total, wall, true);
+      }
     }
   }
   return m.empty ? null : m.build();
@@ -79,7 +83,8 @@ export function buildBridges(lines: Line[], at: Placement, color: Color): Buffer
   const m = new MeshBuilder();
   for (const l of lines) {
     if (!l.bridge) continue;
-    const ends = [at.elevation(l.path[0]), at.elevation(l.path[l.path.length - 1])];
+    const [first, last] = l.ends ?? [l.path[0], l.path[l.path.length - 1]];
+    const ends = [at.elevation(first), at.elevation(last)];
     const top = (Math.max(...ends) * at.terrainScale) + BRIDGE_CLEARANCE_M * at.heightScale;
     ribbon(m, l.path, at, l.width, top - BRIDGE_DECK_M * at.heightScale, top, color);
   }
@@ -110,9 +115,10 @@ function structureArea(m: MeshBuilder, s: StructureArea, at: Placement, color: C
   const ground = (s.kind === 'bridge' ? Math.max(...heights) : Math.min(...heights)) * at.terrainScale;
   const top = ground + s.height * at.heightScale + (s.kind === 'bridge' ? BRIDGE_CLEARANCE_M * at.heightScale : 0);
   const bottom = s.kind === 'bridge' ? top - BRIDGE_DECK_M * at.heightScale : ground;
-  for (const ring of [outer, ...holes]) walls(m, ring, bottom, top, color);
+  walls(m, outer, bottom, top, color);
+  for (const h of holes) walls(m, h, bottom, top, color, true);
   flatCap(m, outer, holes, top, color);
-  if (s.kind === 'bridge') flatCap(m, outer, holes, bottom, color);
+  if (s.kind === 'bridge') flatCap(m, outer, holes, bottom, color, 'down');
 }
 
 function tower(m: MeshBuilder, t: Tower, at: Placement, color: Color) {
@@ -143,8 +149,11 @@ function ribbon(m: MeshBuilder, path: LngLat[], at: Placement, width: number, bo
   }
 }
 
-function walls(m: MeshBuilder, ring: P[], bottom: number, top: number, color: Color) {
+// Faces point away from the solid: outer rings go one way round, holes the other.
+function walls(m: MeshBuilder, ring: P[], bottom: number, top: number, color: Color, hole = false) {
   if (top - bottom < 1e-3) return;
+  // In plan (x east, z south) a negative signed area makes these quads face outward.
+  if ((signedArea(ring) < 0) === hole) ring = [...ring].reverse();
   for (let i = 0; i < ring.length; i++) {
     const [x0, z0] = ring[i];
     const [x1, z1] = ring[(i + 1) % ring.length];
@@ -152,12 +161,22 @@ function walls(m: MeshBuilder, ring: P[], bottom: number, top: number, color: Co
   }
 }
 
-function flatCap(m: MeshBuilder, outer: P[], holes: P[][], y: number, color: Color) {
+function flatCap(m: MeshBuilder, outer: P[], holes: P[][], y: number, color: Color, facing: 'up' | 'down' = 'up') {
   const v = (p: P) => new Vector2(p[0], p[1]);
   const contour = outer.map(v);
   const holeVs = holes.map((h) => h.map(v));
   const all: Vec3[] = [...outer, ...holes.flat()].map(([x, z]) => [x, y, z]);
-  for (const [a, b, c] of ShapeUtils.triangulateShape(contour, holeVs)) m.tri(all[a], all[b], all[c], color);
+  for (const [a, b, c] of ShapeUtils.triangulateShape(contour, holeVs)) m.tri(all[a], all[b], all[c], color, facing);
+}
+
+function signedArea(ring: P[]): number {
+  let a = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const [x0, z0] = ring[i];
+    const [x1, z1] = ring[(i + 1) % ring.length];
+    a += x0 * z1 - x1 * z0;
+  }
+  return a / 2;
 }
 
 // Local plan coordinates without the closing duplicate.
