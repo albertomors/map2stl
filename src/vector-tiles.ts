@@ -87,7 +87,7 @@ function readTile(tile: VectorTile, x: number, y: number, ring: LngLat[], data: 
     const height = Number(p.render_height) || 5;
     const minHeight = Number(p.render_min_height) || 0;
     for (const poly of polys) {
-      data.buildings.push({ ...poly, id: 'tile', height, minHeight, heightFrom: 'height', colour: p.colour as string | undefined } satisfies Building);
+      data.buildings.push({ ...poly, id: `tile/${data.buildings.length}`, height, minHeight, heightFrom: 'height', colour: p.colour as string | undefined } satisfies Building);
     }
   });
 

@@ -73,7 +73,27 @@ nom<!doctype html>
           <span>Building height</span><output id="height-scale-value"></output>
           <input id="height-scale" type="range" min="0.5" max="3" step="0.1" value="1" />
         </label>
-        <p class="hint">Left-drag to orbit · right-drag to pan · scroll to zoom</p>
+        <p class="hint">Left-drag to orbit · right-drag to pan · scroll to zoom · click a building to edit it</p>
+        <p id="edits-summary" class="hint" hidden>
+          <span id="edits-count"></span> · <button id="restore-all" class="link">Restore all</button>
+        </p>
+      </section>
+
+      <section id="building-edit" class="view3d-only" hidden>
+        <h2>Selected building</h2>
+        <p id="building-name" class="building-name"></p>
+        <p id="building-info" class="hint"></p>
+        <label class="slider">
+          <span>Size</span><output id="building-scale-value"></output>
+          <input id="building-scale" type="range" min="1" max="4" step="0.1" value="1" />
+        </label>
+        <div class="actions">
+          <button id="building-delete">Delete</button>
+          <button id="building-reset" class="secondary">Reset</button>
+        </div>
+        <p id="building-readonly" class="hint" hidden>
+          Editing becomes available when the detailed data arrives (building ids change then).
+        </p>
       </section>
 
       <section id="data" hidden>

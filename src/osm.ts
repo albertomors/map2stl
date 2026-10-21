@@ -24,6 +24,9 @@ export interface Building extends Polygon {
   colour?: string;
   roofColour?: string;
   name?: string;
+  // For building:parts, the outline they belong to: a cathedral's nave, towers and spires
+  // are selected and edited together.
+  group?: string;
 }
 
 export interface Line {
@@ -222,7 +225,11 @@ export function parse(elements: OverpassElement[], ring: LngLat[]): OsmData {
   const covered = new Set<Building>();
   for (const part of parts) {
     const c = centroid(part.outer);
-    for (const o of outlines) if (!covered.has(o) && pointInRing(c, o.outer)) covered.add(o);
+    const owner = outlines.find((o) => pointInRing(c, o.outer));
+    if (!owner) continue;
+    covered.add(owner);
+    part.group = owner.id;
+    part.name ??= owner.name;
   }
   data.buildings = [...outlines.filter((o) => !covered.has(o)), ...parts];
 

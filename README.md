@@ -105,6 +105,20 @@ The result (`AreaData` in `src/area-data.ts`) is what the 3D view builds from.
 - The layer checkboxes switch layers in 3D too. Sliders: **terrain height** (×1–5) and
   **building height** (×0.5–3). Left-drag orbits, right-drag pans, scroll zooms.
 
+### 4. Edit buildings
+
+In the 3D view, **click a building** to select it (orange outline; a drag still orbits).
+The panel shows its name, height (and where it comes from), roof and number of parts.
+
+- **Delete** (button or the Delete key). **Restore all** brings deleted buildings back.
+- **Size** ×1–4 enlarges it from the center of its base: footprint, height and roof grow
+  together and it stays on the ground. **Reset** puts it back.
+- Multi-part buildings (`building:part`, e.g. a cathedral's nave, towers and spires) are
+  selected and edited as one.
+- Edits are applied before the cut at the tile edge, so an enlarged landmark is still
+  trimmed there. They last until a new area is fetched; the export will use them.
+- On the quick tile data editing waits for the detailed data, whose building ids differ.
+
 ## Code
 
 | File | Role |
@@ -124,6 +138,7 @@ The result (`AreaData` in `src/area-data.ts`) is what the 3D view builds from.
 | `src/eta.ts` | Download time estimate, learning from past downloads |
 | `src/vector-tiles.ts` | Quick data from the base map's vector tiles |
 | `src/clip.ts` | Cuts the data to the selection outline |
+| `src/edits.ts` | Building edits (delete, enlarge) and applying them |
 | `src/local.ts` | Local metric frame (meters east/south of the selection center) |
 | `src/viewer/viewer.ts` | Three.js scene, lights, camera, layer toggles |
 | `src/viewer/terrain-mesh.ts` | Terrain tile: grid cut to the shape, walls, base |

@@ -10,7 +10,8 @@ import { setupNavigation } from './nav';
 import { DataPreview, LAYER_COLORS } from './preview';
 import { setupSearch } from './search';
 import { describe, loadSelection, saveSelection, type Selection, type ShapeKind } from './selection';
-import type { Viewer, ViewScales } from './viewer/viewer';
+import type { BuildingPick, Viewer, ViewScales } from './viewer/viewer';
+import type { Edits } from './edits';
 
 // Above this, OSM downloads in dense cities get slow and the print loses detail.
 const LARGE_AREA_M2 = 10e6;
@@ -54,6 +55,9 @@ const visibleLayers = new Set<Layer>();
 // Layers with something in them, in the data last shown.
 const shownLayers = new Set<Layer>();
 let viewer: Viewer | null = null;
+// Building edits in the 3D view (delete, enlarge), for the current area; the export uses them.
+const edits: Edits = new Map();
+let picked: BuildingPick | null = null;
 
 // Wired right away: a click before the map is ready says so instead of doing nothing.
 toolButtons.forEach((btn) =>
@@ -77,6 +81,38 @@ for (const id of ['terrain-scale', 'height-scale']) {
   });
 }
 showScales();
+
+// Building editing in the 3D view.
+{
+  let timer: number | undefined;
+  $('building-scale').addEventListener('input', () => {
+    if (!picked) return;
+    const scale = Number($<HTMLInputElement>('building-scale').value);
+    edits.set(picked.key, { ...edits.get(picked.key), scale });
+    $('building-scale-value').textContent = `×${scale.toFixed(1)}`;
+    showEditsSummary();
+    clearTimeout(timer);
+    timer = window.setTimeout(() => viewer?.setEdits(edits), 60);
+  });
+}
+$('building-delete').addEventListener('click', () => deletePicked());
+$('building-reset').addEventListener('click', () => {
+  if (!picked) return;
+  edits.delete(picked.key);
+  viewer?.setEdits(edits);
+  showPick(picked);
+  showEditsSummary();
+});
+$('restore-all').addEventListener('click', () => {
+  for (const [key, edit] of edits) if (edit.deleted) edits.delete(key);
+  viewer?.setEdits(edits);
+  showEditsSummary();
+});
+window.addEventListener('keydown', (e) => {
+  if (!picked || (e.target as HTMLElement).closest('input, textarea')) return;
+  if (e.key === 'Delete' || e.key === 'Backspace') deletePicked();
+  else if (e.key === 'Escape') viewer?.select(null);
+});
 
 map.on('error', (e) => console.error('Map error', e.error));
 
@@ -201,6 +237,8 @@ function resetData() {
   loading = null;
   close3d();
   areaData = null;
+  edits.clear();
+  showEditsSummary();
   $('open-3d').hidden = true;
   $('fetch').textContent = 'Fetch 3D data';
   preview?.clear();
@@ -263,7 +301,7 @@ function showData(data: AreaData) {
   const spacing = distance([t.bbox[0], midLat], [t.bbox[2], midLat]) / t.width;
   $('data-terrain').textContent =
     `Terrain ${Math.round(t.min)}–${Math.round(t.max)} m above sea level, ${t.width}×${t.height} grid (≈${spacing.toFixed(0)} m).`;
-  if (replacing) viewer?.show(data, visibleLayers, scales(), { keepCamera: true });
+  if (replacing) viewer?.show(data, visibleLayers, scales(), { keepCamera: true, edits });
 }
 
 // Which Overpass server we're waiting on, and since when (reset when it moves to a mirror).
@@ -330,8 +368,8 @@ async function open3d() {
     const { Viewer } = await import('./viewer/viewer');
     document.body.classList.add('mode-3d');
     $('viewer').hidden = false;
-    viewer = new Viewer($('viewer'));
-    viewer.show(areaData, visibleLayers, scales());
+    viewer = new Viewer($('viewer'), showPick);
+    viewer.show(areaData, visibleLayers, scales(), { edits });
   } catch (err) {
     console.error('3D view failed', err);
     close3d();
@@ -346,6 +384,7 @@ async function open3d() {
 function close3d() {
   viewer?.dispose();
   viewer = null;
+  showPick(null);
   $('viewer').hidden = true;
   document.body.classList.remove('mode-3d');
 }
@@ -361,4 +400,41 @@ function showScales() {
   const { terrain, heights } = scales();
   $('terrain-scale-value').textContent = `×${terrain.toFixed(1)}`;
   $('height-scale-value').textContent = `×${heights.toFixed(1)}`;
+}
+
+function deletePicked() {
+  if (!picked?.editable) return;
+  edits.set(picked.key, { deleted: true });
+  viewer?.setEdits(edits);
+  viewer?.select(null);
+  showEditsSummary();
+}
+
+function showPick(pick: BuildingPick | null) {
+  picked = pick;
+  $('building-edit').hidden = !pick;
+  if (!pick) return;
+  const from = { height: 'tagged', levels: 'from floors', estimate: 'estimated' }[pick.heightFrom];
+  const roof = pick.roofShape && pick.roofShape !== 'flat' ? `${pick.roofShape} roof` : 'flat roof';
+  const parts = pick.parts > 1 ? ` · ${pick.parts} parts` : '';
+  $('building-name').textContent = pick.name ?? 'Unnamed building';
+  $('building-info').textContent = `${Math.round(pick.height)} m (${from}) · ${roof}${parts}`;
+  const scale = edits.get(pick.key)?.scale ?? 1;
+  $<HTMLInputElement>('building-scale').value = String(scale);
+  $('building-scale-value').textContent = `×${scale.toFixed(1)}`;
+  for (const id of ['building-scale', 'building-delete', 'building-reset']) $<HTMLButtonElement>(id).disabled = !pick.editable;
+  $('building-readonly').hidden = pick.editable;
+}
+
+function showEditsSummary() {
+  let deleted = 0;
+  let enlarged = 0;
+  for (const e of edits.values()) {
+    if (e.deleted) deleted++;
+    else if (e.scale && e.scale !== 1) enlarged++;
+  }
+  const parts = [deleted && `${deleted} deleted`, enlarged && `${enlarged} enlarged`].filter(Boolean);
+  $('edits-summary').hidden = !parts.length;
+  $('edits-count').textContent = `${parts.join(', ')} ${deleted + enlarged === 1 ? 'building' : 'buildings'}`;
+  $('restore-all').hidden = !deleted;
 }

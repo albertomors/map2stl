@@ -558,3 +558,23 @@ body.mode-3d .map-only {
   width: 100%;
   accent-color: var(--accent);
 }
+
+/* Building editing */
+
+.building-name {
+  margin: 0 0 2px;
+  font-weight: 600;
+}
+
+#building-edit .slider {
+  margin-top: 10px;
+}
+
+button.link {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font-size: inherit;
+  text-decoration: underline;
+}

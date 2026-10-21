@@ -35,9 +35,16 @@ export interface Placement {
 
 type P = [number, number];
 
-export function buildBuildings(buildings: Building[], at: Placement): BufferGeometry | null {
+// The merged mesh, and for each triangle the index of its building in `buildings`.
+export interface BuildingsMesh {
+  geometry: BufferGeometry;
+  owners: number[];
+}
+
+export function buildBuildings(buildings: Building[], at: Placement): BuildingsMesh | null {
   const m = new MeshBuilder();
-  for (const b of buildings) {
+  for (const [i, b] of buildings.entries()) {
+    m.owner = i;
     const outer = ringToLocal(b.outer, at.frame);
     if (outer.length < 3) continue;
     const holes = b.holes.map((h) => ringToLocal(h, at.frame)).filter((h) => h.length >= 3);
@@ -63,7 +70,7 @@ export function buildBuildings(buildings: Building[], at: Placement): BufferGeom
       }
     }
   }
-  return m.empty ? null : m.build();
+  return m.empty ? null : { geometry: m.build(), owners: m.owners };
 }
 
 export function buildStructures(osm: OsmData, at: Placement): BufferGeometry | null {

@@ -14,11 +14,7 @@ export function clipToSelection(osm: OsmData, ring: LngLat[]): OsmData {
     items.flatMap((l) => clipLine(l.path, ring).map((path) => ({ ...l, path, ends: l.ends ?? [l.path[0], l.path[l.path.length - 1]] })));
   return {
     ...osm,
-    buildings: osm.buildings.flatMap((b): Building[] => {
-      const pieces = clipPolygon(b, shape, ring);
-      const cut = pieces.length !== 1 || pieces[0] !== b;
-      return pieces.map((p) => ({ ...b, ...p, ...(cut ? { roofShape: 'flat', roofHeight: undefined } : {}) }));
-    }),
+    buildings: clipBuildings(osm.buildings, ring),
     roads: lines(osm.roads),
     railways: lines(osm.railways),
     waterAreas: areas<Area>(osm.waterAreas),
@@ -37,6 +33,17 @@ function clipPolygon(p: Polygon, shape: PcPolygon, ring: LngLat[]): Polygon[] {
   if (p.outer.every((q) => pointInRing(q, ring)) && !ringsCross(p.outer, ring)) return [p];
   const result = polygonClipping.intersection([p.outer, ...p.holes] as PcPolygon, shape);
   return result.map(([outer, ...holes]) => ({ outer: outer as LngLat[], holes: holes as LngLat[][] }));
+}
+
+// Buildings crossing the edge are cut there and get a flat roof (half a pitched roof looks
+// wrong); the pieces keep their building's id, so edits still find them.
+export function clipBuildings(buildings: Building[], ring: LngLat[]): Building[] {
+  const shape: PcPolygon = [ring];
+  return buildings.flatMap((b): Building[] => {
+    const pieces = clipPolygon(b, shape, ring);
+    const cut = pieces.length !== 1 || pieces[0] !== b;
+    return pieces.map((p) => ({ ...b, ...p, ...(cut ? { roofShape: 'flat', roofHeight: undefined } : {}) }));
+  });
 }
 
 // Pieces of the path inside the ring: split at every crossing, keep the inside parts.

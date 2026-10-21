@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Building editing** (milestone 4): click a building in the 3D view to select it, then
+  delete it or enlarge it ×1–4 from its base; Reset and Restore all. Multi-part buildings
+  are edited as one.
+
 ## [0.3.0] - 2026-10-21
 
 Milestone 3: the 3D view, plus free shapes and quick data.

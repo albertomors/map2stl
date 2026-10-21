@@ -8,6 +8,10 @@ export type Vec3 = [number, number, number];
 export class MeshBuilder {
   private positions: number[] = [];
   private colors: number[] = [];
+  // Which object each triangle belongs to (set `owner` before adding its faces), so a click
+  // on the merged mesh can be traced back to one building.
+  owner = -1;
+  readonly owners: number[] = [];
 
   // `facing` makes the face point up or down whatever order the corners came in: lighting
   // and shadow offsets go along the normal, so a roof facing down shades itself in stripes.
@@ -18,6 +22,7 @@ export class MeshBuilder {
     }
     this.positions.push(...a, ...b, ...c);
     for (let i = 0; i < 3; i++) this.colors.push(color.r, color.g, color.b);
+    this.owners.push(this.owner);
   }
 
   // Corners in order around the quad.

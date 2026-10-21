@@ -2,11 +2,12 @@
 
 Open work only: built items move to the README and CHANGELOG.
 
-## Milestone 4: object editing
+## 3D view polish
 
-- Each OSM building is its own object: click to select (outline), then delete, scale up or reset.
-- Scale from the base so enlarged monuments stay on the ground.
-- Later: swap a landmark for a detailed CC-licensed model (Sketchfab, etc.).
+- Terrain and building height sliders feel heavy: each move rebuilds the whole scene.
+  Scale heights on the GPU instead (vertex shader uniform, or mesh scale for terrain plus
+  per-building offsets), so dragging is instant. Rename them to "Terrain height multiplier"
+  and "Building height multiplier".
 
 ## Milestone 5: export
 
@@ -30,6 +31,8 @@ city center, and the public servers are often busy).
 
 ## Later
 
+- Swap a landmark for a detailed CC-licensed model (Sketchfab, etc.).
+- Keep building edits across reloads (today they last until a new area is fetched).
 - Sea when the selection is entirely water, or the coast is broken near it (today: land).
 - Clip the base map's buildings to the selection while previewing, instead of hiding all.
 - Segmentation for mesh sources (photogrammetry) where objects aren't already separate.
