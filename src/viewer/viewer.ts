@@ -405,8 +405,10 @@ export class Viewer {
     const key = this.selected;
     const at = this.placement;
     const data = this.data;
-    // A new object starts from the ground; a rebuild of the same one keeps its height.
-    if (key !== this.liftKey) this.highlight.position.y = 0;
+    // A new object starts from the ground; a rebuild of the same one keeps its height, and
+    // its lift: editing its size must not make it jump higher or lower.
+    const newSelection = key !== this.liftKey;
+    if (newSelection) this.highlight.position.y = 0;
     this.liftKey = key;
     if (!key || !at || !data) return;
 
@@ -472,7 +474,7 @@ export class Viewer {
             : 'structures';
     this.highlight.visible = this.visible.has(this.liftLayer);
     this.liftEdit = { ...this.edits.get(key) };
-    this.liftHeight = Math.max(LIFT_M * at.heightScale, LIFT_SHARE * (box.max.y - box.min.y));
+    if (newSelection) this.liftHeight = Math.max(LIFT_M * at.heightScale, LIFT_SHARE * (box.max.y - box.min.y));
   }
 
   private describeObject(key: string): ObjectPick | null {

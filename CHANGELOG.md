@@ -27,6 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- The download time estimate is fitted on real requests: about 43 s plus 3 s per km²
+  (the public server has a ~44 s floor for almost any area), instead of 28 s + 12.6 s/km².
+- A selected object no longer jumps higher when its Height or Size slider is released.
+
 - Hiding a layer also hides its selected (lifted) object.
 - Gabled and hipped roofs are closed solids: their two sides now meet in the same ridge
   points (before, irregular footprints left hairline gaps along the ridge).
