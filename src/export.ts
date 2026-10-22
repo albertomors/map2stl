@@ -44,7 +44,17 @@ export function buildPrintModel(
   options: PrintOptions,
 ): PrintModel {
   const { ring, frame, bounds, placement, groundHeight } = prepareScene(data, scales);
-  const extent = Math.max(bounds.maxX - bounds.minX, bounds.maxZ - bounds.minZ);
+  // The print keeps the shape the way it was drawn: its "up" (the map bearing when drawn)
+  // becomes the print's +Y, so a rectangle drawn on a turned map lies straight on the bed and
+  // the longest side is the shape's own. In plan (X east, Y north) that's a counterclockwise
+  // turn by the bearing.
+  const turn = (data.selection.rotation * Math.PI) / 180;
+  const [cos, sin] = [Math.cos(turn), Math.sin(turn)];
+  const plan = (x: number, z: number): [number, number] => [x * cos + z * sin, x * sin - z * cos];
+  const outline = ring.map((p) => plan(...frame.toLocal(p)));
+  const [minPX, maxPX] = [Math.min(...outline.map((p) => p[0])), Math.max(...outline.map((p) => p[0]))];
+  const [minPY, maxPY] = [Math.min(...outline.map((p) => p[1])), Math.max(...outline.map((p) => p[1]))];
+  const extent = Math.max(maxPX - minPX, maxPY - minPY);
   const mmPerUnit = options.sizeMm / extent;
   const at = { ...placement, sink: SINK_M, minWidth: options.minFeatureMm / mmPerUnit };
 
@@ -67,10 +77,10 @@ export function buildPrintModel(
     { name: 'Trees', color: '#' + COLORS.tree.getHexString(), geometries: [show('trees') ? treesGeometry(editedTrees(data.osm.trees, edits, TREE_HEIGHT_M), at) : null] },
   ];
 
-  // Scene (x east, y up, z south, meters) → print (X east, Y north, Z up, mm), centered,
-  // base at Z = 0. (x, y, z) → (x, −z, y) is a rotation, so faces keep their winding.
-  const cx = (bounds.minX + bounds.maxX) / 2;
-  const cz = (bounds.minZ + bounds.maxZ) / 2;
+  // Scene (x east, y up, z south, meters) → print (X, Y in the shape's own frame, Z up, mm),
+  // centered, base at Z = 0. Only rotations, so faces keep their winding.
+  const cx = (minPX + maxPX) / 2;
+  const cy = (minPY + maxPY) / 2;
   const parts: PrintPart[] = [];
   const min = [Infinity, Infinity, Infinity];
   const max = [-Infinity, -Infinity, -Infinity];
@@ -82,8 +92,9 @@ export function buildPrintModel(
       const pos = flat.getAttribute('position');
       const out = new Float32Array(pos.count * 3);
       for (let i = 0; i < pos.count; i++) {
-        const X = (pos.getX(i) - cx) * mmPerUnit;
-        const Y = -(pos.getZ(i) - cz) * mmPerUnit;
+        const [px, py] = plan(pos.getX(i), pos.getZ(i));
+        const X = (px - cx) * mmPerUnit;
+        const Y = (py - cy) * mmPerUnit;
         const Z = (pos.getY(i) - tile.baseY) * mmPerUnit;
         out.set([X, Y, Z], i * 3);
         for (const [k, v] of [X, Y, Z].entries()) {

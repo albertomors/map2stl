@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Exports keep the shape the way it was drawn: a rectangle or hexagon drawn on a turned
+  map lies straight on the print bed, and the print size is its own longest side.
+
 ## [0.5.1] - 2026-10-22
 
 Fixes for landmarks, editing and the export panel, and a tidier 3D view.
