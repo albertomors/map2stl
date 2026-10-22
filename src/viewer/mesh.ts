@@ -12,6 +12,10 @@ export class MeshBuilder {
   // on the merged mesh can be traced back to one building.
   owner = -1;
   readonly owners: number[] = [];
+  // Scene height of the ground under the current object (set with `owner`): the height
+  // multipliers stretch the part above it separately from the terrain under it.
+  ground = 0;
+  private grounds: number[] = [];
 
   // `facing` makes the face point up or down whatever order the corners came in: lighting
   // and shadow offsets go along the normal, so a roof facing down shades itself in stripes.
@@ -22,6 +26,7 @@ export class MeshBuilder {
     }
     this.positions.push(...a, ...b, ...c);
     for (let i = 0; i < 3; i++) this.colors.push(color.r, color.g, color.b);
+    this.grounds.push(this.ground, this.ground, this.ground);
     this.owners.push(this.owner);
   }
 
@@ -39,6 +44,7 @@ export class MeshBuilder {
     const g = new BufferGeometry();
     g.setAttribute('position', new Float32BufferAttribute(this.positions, 3));
     g.setAttribute('color', new Float32BufferAttribute(this.colors, 3));
+    g.setAttribute('groundY', new Float32BufferAttribute(this.grounds, 1));
     // Not indexed: every triangle gets its own face normal, so edges stay crisp.
     g.computeVertexNormals();
     return g;

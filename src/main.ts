@@ -72,13 +72,16 @@ $('fetch').addEventListener('click', () => (loading ? loading.abort() : selectio
 $('open-3d').addEventListener('click', () => open3d());
 $('close-3d').addEventListener('click', () => close3d());
 for (const id of ['terrain-scale', 'height-scale']) {
-  // Rebuilding takes a moment on big areas: wait until the slider rests.
   let timer: number | undefined;
+  // Instant stretch while dragging; one real rebuild when the slider is let go.
   $(id).addEventListener('input', () => {
     showScales();
     showEditsSummary();
+    viewer?.previewScales(scales());
+  });
+  $(id).addEventListener('change', () => {
     clearTimeout(timer);
-    timer = window.setTimeout(() => viewer?.setScales(scales()), 120);
+    timer = window.setTimeout(() => viewer?.setScales(scales()), 0);
   });
 }
 showScales();

@@ -1,8 +1,7 @@
 // The 3D view of a fetched area: terrain tile with the flat layers painted on, buildings with
 // roofs, structures, bridges and trees. Layers toggle on and off; the two height multipliers
 // rebuild it. A click on a building, tree, bridge or structure selects it for editing (delete,
-// enlarge, stretch its height): the object lifts off the ground, and a red band marks its
-// footprint below.
+// enlarge, stretch its height): the object lifts off the ground, tinted light orange.
 
 import {
   Box3,
@@ -15,17 +14,14 @@ import {
   InstancedMesh,
   Matrix4,
   Mesh,
-  MeshBasicMaterial,
+  MeshDepthMaterial,
   MeshLambertMaterial,
+  RGBADepthPacking,
   PCFShadowMap,
   PerspectiveCamera,
   Raycaster,
   Scene,
-  Shape,
-  ShapeGeometry,
-  Path,
   Vector2,
-  Vector3,
   WebGLRenderer,
   type Object3D,
 } from 'three';
@@ -61,14 +57,13 @@ export interface ViewScales {
 // Below the lowest ground, so the tile reads as a solid block.
 const BASE_DEPTH_M = 12;
 const TEXTURE_LAYERS: Layer[] = ['green', 'surfaces', 'paved', 'water', 'roads', 'railways'];
-// How high a selected object floats (at least LIFT_M, more for tall objects), and its
-// footprint band.
+// How high a selected object floats (at least LIFT_M, more for tall objects), and its tint:
+// a light orange that multiplies the object's own colors, so roofs and walls stay readable.
 const LIFT_M = 6;
 const LIFT_SHARE = 0.12;
 const LIFT_EASE = 0.18;
-const OUTLINE_COLOR = new Color('#d62828');
-const OUTLINE_OUT_M = 3.5;
-const OUTLINE_IN_M = 0.8;
+const TINT = new Color('#ffd5b8');
+const TINT_GLOW = new Color('#ff6b2c').multiplyScalar(0.12);
 // A press and release closer than this is a click (select), not an orbit.
 const CLICK_PX = 5;
 
@@ -90,12 +85,18 @@ export class Viewer {
   private terrain = new Group();
   // Buildings, structures, bridges, trees: rebuilt on every edit too.
   private objects = new Group();
-  // The selected object, lifted; its footprint band stays on the ground.
+  // The selected object, lifted and tinted.
   private highlight = new Group();
-  private footprint = new Group();
   private liftKey: string | null = null;
   private liftHeight = 0;
   private unhide: (() => void) | null = null;
+  // The multipliers the scene was built with, and the live stretch the sliders apply on top.
+  private builtScales: ViewScales | null = null;
+  private stretch = { uTerrainK: { value: 1 }, uHeightK: { value: 1 } };
+  // Shadows follow the stretch too: one depth material with the same vertex patch.
+  private stretchDepth: MeshDepthMaterial | null = null;
+  // Trees are instances: the sliders scale their matrices (ground y, cone height) directly.
+  private trees: { mesh: InstancedMesh; built: Float32Array } | null = null;
   private layerObjects = new Map<Layer, Object3D[]>();
   private ground: GroundTexture | null = null;
   private data: AreaData | null = null;
@@ -126,7 +127,7 @@ export class Viewer {
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
     this.sun.shadow.bias = -0.0005;
-    this.scene.add(this.sun, this.sun.target, this.terrain, this.objects, this.highlight, this.footprint);
+    this.scene.add(this.sun, this.sun.target, this.terrain, this.objects, this.highlight);
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
@@ -172,6 +173,28 @@ export class Viewer {
     this.onPick(null);
   }
 
+  // While a multiplier slider moves: stretch what's built on the GPU, no rebuild. The terrain
+  // scales as a whole; objects split each vertex into ground + height above it.
+  previewScales(scales: ViewScales) {
+    if (!this.builtScales) return;
+    const kTerrain = scales.terrain / this.builtScales.terrain;
+    const kHeight = scales.heights / this.builtScales.heights;
+    this.stretch.uTerrainK.value = kTerrain;
+    this.stretch.uHeightK.value = kHeight;
+    this.terrain.scale.y = kTerrain;
+    if (this.trees) {
+      const { mesh, built } = this.trees;
+      const live = mesh.instanceMatrix.array as Float32Array;
+      // Column-major 4×4: element 5 is the cone's height, element 13 the ground it stands on.
+      for (let i = 0; i < mesh.count; i++) {
+        live[i * 16 + 5] = built[i * 16 + 5] * kHeight;
+        live[i * 16 + 13] = built[i * 16 + 13] * kTerrain;
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+    }
+  }
+
+  // The slider was released: rebuild for real (picking and shadows use the built geometry).
   setScales(scales: ViewScales) {
     if (this.data) this.build(scales, false);
   }
@@ -198,14 +221,19 @@ export class Viewer {
   dispose() {
     this.renderer.setAnimationLoop(null);
     this.resize.disconnect();
-    for (const g of [this.terrain, this.objects, this.highlight, this.footprint]) disposeChildren(g);
+    for (const g of [this.terrain, this.objects, this.highlight]) disposeChildren(g);
     this.ground?.dispose();
+    this.stretchDepth?.dispose();
     this.controls.dispose();
     this.renderer.dispose();
     this.renderer.domElement.remove();
   }
 
   private build(scales: ViewScales, frameCamera: boolean) {
+    this.builtScales = scales;
+    this.stretch.uTerrainK.value = 1;
+    this.stretch.uHeightK.value = 1;
+    this.terrain.scale.y = 1;
     const data = this.data!;
     const { terrain, selection } = data;
     disposeChildren(this.terrain);
@@ -282,10 +310,11 @@ export class Viewer {
 
     const solid = (result: PickableMesh | null, layer: Layer, color?: Color) => {
       if (!result) return;
-      const material = new MeshLambertMaterial(color ? { color, side: DoubleSide } : { vertexColors: true, side: DoubleSide });
+      const material = this.stretchable(new MeshLambertMaterial(color ? { color, side: DoubleSide } : { vertexColors: true, side: DoubleSide }));
       const mesh = new Mesh(result.geometry, material);
       mesh.castShadow = true;
       mesh.receiveShadow = true;
+      mesh.customDepthMaterial = this.depthMaterial();
       this.add(layer, mesh);
       this.pickables.push({
         object: mesh,
@@ -316,6 +345,7 @@ export class Viewer {
 
     const trees = editedTrees(osm.trees, this.edits, TREE_HEIGHT_M);
     const treeMesh = buildTrees(trees, at);
+    this.trees = treeMesh ? { mesh: treeMesh, built: (treeMesh.instanceMatrix.array as Float32Array).slice() } : null;
     if (treeMesh) {
       this.add('trees', treeMesh);
       this.pickables.push({
@@ -352,13 +382,12 @@ export class Viewer {
     this.select(pickable?.keyAt(hit.faceIndex ?? undefined, hit.instanceId) ?? null);
   }
 
-  // The selected object vanishes from its merged mesh and is drawn again on its own, lifted
-  // (the render loop eases it up), with a red band around its footprint on the ground.
+  // The selected object vanishes from its merged mesh and is drawn again on its own, tinted
+  // light orange and lifted (the render loop eases it up).
   private drawHighlight() {
     this.unhide?.();
     this.unhide = null;
     disposeChildren(this.highlight);
-    disposeChildren(this.footprint);
     const key = this.selected;
     const at = this.placement;
     const e = this.edited;
@@ -372,14 +401,18 @@ export class Viewer {
 
     const add = (result: PickableMesh | null, color?: Color) => {
       if (!result) return;
-      const material = new MeshLambertMaterial(color ? { color, side: DoubleSide } : { vertexColors: true, side: DoubleSide });
+      // Vertex colors are multiplied by the material color: the tint keeps each part's own hue.
+      const tint = color ? color.clone().multiply(TINT) : TINT;
+      const material = this.stretchable(
+        new MeshLambertMaterial({ color: tint, emissive: TINT_GLOW, vertexColors: !color, side: DoubleSide }),
+      );
       const mesh = new Mesh(result.geometry, material);
       mesh.castShadow = true;
       this.highlight.add(mesh);
     };
     if (key.startsWith('tree/')) {
       const tree = editedTrees(this.data.osm.trees, this.edits, TREE_HEIGHT_M).find((t) => t.key === key);
-      const mesh = tree ? buildTrees([tree], at) : null;
+      const mesh = tree ? buildTrees([tree], at, COLORS.tree.clone().lerp(new Color('#ff6b2c'), 0.45)) : null;
       if (mesh) this.highlight.add(mesh);
     } else {
       add(buildBuildings(e.buildings.filter((b) => editKey(b) === key), at));
@@ -397,8 +430,6 @@ export class Viewer {
       add(buildBridges(e.roads.filter((l) => l.id === key), at, COLORS.road), COLORS.road);
       add(buildBridges(e.railways.filter((l) => l.id === key), at, COLORS.rail), COLORS.rail);
     }
-    const band = footprintBand(this.highlight);
-    if (band) this.footprint.add(band);
     const box = new Box3().setFromObject(this.highlight);
     const tall = box.isEmpty() ? 0 : box.max.y - box.min.y;
     this.liftHeight = Math.max(LIFT_M * at.heightScale, LIFT_SHARE * tall);
@@ -436,6 +467,30 @@ export class Viewer {
     return null;
   }
 
+  private depthMaterial(): MeshDepthMaterial {
+    if (!this.stretchDepth) {
+      this.stretchDepth = new MeshDepthMaterial({ depthPacking: RGBADepthPacking, side: DoubleSide });
+      this.stretchDepth.onBeforeCompile = (shader) => this.patchShader(shader);
+    }
+    return this.stretchDepth;
+  }
+
+  // A material whose vertices follow the slider stretch: y = ground·kTerrain + above·kHeight.
+  private stretchable(material: MeshLambertMaterial): MeshLambertMaterial {
+    material.onBeforeCompile = (shader) => this.patchShader(shader);
+    return material;
+  }
+
+  private patchShader(shader: { uniforms: Record<string, { value: unknown }>; vertexShader: string }) {
+    Object.assign(shader.uniforms, this.stretch);
+    shader.vertexShader =
+      'attribute float groundY;\nuniform float uTerrainK;\nuniform float uHeightK;\n' +
+      shader.vertexShader.replace(
+        '#include <begin_vertex>',
+        '#include <begin_vertex>\ntransformed.y = groundY * uTerrainK + (position.y - groundY) * uHeightK;',
+      );
+  }
+
   private add(layer: Layer, object: Object3D) {
     object.visible = this.visible.has(layer);
     this.objects.add(object);
@@ -461,60 +516,4 @@ function disposeChildren(group: Group) {
     });
     group.remove(o);
   }
-}
-
-// A flat red band around an object's footprint (the convex outline of everything in `group`,
-// seen from above), at the height of its base.
-function footprintBand(group: Group): Mesh | null {
-  const pts: [number, number][] = [];
-  let baseY = Infinity;
-  const v = new Vector3();
-  group.updateMatrixWorld(true);
-  group.traverse((o) => {
-    if (!(o instanceof Mesh)) return;
-    const pos = o.geometry.getAttribute('position');
-    const instances = o instanceof InstancedMesh ? o.count : 1;
-    const m = new Matrix4();
-    for (let i = 0; i < instances; i++) {
-      if (o instanceof InstancedMesh) o.getMatrixAt(i, m);
-      for (let k = 0; k < pos.count; k++) {
-        v.fromBufferAttribute(pos, k);
-        if (o instanceof InstancedMesh) v.applyMatrix4(m);
-        pts.push([v.x, v.z]);
-        baseY = Math.min(baseY, v.y);
-      }
-    }
-  });
-  if (pts.length < 3) return null;
-  // Convex hull (monotone chain).
-  pts.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-  const cross = (o: number[], a: number[], b: number[]) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
-  const half = (list: [number, number][]) => {
-    const h: [number, number][] = [];
-    for (const p of list) {
-      while (h.length > 1 && cross(h[h.length - 2], h[h.length - 1], p) <= 0) h.pop();
-      h.push(p);
-    }
-    return h.slice(0, -1);
-  };
-  const hull = [...half(pts), ...half([...pts].reverse())];
-  if (hull.length < 3) return null;
-  const cx = hull.reduce((s, p) => s + p[0], 0) / hull.length;
-  const cz = hull.reduce((s, p) => s + p[1], 0) / hull.length;
-  const grow = (d: number) =>
-    hull.map(([x, z]) => {
-      const r = Math.hypot(x - cx, z - cz) || 1;
-      return new Vector2(x + ((x - cx) / r) * d, z + ((z - cz) / r) * d);
-    });
-  const shape = new Shape(grow(OUTLINE_OUT_M));
-  shape.holes.push(new Path(grow(OUTLINE_IN_M)));
-  const geometry = new ShapeGeometry(shape).rotateX(Math.PI / 2);
-  const band = new Mesh(
-    geometry,
-    // Drawn over everything, so the lifted object can't hide its own footprint.
-    new MeshBasicMaterial({ color: OUTLINE_COLOR, side: DoubleSide, depthTest: false, transparent: true, opacity: 0.9 }),
-  );
-  band.renderOrder = 10;
-  band.position.y = baseY + 0.3;
-  return band;
 }

@@ -9,8 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- A selected object lifts off the ground (6 m, or 12% of its height for tall ones) with a
-  red outline of its footprint below, instead of turning orange. It keeps its own colors.
+- A selected object lifts off the ground (6 m, or 12% of its height for tall ones) and is
+  tinted light orange, keeping the shading of its own colors.
+- The height multiplier sliders are instant: dragging stretches the scene on the graphics
+  card (trees and shadows included), and the scene is rebuilt once when you let go.
 - Shorter README, aimed at hobbyists: what it's for, three steps, features, how to run it.
 
 ### Added

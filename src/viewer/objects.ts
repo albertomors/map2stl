@@ -46,6 +46,7 @@ export function buildBuildings(buildings: Building[], at: Placement): PickableMe
     const holes = b.holes.map((h) => ringToLocal(h, at.frame)).filter((h) => h.length >= 3);
     // On the lowest ground under the footprint, so no corner floats on a slope.
     const ground = Math.min(...b.outer.map((p) => at.elevation(p))) * at.terrainScale;
+    m.ground = ground;
     const base = ground + b.minHeight * at.heightScale;
     const total = (b.height - b.minHeight) * at.heightScale;
     // Courtyard roofs would cover the courtyard: those stay flat.
@@ -88,6 +89,7 @@ export function buildStructures(osm: OsmData, at: Placement): PickableMesh | nul
   for (const s of osm.structureLines) {
     own(s.id);
     const ground = Math.min(...s.path.map((p) => at.elevation(p))) * at.terrainScale;
+    m.ground = ground;
     ribbon(m, s.path, at, Math.max(s.width, MIN_WIDTH_M), ground, ground + s.height * at.heightScale, c);
   }
   for (const t of osm.towers) {
@@ -106,7 +108,8 @@ export function buildBridges(lines: Line[], at: Placement, color: Color): Pickab
     m.owner = keys.push(l.id) - 1;
     const [first, last] = l.ends ?? [l.path[0], l.path[l.path.length - 1]];
     const ends = [at.elevation(first), at.elevation(last)];
-    const top = (Math.max(...ends) * at.terrainScale) + BRIDGE_CLEARANCE_M * at.heightScale;
+    m.ground = Math.max(...ends) * at.terrainScale;
+    const top = m.ground + BRIDGE_CLEARANCE_M * at.heightScale;
     ribbon(m, l.path, at, l.width, top - BRIDGE_DECK_M * at.heightScale, top, color);
   }
   return m.empty ? null : { geometry: m.build(), owners: m.owners, keys };
@@ -138,6 +141,7 @@ function structureArea(m: MeshBuilder, s: StructureArea, at: Placement, color: C
   // Bridge decks span a dip: put them level with the higher bank. Everything else stands
   // on the low point.
   const ground = (s.kind === 'bridge' ? Math.max(...heights) : Math.min(...heights)) * at.terrainScale;
+  m.ground = ground;
   const top = ground + s.height * at.heightScale + (s.kind === 'bridge' ? BRIDGE_CLEARANCE_M * at.heightScale : 0);
   const bottom = s.kind === 'bridge' ? top - BRIDGE_DECK_M * at.heightScale : ground;
   walls(m, outer, bottom, top, color);
@@ -149,6 +153,7 @@ function structureArea(m: MeshBuilder, s: StructureArea, at: Placement, color: C
 function tower(m: MeshBuilder, t: Tower, at: Placement, color: Color) {
   const [x, z] = at.frame.toLocal(t.at);
   const ground = at.elevation(t.at) * at.terrainScale;
+  m.ground = ground;
   const top = ground + t.height * at.heightScale;
   const r = (t.kind === 'mast' ? 0.6 : t.kind === 'chimney' ? 1.5 : 3) * (t.size ?? 1);
   const n = 10;

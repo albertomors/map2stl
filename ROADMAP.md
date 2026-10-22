@@ -2,13 +2,6 @@
 
 Open work only: built items move to the README and CHANGELOG.
 
-## 3D view polish
-
-- Terrain and building height sliders feel heavy: each move rebuilds the whole scene.
-  Scale heights on the GPU instead (vertex shader uniform, or mesh scale for terrain plus
-  per-building offsets), so dragging is instant. Rename them to "Terrain height multiplier"
-  and "Building height multiplier".
-
 ## Milestone 5: export
 
 - Physical size in mm, base thickness, minimum feature size so nothing prints too thin.
