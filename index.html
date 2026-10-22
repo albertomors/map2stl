@@ -73,34 +73,8 @@ nom<!doctype html>
           <span>Building height multiplier</span><output id="height-scale-value"></output>
           <input id="height-scale" type="range" autocomplete="off" min="0.5" max="3" step="0.1" value="1" />
         </label>
-        <p class="hint">Left-drag to orbit · right-drag to pan · scroll to zoom</p>
-        <p id="select-hint" class="hint"></p>
-        <p id="edits-summary" class="hint">
-          <span id="edits-count"></span>
-          <span class="edit-actions">
-            <button id="restore-deleted" class="link">Restore deleted</button>
-            <button id="reset-all" class="link">Reset all</button>
-          </span>
-        </p>
       </section>
 
-      <section id="object-edit" class="view3d-only" hidden>
-        <h2>Selected</h2>
-        <p id="object-title" class="object-title"></p>
-        <p id="object-info" class="hint"></p>
-        <label class="slider" id="object-size-row">
-          <span>Size (all dimensions)</span><output id="object-size-value"></output>
-          <input id="object-size" type="range" autocomplete="off" min="1" max="4" step="0.1" value="1" />
-        </label>
-        <label class="slider" id="object-height-row">
-          <span>Height only</span><output id="object-height-value"></output>
-          <input id="object-height" type="range" autocomplete="off" min="0.5" max="4" step="0.1" value="1" />
-        </label>
-        <div class="actions">
-          <button id="object-delete">Delete</button>
-          <button id="object-reset" class="secondary">Reset</button>
-        </div>
-      </section>
 
 
       <section id="data" hidden>
@@ -120,8 +94,40 @@ nom<!doctype html>
       </section>
     </aside>
 
+    <!-- Top right of the 3D view: how to move around, and the selected object. -->
+    <div id="view3d-overlay" class="overlay-right view3d-only">
+      <p class="overlay-hint">
+        Left-drag to orbit · right-drag to pan · scroll to zoom<br />
+        <span id="select-hint"></span>
+      </p>
+      <p id="edits-summary" class="overlay-hint">
+        <span id="edits-count"></span>
+        <span class="edit-actions">
+          <button id="restore-deleted" class="link">Restore deleted</button>
+          <button id="reset-all" class="link">Reset all</button>
+        </span>
+      </p>
+      <section id="object-edit" class="floating-card" hidden>
+        <h2>Selected</h2>
+        <p id="object-title" class="object-title"></p>
+        <p id="object-info" class="hint"></p>
+        <label class="slider" id="object-size-row">
+          <span>Size (all dimensions)</span><output id="object-size-value"></output>
+          <input id="object-size" type="range" autocomplete="off" min="1" max="4" step="0.1" value="1" />
+        </label>
+        <label class="slider" id="object-height-row">
+          <span>Height only</span><output id="object-height-value"></output>
+          <input id="object-height" type="range" autocomplete="off" min="0.5" max="4" step="0.1" value="1" />
+        </label>
+        <div class="actions">
+          <button id="object-delete">Delete</button>
+          <button id="object-reset" class="secondary">Reset</button>
+        </div>
+      </section>
+    </div>
+
     <!-- Floating over the 3D view, once the detailed data is in. -->
-    <section id="export" class="export-panel" hidden>
+    <section id="export" class="export-panel floating-card" hidden>
       <h2>Export</h2>
       <div class="fields">
         <label for="print-size">Longest side</label>

@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The 3D view's left panel holds only the two height multipliers and the layers. The
+  controls hint, the edit summary (Restore deleted, Reset all) and the selected object's
+  card float at the top right, above the export card.
+
 ### Fixed
 
 - Multi-part landmarks stand together: all parts of a building share one ground level (on a
