@@ -38,10 +38,11 @@ export interface ChunkPlan {
 }
 
 // A chunk holds at most this much: fewer, bigger requests are faster (each costs ~40 s of
-// server queue, area adds little), but each must stay well inside the server's time and
-// memory limits. The biggest dense area measured (3.2 km², 2,700 buildings) took under 60 s.
-const CHUNK_MAX_KM2 = 4;
-const CHUNK_MAX_BUILDINGS = 4000;
+// server queue, area adds little), but each must stay inside the server's limits (120 s,
+// 512 MB per request). The biggest dense area measured (3.2 km², 2,700 buildings, 8 MB) took
+// under 60 s; these limits are a first guess to tune with real chunk timings.
+const CHUNK_MAX_KM2 = 10;
+const CHUNK_MAX_BUILDINGS = 25_000;
 
 // Calls `onQuick` with the tile version as soon as it's ready (a second or two), then
 // resolves with the full version, requested chunk by chunk. If the full version fails, the
@@ -94,6 +95,15 @@ export async function fetchAreaData(
   return { selection, osm, terrain: await terrain, detail: 'full' };
 }
 
+// Whether a chunk's box and the selection overlap. Edges count: the selection's corners lie
+// exactly on its own bounding box (a rectangle or hexagon fetched as a single chunk), and a
+// strict point-in-polygon test would drop the only chunk.
+function touches([w, s, e, n]: [number, number, number, number], ring: LngLat[]): boolean {
+  if (ring.some(([x, y]) => x >= w && x <= e && y >= s && y <= n)) return true;
+  const corners: LngLat[] = [[w, s], [e, s], [e, n], [w, n], [w, s]];
+  return intersectsRing(corners, ring, true);
+}
+
 // Splits the selection's box in halves (along its longer side) until each piece is within
 // the limits, and keeps the pieces that touch the selection.
 function planChunks(bbox: [number, number, number, number], ring: LngLat[], centers: LngLat[] | null): ChunkPlan[] {
@@ -105,8 +115,7 @@ function planChunks(bbox: [number, number, number, number], ring: LngLat[], cent
     const km2 = (wide * tall) / 1e6;
     const count = pts ? pts.length : null;
     if (km2 <= CHUNK_MAX_KM2 && (count === null || count <= CHUNK_MAX_BUILDINGS)) {
-      const corners: LngLat[] = [[w, s], [e, s], [e, n], [w, n], [w, s]];
-      if (intersectsRing(corners, ring, true)) out.push({ bbox: box, km2, buildings: count });
+      if (touches(box, ring)) out.push({ bbox: box, km2, buildings: count });
       return;
     }
     const halves: [number, number, number, number][] =
