@@ -40,13 +40,15 @@ export function to3MF(model: PrintModel, title: string): Blob {
   const bases: string[] = [];
   model.parts.forEach((part, i) => {
     bases.push(`<base name="${xml(part.name)}" displaycolor="${part.color.toUpperCase()}FF"/>`);
-    // Shared vertices: 3MF lists each point once and triangles refer to them by index.
+    // Shared vertices: 3MF lists each point once and triangles refer to them by index. Only
+    // within one solid: two houses touching along a wall must not share points, or slicers see
+    // the shared edge (four faces) as broken.
     const index = new Map<string, number>();
     const vertices: string[] = [];
     const triangles: string[] = [];
     const t = part.triangles;
     const vertex = (k: number) => {
-      const key = `${t[k].toFixed(3)} ${t[k + 1].toFixed(3)} ${t[k + 2].toFixed(3)}`;
+      const key = `${part.solids[(k / 9) | 0]} ${t[k].toFixed(3)} ${t[k + 1].toFixed(3)} ${t[k + 2].toFixed(3)}`;
       let id = index.get(key);
       if (id === undefined) {
         id = vertices.length;
@@ -89,10 +91,29 @@ export function to3MF(model: PrintModel, title: string): Blob {
     `<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">` +
     `<Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>` +
     `</Relationships>`;
+  // OrcaSlicer and Bambu Studio read part names and filaments from their own settings file;
+  // other slicers ignore it. Part i gets filament i + 1, so with one filament per part loaded
+  // the colors are ready; on a single-filament printer they fall back to filament 1.
+  const settings =
+    `<?xml version="1.0" encoding="UTF-8"?>\n<config>\n` +
+    `  <object id="${assemblyId}">\n` +
+    `    <metadata key="name" value="${xml(title)}"/>\n` +
+    `    <metadata key="extruder" value="1"/>\n` +
+    model.parts
+      .map(
+        (part, i) =>
+          `    <part id="${i + 2}" subtype="normal_part">\n` +
+          `      <metadata key="name" value="${xml(part.name)}"/>\n` +
+          `      <metadata key="extruder" value="${i + 1}"/>\n` +
+          `    </part>\n`,
+      )
+      .join('') +
+    `  </object>\n</config>\n`;
   const zip = zipSync({
     '[Content_Types].xml': strToU8(contentTypes),
     '_rels/.rels': strToU8(rels),
     '3D/3dmodel.model': strToU8(modelXml),
+    'Metadata/model_settings.config': strToU8(settings),
   });
   return new Blob([zip as BlobPart], { type: 'model/3mf' });
 }

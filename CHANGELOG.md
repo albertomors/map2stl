@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- 3MF for OrcaSlicer and Bambu Studio: parts are named (Terrain, Buildings, Bridges and
+  structures, Trees) and pre-assigned to filaments 1-4. Other slicers ignore this.
+- 3MF: neighbouring buildings no longer share points where their walls touch, which
+  slicers reported as non-manifold edges.
+
 - The download time estimate follows the building count instead of the area: about 44 s
   per request (the server's wait, whatever the size) plus 1.9 s per 1,000 buildings (what
   comes back). On 10 real requests it's off by 6 s on average instead of 10 s, and a dense
