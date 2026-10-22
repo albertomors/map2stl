@@ -7,11 +7,17 @@ const ENDPOINTS = [
   'https://overpass.private.coffee/api/interpreter',
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
 ];
-const ROUNDS = 2;
-const RETRY_DELAY_MS = 3000;
+// After a refusal: wait, then double the wait for each further refusal (what the server asks
+// for), up to a cap, with some jitter so many users don't retry in lockstep.
+const BACKOFF_START_MS = 5_000;
+const BACKOFF_MAX_MS = 60_000;
+const MAX_ATTEMPTS = 8;
 // Busy mirrors sometimes accept the request and never answer: move on after this.
 // Dense city centers can legitimately take a minute.
 const ATTEMPT_TIMEOUT_MS = 100_000;
+// The main server says when its next slot frees up; mirrors don't have this page.
+const STATUS_URL = 'https://overpass-api.de/api/status';
+const MAX_SLOT_WAIT_S = 60;
 const CACHE_NAME = 'map2stl-overpass-v1';
 const CACHE_TTL_MS = 7 * 24 * 3600 * 1000;
 
@@ -30,11 +36,15 @@ export interface OverpassResponse {
   remark?: string;
 }
 
-export async function overpass(
-  query: string,
-  signal: AbortSignal,
-  onProgress: (status: { server?: string; bytes: number; cached: boolean }) => void,
-): Promise<OverpassResponse> {
+export interface OverpassStatus {
+  server?: string;
+  bytes: number;
+  cached: boolean;
+  // Seconds left waiting before the next try (a free slot, or backing off after a refusal).
+  waitS?: number;
+}
+
+export async function overpass(query: string, signal: AbortSignal, onProgress: (status: OverpassStatus) => void): Promise<OverpassResponse> {
   const cached = await readCache(query);
   if (cached) {
     onProgress({ bytes: cached.length, cached: true });
@@ -42,20 +52,28 @@ export async function overpass(
   }
 
   let lastError: Error = new Error('No Overpass server answered');
-  for (let attempt = 0; attempt < ENDPOINTS.length * ROUNDS; attempt++) {
+  let backoff = BACKOFF_START_MS;
+  for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
     const url = ENDPOINTS[attempt % ENDPOINTS.length];
-    // Every server was busy: give them a moment before the next round.
-    if (attempt > 0 && attempt % ENDPOINTS.length === 0) await sleep(RETRY_DELAY_MS * (attempt / ENDPOINTS.length), signal);
     const server = new URL(url).host;
+    // The main server tells us when a slot frees: wait for it instead of being refused.
+    if (url.startsWith('https://overpass-api.de/')) {
+      const waitS = await slotWait(signal);
+      if (waitS > 0) await countdown(waitS * 1000, signal, (s) => onProgress({ server, bytes: 0, cached: false, waitS: s }));
+    }
     onProgress({ server, bytes: 0, cached: false });
     const attemptSignal = AbortSignal.any([signal, AbortSignal.timeout(ATTEMPT_TIMEOUT_MS)]);
     let res: Response;
     let text: string;
     try {
       res = await fetch(url, { method: 'POST', body: new URLSearchParams({ data: query }), signal: attemptSignal });
-      // 429 = rate limited, 5xx = overloaded or timed out: another server may do better.
+      // 429 = rate limited, 5xx = at capacity or timed out: back off, then try the next server.
       if (res.status === 429 || res.status >= 500) {
         lastError = new Error(`${server} busy (${res.status})`);
+        const retryAfter = Number(res.headers.get('Retry-After'));
+        const wait = retryAfter > 0 ? retryAfter * 1000 : backoff;
+        backoff = Math.min(backoff * 2, BACKOFF_MAX_MS);
+        await countdown(wait * (0.85 + Math.random() * 0.3), signal, (s) => onProgress({ server, bytes: 0, cached: false, waitS: s }));
         continue;
       }
       if (!res.ok) throw new Error(`Overpass rejected the query (${res.status})`);
@@ -76,6 +94,31 @@ export async function overpass(
     return json;
   }
   throw lastError;
+}
+
+// Seconds until the main server has a free slot for us: 0 when one is free now, or when the
+// status page itself doesn't answer quickly (then the request just tries).
+async function slotWait(signal: AbortSignal): Promise<number> {
+  try {
+    const res = await fetch(STATUS_URL, { signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]) });
+    if (!res.ok) return 0;
+    const text = await res.text();
+    if (/(\d+) slots? available now/.test(text) && !/^0 slots/m.test(text)) return 0;
+    const waits = [...text.matchAll(/in (-?\d+) seconds/g)].map((m) => Number(m[1])).filter((n) => n >= 0);
+    return waits.length ? Math.min(Math.min(...waits) + 1, MAX_SLOT_WAIT_S) : 0;
+  } catch {
+    if (signal.aborted) throw signal.reason;
+    return 0;
+  }
+}
+
+// Waits `ms`, reporting the whole seconds left once a second.
+async function countdown(ms: number, signal: AbortSignal, onTick: (secondsLeft: number) => void) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    onTick(Math.ceil((end - Date.now()) / 1000));
+    await sleep(Math.min(1000, end - Date.now()), signal);
+  }
 }
 
 async function readBody(res: Response, onBytes: (bytes: number) => void): Promise<string> {

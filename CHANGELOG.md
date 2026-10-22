@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Big selections are requested in parts, one after another: at most about 4 km² or 4,000
+  buildings each (planned from the quick data), merged without duplicates. Each part is
+  cached on its own, so a retry only asks for what's missing.
+- Gentler on the public servers: before each request the main server is asked when a slot
+  is free, and a refusal is followed by a wait that doubles each time (5 s up to 60 s, or
+  the server's Retry-After), as the server asks. The progress bar shows the part and the
+  wait; the estimate is the sum over the parts.
+
 - Exports keep the shape the way it was drawn: a rectangle or hexagon drawn on a turned
   map lies straight on the print bed, and the print size is its own longest side.
 

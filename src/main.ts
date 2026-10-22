@@ -241,8 +241,11 @@ async function fetchData(sel: Selection) {
     );
     $('data-progress').hidden = true;
     status.textContent = '';
-    // Teach the estimate how long this server really took (cache hits say nothing).
-    if (!last.osmCached && wait.doneAt) recordSample(etaInput, (wait.doneAt - wait.since) / 1000);
+    // Teach the estimate how long a single request really took (cache hits, chunked
+    // requests and waits for the server say nothing clean about one request).
+    if (!last.osmCached && wait.doneAt && last.chunks?.length === 1 && !wait.waited) {
+      recordSample(etaInput, (wait.doneAt - wait.since) / 1000);
+    }
     showData(data);
   } catch (err) {
     if (controller.signal.aborted) {
@@ -344,33 +347,59 @@ interface ServerWait {
   server?: string;
   previous?: string;
   since: number;
-  // Expected seconds for the OSM answer, and when it actually arrived.
+  // Expected seconds for the whole OSM download (all chunks), and when it actually arrived.
   eta: number;
   doneAt?: number;
+  // Set once the chunk plan is known and the estimate has been redone per chunk.
+  planned?: boolean;
+  chunk?: number;
+  // Whether any wait for a slot or a back-off happened: those samples don't teach the ETA.
+  waited?: boolean;
 }
 
 function showProgress(p: FetchProgress, wait: ServerWait) {
+  // Once the chunks are planned, the estimate is the sum over them (each is one request).
+  if (p.chunks && !wait.planned) {
+    wait.planned = true;
+    wait.eta = p.chunks.reduce((sum, c) => sum + estimateSeconds({ km2: c.km2, buildings: c.buildings }), 0);
+  }
+  // Each part starts fresh: "server X was busy" is about the part being requested.
+  if (p.chunk !== wait.chunk) {
+    wait.chunk = p.chunk;
+    wait.previous = undefined;
+    wait.server = p.osmServer;
+  }
   if (p.osmServer && p.osmServer !== wait.server) {
     wait.previous = wait.server;
     wait.server = p.osmServer;
-    wait.since = Date.now();
   }
+  if (p.osmWaitS) wait.waited = true;
   if (p.osmDone && !wait.doneAt) wait.doneAt = Date.now();
   const seconds = Math.round((Date.now() - wait.since) / 1000);
-  if (p.osmDone || p.osmCached) {
+  const many = (p.chunks?.length ?? 1) > 1;
+  const part = many ? `Part ${p.chunk} of ${p.chunks!.length}. ` : '';
+  const fraction = many ? ((p.chunk ?? 1) - 1) / p.chunks!.length : 0;
+  if (p.osmDone) {
     setBar('progress-osm', p.osmCached ? 'From cache' : 'Done', 1, '');
-  } else if (p.osmBytes) {
+  } else if (!wait.planned) {
+    // The parts are planned from the quick data, a second or two in.
+    setBar('progress-osm', 'Preparing the request…', null, '');
+  } else if (p.osmWaitS) {
+    // Refused or no free slot: waiting, as the server asks, before trying again.
+    const note = `${part}${wait.server ?? 'The server'} is at capacity; trying again in ${p.osmWaitS} s.`;
+    setBar('progress-osm', `Waiting for the server… ${formatDuration(seconds)}`, many ? fraction : null, note);
+  } else if (p.osmBytes && !many) {
     // The server doesn't say how big the answer is: count the bytes instead of a percentage.
     setBar('progress-osm', `Downloading ${formatBytes(p.osmBytes)}`, null, `from ${wait.server}`);
   } else if (seconds < wait.eta) {
     // Fills toward the estimate but never claims to be finished before the data arrives.
     const note = wait.previous
-      ? `${wait.previous} was busy, now asking ${wait.server}.`
-      : `${wait.server ?? 'The server'} is collecting every feature in the area.`;
-    setBar('progress-osm', `About ${formatDuration(wait.eta - seconds)} left`, Math.min(seconds / wait.eta, 0.95), note);
+      ? `${part}${wait.previous} was busy, now asking ${wait.server}.`
+      : `${part}${wait.server ?? 'The server'} is collecting every feature in the area.`;
+    setBar('progress-osm', `About ${formatDuration(wait.eta - seconds)} left`, Math.min(Math.max(seconds / wait.eta, fraction), 0.95), note);
   } else {
-    const note = `${wait.server ?? 'The server'} is busier than usual. It gives up after 100 s and the next server is tried.`;
-    setBar('progress-osm', `Taking longer than usual… ${formatDuration(seconds)}`, null, note);
+    const note = `${part}${wait.server ?? 'The server'} is busier than usual.`;
+    setBar('progress-osm', `Taking longer than usual… ${formatDuration(seconds)}`, many ? fraction : null, note);
   }
 }
 

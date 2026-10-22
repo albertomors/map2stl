@@ -4,6 +4,8 @@ Open work only: built items move to the README and CHANGELOG.
 
 ## Milestone 5: export (rest)
 
+- A Preview button in the Export card: shows the model exactly as it will be printed, with the
+  base thickness and the thinnest-detail widening applied (walls, masts, trees, bridges).
 - Roads, water, parks and squares in the print: today they're only painted in the 3D view.
   Raise them slightly (or inset them) as their own 3MF parts, so multi-color prints show them.
 - Roofs that follow concave footprints exactly (straight skeleton); today gabled and hipped
