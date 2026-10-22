@@ -4,7 +4,7 @@
 
 Want your fav city on the shelf? Or on the wall? Maybe a real-world map for your next board game or tabletop campaign? Pick a city, select the area, customize it, and 3d-print it.
 
-![A 3D tile of a city center: cathedral, old town, river, bridges, parks and trees](docs/screenshots/trondheim-01-3d-view.png)
+![A 3D tile of a city center: cathedral, old town, river, bridges, parks and trees](docs/screenshots/v05-01-3d-view.png)
 
 ## How it works
 
@@ -12,7 +12,7 @@ Want your fav city on the shelf? Or on the wall? Maybe a real-world map for your
 2. **Shape it in 3D**: remove what you don't want, make your favorite building stand out.
 3. **Export and print** *(STL / 3MF, coming next)*.
 
-![Selecting an area on the map](docs/screenshots/trondheim-02-select-area.png)
+![Selecting an area on the map](docs/screenshots/v05-02-select-area.png)
 
 ## Features
 
@@ -25,7 +25,7 @@ Want your fav city on the shelf? Or on the wall? Maybe a real-world map for your
 - **Ready to print** *(coming next)*. Exact tile edges, a solid base, STL and multi-color
   3MF.
 
-![Enlarging a cathedral in the 3D preview](docs/screenshots/trondheim-06-edit-building.png)
+![Enlarging a cathedral in the 3D preview](docs/screenshots/v05-06-edit-building.png)
 
 ## Run it
 
@@ -52,4 +52,4 @@ More: [user guide](docs/guide.md) · [architecture](docs/architecture.md) ·
 
 ## Support
 
-[![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-000000?style=flat&logo=ko-fi&logoColor=white)](https://ko-fi.com/W7A529A7ZI)
+Like it? Found it useful? [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-000000?style=flat&logo=ko-fi&logoColor=white)](https://ko-fi.com/W7A529A7ZI)
