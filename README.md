@@ -40,6 +40,13 @@ npm run dev     # http://localhost:5173
 
 Needs [Node.js](https://nodejs.org) 20.19+.
 
+## Support
+
+map2stl is free and has no ads. If it made your favorite place into a print, you can buy me
+a coffee:
+
+[![Support me on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/albertomorselli)
+
 ## Credits
 
 Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors (ODbL):
