@@ -7,18 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-22
+
+Milestone 5, first part: export to STL and 3MF.
+
 ### Added
 
-- **Export to STL and 3MF** (milestone 5): print size of the longest side, base thickness and
-  thinnest detail in millimeters. Exports what the 3D view shows: edits, height multipliers
-  and visible layers. Every object is a closed solid (sunk 1 m into the ground so nothing
-  floats on slopes), the terrain is one closed block with a flat base, and both files credit
+- **Export to STL and 3MF**: print size of the longest side, base thickness and thinnest
+  detail in millimeters, in a floating card at the bottom right of the 3D view once the
+  detailed data has arrived. Exports what the 3D view shows: edits, height multipliers and
+  visible layers. Every object is a closed solid (sunk 1 m into the ground so nothing floats
+  on slopes), the terrain is one closed block with a flat base, and both files credit
   OpenStreetMap. The 3MF is one object with a named, colored part per layer.
+- Ko-fi support link in the README and a Sponsor button on the GitHub page.
 
 ### Changed
-
-- Export is a floating card at the bottom right of the 3D view, shown once the detailed
-  data has arrived.
 
 - A selected object lifts off the ground (6 m, or 12% of its height for tall ones) and is
   tinted light orange, keeping the shading of its own colors.
@@ -27,23 +30,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - An object's own Size and Height sliders are instant too: dragging stretches the lifted
   object, letting go rebuilds just that object, and the rest of the scene catches up when
   the selection changes.
+- The download time estimate is fitted on real requests: about 43 s plus 3 s per km² (the
+  public server has a ~44 s floor for almost any area), instead of 28 s + 12.6 s/km².
+- Shorter README, aimed at hobbyists: what it's for, three steps, features, how to run it.
 
 ### Fixed
 
-- The download time estimate is fitted on real requests: about 43 s plus 3 s per km²
-  (the public server has a ~44 s floor for almost any area), instead of 28 s + 12.6 s/km².
-- A selected object no longer jumps higher when its Height or Size slider is released.
-
-- Hiding a layer also hides its selected (lifted) object.
 - Gabled and hipped roofs are closed solids: their two sides now meet in the same ridge
   points (before, irregular footprints left hairline gaps along the ridge).
 - Landmarks with arched parts stay one building: the Eiffel Tower's four legs were
   selected separately because the center of an arch lies outside the tower's outline.
-- Shorter README, aimed at hobbyists: what it's for, three steps, features, how to run it.
-
-### Added
-
-- Ko-fi support link in the README and a Sponsor button on the GitHub page.
+- Hiding a layer also hides its selected (lifted) object.
+- A selected object no longer jumps higher when its Height or Size slider is released.
 
 ## [0.4.0] - 2026-10-21
 
