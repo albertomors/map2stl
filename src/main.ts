@@ -89,13 +89,17 @@ showScales();
 // Object editing in the 3D view.
 for (const [id, field] of [['object-size', 'scale'], ['object-height', 'heightScale']] as const) {
   let timer: number | undefined;
+  // Instant stretch of the lifted object while dragging; rebuild just that object on release.
   $(id).addEventListener('input', () => {
     if (!picked) return;
     edits.set(picked.key, { ...edits.get(picked.key), [field]: Number($<HTMLInputElement>(id).value) });
     showPickValues();
     showEditsSummary();
+    viewer?.previewEdit(edits.get(picked.key));
+  });
+  $(id).addEventListener('change', () => {
     clearTimeout(timer);
-    timer = window.setTimeout(() => viewer?.setEdits(edits), 60);
+    timer = window.setTimeout(() => viewer?.setEdits(edits, { selectedOnly: true }), 0);
   });
 }
 $('object-delete').addEventListener('click', () => deletePicked());

@@ -13,6 +13,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   tinted light orange, keeping the shading of its own colors.
 - The height multiplier sliders are instant: dragging stretches the scene on the graphics
   card (trees and shadows included), and the scene is rebuilt once when you let go.
+- An object's own Size and Height sliders are instant too: dragging stretches the lifted
+  object, letting go rebuilds just that object, and the rest of the scene catches up when
+  the selection changes.
+
+### Fixed
+
+- Hiding a layer also hides its selected (lifted) object.
 - Shorter README, aimed at hobbyists: what it's for, three steps, features, how to run it.
 
 ### Added

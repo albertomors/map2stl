@@ -6,6 +6,7 @@ import type { LngLat } from '../geo';
 import type { LocalFrame } from '../local';
 import { editKey, type EditedTree } from '../edits';
 import type { Building, Line, OsmData, StructureArea, Tower } from '../osm';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { MeshBuilder, tagColor, type Vec3 } from './mesh';
 import { buildRoof, defaultRoofHeight } from './roofs';
 
@@ -21,7 +22,7 @@ export const COLORS = {
 
 const BRIDGE_DECK_M = 1.2;
 const BRIDGE_CLEARANCE_M = 1;
-// Thin walls vanish on screen; the export will apply its own print minimums.
+// Thin walls vanish on screen; the export passes its own print minimum instead.
 const MIN_WIDTH_M = 0.8;
 export const TREE_HEIGHT_M = 9;
 const TREE_RADIUS_M = 3;
@@ -32,6 +33,10 @@ export interface Placement {
   elevation: (p: LngLat) => number;
   terrainScale: number;
   heightScale: number;
+  // Export only: how far objects standing on the ground reach below it (so no gap opens on a
+  // slope between a building's flat base and the terrain), and the thinnest printable width.
+  sink?: number;
+  minWidth?: number;
 }
 
 type P = [number, number];
@@ -49,6 +54,8 @@ export function buildBuildings(buildings: Building[], at: Placement): PickableMe
     m.ground = ground;
     const base = ground + b.minHeight * at.heightScale;
     const total = (b.height - b.minHeight) * at.heightScale;
+    // Parts that start above the ground (a spire on a tower) don't reach down into it.
+    const bottom = b.minHeight > 0 ? base : base - (at.sink ?? 0);
     // Courtyard roofs would cover the courtyard: those stay flat.
     const shape = holes.length ? 'flat' : b.roofShape ?? 'flat';
     const rise = Math.min((b.roofHeight ?? defaultRoofHeight(shape, outer)) * at.heightScale, total * 0.7);
@@ -56,8 +63,10 @@ export function buildBuildings(buildings: Building[], at: Placement): PickableMe
     const wall = tagColor(b.colour, COLORS.wall);
     const roof = tagColor(b.roofColour, shape === 'flat' ? COLORS.flatRoof : COLORS.roof);
 
-    walls(m, outer, base, eave, wall);
-    for (const h of holes) walls(m, h, base, eave, wall, true);
+    walls(m, outer, bottom, eave, wall);
+    for (const h of holes) walls(m, h, bottom, eave, wall, true);
+    // Closed underneath too: every object is a solid for printing.
+    flatCap(m, outer, holes, bottom, wall, 'down');
     if (!buildRoof(m, outer, eave, rise, shape, roof, wall)) {
       flatCap(m, outer, holes, base + total, roof);
       // The rise was meant for a roof this footprint can't take: walls go all the way up.
@@ -90,7 +99,7 @@ export function buildStructures(osm: OsmData, at: Placement): PickableMesh | nul
     own(s.id);
     const ground = Math.min(...s.path.map((p) => at.elevation(p))) * at.terrainScale;
     m.ground = ground;
-    ribbon(m, s.path, at, Math.max(s.width, MIN_WIDTH_M), ground, ground + s.height * at.heightScale, c);
+    ribbon(m, s.path, at, Math.max(s.width, at.minWidth ?? MIN_WIDTH_M), ground - (at.sink ?? 0), ground + s.height * at.heightScale, c);
   }
   for (const t of osm.towers) {
     own(t.id);
@@ -110,7 +119,7 @@ export function buildBridges(lines: Line[], at: Placement, color: Color): Pickab
     const ends = [at.elevation(first), at.elevation(last)];
     m.ground = Math.max(...ends) * at.terrainScale;
     const top = m.ground + BRIDGE_CLEARANCE_M * at.heightScale;
-    ribbon(m, l.path, at, l.width, top - BRIDGE_DECK_M * at.heightScale, top, color);
+    ribbon(m, l.path, at, Math.max(l.width, at.minWidth ?? 0), top - BRIDGE_DECK_M * at.heightScale, top, color);
   }
   return m.empty ? null : { geometry: m.build(), owners: m.owners, keys };
 }
@@ -133,6 +142,21 @@ export function buildTrees(trees: EditedTree[], at: Placement, color = COLORS.tr
   return mesh;
 }
 
+// Trees as one merged solid (closed cones) for export, where instances don't exist.
+export function treesGeometry(trees: EditedTree[], at: Placement): BufferGeometry | null {
+  if (!trees.length) return null;
+  const parts = trees.map((t) => {
+    const [x, z] = at.frame.toLocal(t.at);
+    const r = Math.max(TREE_RADIUS_M * t.size, (at.minWidth ?? 0) / 2);
+    const h = t.height * at.heightScale;
+    const ground = at.elevation(t.at) * at.terrainScale - (at.sink ?? 0);
+    return new ConeGeometry(r, h, 7).translate(x, ground + h / 2, z).toNonIndexed();
+  });
+  const merged = mergeGeometries(parts);
+  for (const p of parts) p.dispose();
+  return merged;
+}
+
 function structureArea(m: MeshBuilder, s: StructureArea, at: Placement, color: Color) {
   const outer = ringToLocal(s.outer, at.frame);
   if (outer.length < 3) return;
@@ -143,11 +167,11 @@ function structureArea(m: MeshBuilder, s: StructureArea, at: Placement, color: C
   const ground = (s.kind === 'bridge' ? Math.max(...heights) : Math.min(...heights)) * at.terrainScale;
   m.ground = ground;
   const top = ground + s.height * at.heightScale + (s.kind === 'bridge' ? BRIDGE_CLEARANCE_M * at.heightScale : 0);
-  const bottom = s.kind === 'bridge' ? top - BRIDGE_DECK_M * at.heightScale : ground;
+  const bottom = s.kind === 'bridge' ? top - BRIDGE_DECK_M * at.heightScale : ground - (at.sink ?? 0);
   walls(m, outer, bottom, top, color);
   for (const h of holes) walls(m, h, bottom, top, color, true);
   flatCap(m, outer, holes, top, color);
-  if (s.kind === 'bridge') flatCap(m, outer, holes, bottom, color, 'down');
+  flatCap(m, outer, holes, bottom, color, 'down');
 }
 
 function tower(m: MeshBuilder, t: Tower, at: Placement, color: Color) {
@@ -155,11 +179,13 @@ function tower(m: MeshBuilder, t: Tower, at: Placement, color: Color) {
   const ground = at.elevation(t.at) * at.terrainScale;
   m.ground = ground;
   const top = ground + t.height * at.heightScale;
-  const r = (t.kind === 'mast' ? 0.6 : t.kind === 'chimney' ? 1.5 : 3) * (t.size ?? 1);
+  const r = Math.max((t.kind === 'mast' ? 0.6 : t.kind === 'chimney' ? 1.5 : 3) * (t.size ?? 1), (at.minWidth ?? 0) / 2);
   const n = 10;
   const ring: P[] = Array.from({ length: n }, (_, i) => [x + r * Math.cos((2 * Math.PI * i) / n), z + r * Math.sin((2 * Math.PI * i) / n)]);
-  walls(m, ring, ground, top, color);
+  const bottom = ground - (at.sink ?? 0);
+  walls(m, ring, bottom, top, color);
   flatCap(m, ring, [], top, color);
+  flatCap(m, ring, [], bottom, color, 'down');
 }
 
 // A path widened to `width` meters, as a solid from `bottom` to `top`.
@@ -176,6 +202,7 @@ function ribbon(m: MeshBuilder, path: LngLat[], at: Placement, width: number, bo
     const box: P[] = [[x0 + nx, z0 + nz], [x1 + nx, z1 + nz], [x1 - nx, z1 - nz], [x0 - nx, z0 - nz]];
     walls(m, box, bottom, top, color);
     flatCap(m, box, [], top, color);
+    flatCap(m, box, [], bottom, color, 'down');
   }
 }
 

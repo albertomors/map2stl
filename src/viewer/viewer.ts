@@ -28,7 +28,7 @@ import {
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import type { AreaData, Layer } from '../area-data';
 import { clipObjects, clipToSelection } from '../clip';
-import { applyEdits, editedTrees, editKey, type Edits } from '../edits';
+import { applyEdits, editedTrees, editKey, type Edits, type ObjectEdit } from '../edits';
 import type { LngLat } from '../geo';
 import type { OsmData } from '../osm';
 import { describe } from '../selection';
@@ -88,6 +88,13 @@ export class Viewer {
   // The selected object, lifted and tinted.
   private highlight = new Group();
   private liftKey: string | null = null;
+  // The lifted copy's scaling pivot (center of its base), and the edit it was built with.
+  private liftPivot: Group | null = null;
+  // The layer the selected object belongs to: its checkbox hides the lifted copy too.
+  private liftLayer: Layer | null = null;
+  private liftEdit: ObjectEdit | null = null;
+  // Set when the merged meshes lag behind edits made to the selected object.
+  private objectsStale = false;
   private liftHeight = 0;
   private unhide: (() => void) | null = null;
   // The multipliers the scene was built with, and the live stretch the sliders apply on top.
@@ -109,8 +116,6 @@ export class Viewer {
   private ring: LngLat[] = [];
   private pickables: Pickable[] = [];
   private selected: string | null = null;
-  // The edited, clipped objects last built, so the highlight can rebuild just one of them.
-  private edited: ReturnType<typeof clipObjects> | null = null;
 
   constructor(
     private container: HTMLElement,
@@ -200,14 +205,41 @@ export class Viewer {
   }
 
   // Edits changed: rebuild the objects, not the terrain.
-  setEdits(edits: Edits) {
+  // `selectedOnly`: the edit touched just the selected object (its size sliders). Rebuild
+  // only its lifted copy now; the rest of the scene catches up when the selection changes,
+  // and until then the object is hidden there anyway.
+  setEdits(edits: Edits, { selectedOnly = false } = {}) {
     this.edits = edits;
-    if (this.data && this.placement) this.buildObjects();
+    if (!this.data || !this.placement) return;
+    if (selectedOnly && this.selected) {
+      this.objectsStale = true;
+      this.drawHighlight();
+    } else {
+      this.objectsStale = false;
+      this.buildObjects();
+    }
+  }
+
+  // While an object's Size or Height slider moves: stretch its lifted copy from the center of
+  // its base on the GPU, relative to the edit it was built with. No rebuild.
+  previewEdit(edit: ObjectEdit | undefined) {
+    const built = this.liftEdit;
+    const pivot = this.liftPivot;
+    if (!built || !pivot) return;
+    const kSize = (edit?.scale ?? 1) / (built.scale ?? 1);
+    const kHeight = (edit?.heightScale ?? 1) / (built.heightScale ?? 1);
+    pivot.scale.set(kSize, kSize * kHeight, kSize);
   }
 
   select(key: string | null) {
     this.selected = key;
-    this.drawHighlight();
+    // Edits made while the last object was selected reach the merged meshes now.
+    if (this.objectsStale && this.placement) {
+      this.objectsStale = false;
+      this.buildObjects();
+    } else {
+      this.drawHighlight();
+    }
     this.onPick(key ? this.describeObject(key) : null);
   }
 
@@ -215,6 +247,7 @@ export class Viewer {
     if (visible) this.visible.add(layer);
     else this.visible.delete(layer);
     for (const o of this.layerObjects.get(layer) ?? []) o.visible = visible;
+    if (layer === this.liftLayer) this.highlight.visible = visible;
     if (TEXTURE_LAYERS.includes(layer)) this.ground?.paint(this.visible);
   }
 
@@ -306,7 +339,7 @@ export class Viewer {
     this.pickables = [];
     const at = this.placement!;
     const osm = this.data!.osm;
-    const edited = (this.edited = clipObjects(applyEdits(osm, this.edits), this.ring));
+    const edited = clipObjects(applyEdits(osm, this.edits), this.ring);
 
     const solid = (result: PickableMesh | null, layer: Layer, color?: Color) => {
       if (!result) return;
@@ -375,7 +408,7 @@ export class Viewer {
     const ray = new Raycaster();
     ray.setFromCamera(ndc, this.camera);
     // A click on the lifted object itself keeps it selected.
-    if (this.liftKey && ray.intersectObjects(this.highlight.children, true).length) return;
+    if (this.liftKey && this.highlight.visible && ray.intersectObjects(this.highlight.children, true).length) return;
     const visible = this.pickables.filter((p) => p.object.visible);
     const hit = ray.intersectObjects(visible.map((p) => p.object), false)[0];
     const pickable = hit && visible.find((p) => p.object === hit.object);
@@ -388,17 +421,37 @@ export class Viewer {
     this.unhide?.();
     this.unhide = null;
     disposeChildren(this.highlight);
+    this.liftPivot = null;
     const key = this.selected;
     const at = this.placement;
-    const e = this.edited;
+    const data = this.data;
     // A new object starts from the ground; a rebuild of the same one keeps its height.
     if (key !== this.liftKey) this.highlight.position.y = 0;
     this.liftKey = key;
-    if (!key || !at || !e || !this.data) return;
+    if (!key || !at || !data) return;
 
     const undos = this.pickables.map((p) => p.hide(key)).filter((u): u is () => void => !!u);
     this.unhide = () => undos.forEach((u) => u());
 
+    // Built from this object alone (edited and cut at the tile edge), so it's cheap.
+    const osm = data.osm;
+    const own = clipObjects(
+      applyEdits(
+        {
+          ...osm,
+          buildings: osm.buildings.filter((b) => editKey(b) === key),
+          roads: osm.roads.filter((l) => l.id === key),
+          railways: osm.railways.filter((l) => l.id === key),
+          structureAreas: osm.structureAreas.filter((s) => s.id === key),
+          structureLines: osm.structureLines.filter((s) => s.id === key),
+          towers: osm.towers.filter((t) => t.id === key),
+        },
+        this.edits,
+      ),
+      this.ring,
+    );
+    // Meshes go in `inner`, offset so the pivot sits at the center of the object's base.
+    const inner = new Group();
     const add = (result: PickableMesh | null, color?: Color) => {
       if (!result) return;
       // Vertex colors are multiplied by the material color: the tint keeps each part's own hue.
@@ -408,31 +461,38 @@ export class Viewer {
       );
       const mesh = new Mesh(result.geometry, material);
       mesh.castShadow = true;
-      this.highlight.add(mesh);
+      inner.add(mesh);
     };
     if (key.startsWith('tree/')) {
-      const tree = editedTrees(this.data.osm.trees, this.edits, TREE_HEIGHT_M).find((t) => t.key === key);
+      const tree = editedTrees(osm.trees, this.edits, TREE_HEIGHT_M).find((t) => t.key === key);
       const mesh = tree ? buildTrees([tree], at, COLORS.tree.clone().lerp(new Color('#ff6b2c'), 0.45)) : null;
-      if (mesh) this.highlight.add(mesh);
+      if (mesh) inner.add(mesh);
     } else {
-      add(buildBuildings(e.buildings.filter((b) => editKey(b) === key), at));
-      add(
-        buildStructures(
-          {
-            ...this.data.osm,
-            structureAreas: e.structureAreas.filter((s) => s.id === key),
-            structureLines: e.structureLines.filter((s) => s.id === key),
-            towers: e.towers.filter((t) => t.id === key),
-          },
-          at,
-        ),
-      );
-      add(buildBridges(e.roads.filter((l) => l.id === key), at, COLORS.road), COLORS.road);
-      add(buildBridges(e.railways.filter((l) => l.id === key), at, COLORS.rail), COLORS.rail);
+      add(buildBuildings(own.buildings, at));
+      add(buildStructures({ ...osm, ...own }, at));
+      add(buildBridges(own.roads, at, COLORS.road), COLORS.road);
+      add(buildBridges(own.railways, at, COLORS.rail), COLORS.rail);
     }
-    const box = new Box3().setFromObject(this.highlight);
-    const tall = box.isEmpty() ? 0 : box.max.y - box.min.y;
-    this.liftHeight = Math.max(LIFT_M * at.heightScale, LIFT_SHARE * tall);
+    const box = new Box3().setFromObject(inner);
+    if (box.isEmpty()) return;
+    const pivot = new Group();
+    pivot.position.set((box.min.x + box.max.x) / 2, box.min.y, (box.min.z + box.max.z) / 2);
+    inner.position.copy(pivot.position).negate();
+    pivot.add(inner);
+    this.highlight.add(pivot);
+    this.liftPivot = pivot;
+    this.liftLayer = key.startsWith('tree/')
+      ? 'trees'
+      : own.buildings.length
+        ? 'buildings'
+        : own.roads.length
+          ? 'roads'
+          : own.railways.length
+            ? 'railways'
+            : 'structures';
+    this.highlight.visible = this.visible.has(this.liftLayer);
+    this.liftEdit = { ...this.edits.get(key) };
+    this.liftHeight = Math.max(LIFT_M * at.heightScale, LIFT_SHARE * (box.max.y - box.min.y));
   }
 
   private describeObject(key: string): ObjectPick | null {
