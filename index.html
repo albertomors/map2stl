@@ -46,9 +46,6 @@ nom<!doctype html>
         <p id="tool-hint" class="hint">Pick a shape, then drag on the map.</p>
       </section>
 
-      <p class="hint nav-hint map-only">
-        Drag to pan · scroll to zoom · <b>right-drag</b> or <b>Ctrl+drag</b> to orbit and tilt
-      </p>
 
       <section id="selection" class="map-only" hidden>
         <h2>Selection</h2>
@@ -94,20 +91,24 @@ nom<!doctype html>
       </section>
     </aside>
 
-    <!-- Top right of the 3D view: how to move around, and the selected object. -->
-    <div id="view3d-overlay" class="overlay-right view3d-only">
-      <p class="overlay-hint">
+    <!-- Top right, on the map and in the 3D view: how to move around, and in 3D the edits and
+         the selected object. -->
+    <div id="view3d-overlay" class="overlay-right">
+      <p class="overlay-hint nav-hint map-only">
+        Drag to pan · scroll to zoom · <b>right-drag</b> or <b>Ctrl+drag</b> to orbit and tilt
+      </p>
+      <p class="overlay-hint view3d-only">
         Left-drag to orbit · right-drag to pan · scroll to zoom<br />
         <span id="select-hint"></span>
       </p>
-      <p id="edits-summary" class="overlay-hint">
+      <p id="edits-summary" class="overlay-hint view3d-only">
         <span id="edits-count"></span>
         <span class="edit-actions">
           <button id="restore-deleted" class="link">Restore deleted</button>
           <button id="reset-all" class="link">Reset all</button>
         </span>
       </p>
-      <section id="object-edit" class="floating-card" hidden>
+      <section id="object-edit" class="floating-card view3d-only" hidden>
         <h2>Selected</h2>
         <p id="object-title" class="object-title"></p>
         <p id="object-info" class="hint"></p>

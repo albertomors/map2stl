@@ -656,6 +656,10 @@ button.link:disabled {
     top: auto;
     bottom: 8px;
   }
+  /* On a phone the map's own gestures are standard: no room for the hint. */
+  .nav-hint {
+    display: none;
+  }
 }
 
 .fields {

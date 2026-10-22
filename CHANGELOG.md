@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The map's controls hint moved to a box at the top right, the same box that shows the 3D
+  controls in the 3D view.
+- README screenshots of Vatican City.
+
 - Big selections are requested in parts, one after another: at most about 10 km² or
   25,000 buildings each (planned from the quick data), merged without duplicates. Each part is
   cached on its own, so a retry only asks for what's missing.
