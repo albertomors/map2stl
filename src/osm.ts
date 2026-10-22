@@ -229,34 +229,106 @@ export function parse(elements: OverpassElement[], ring: LngLat[]): OsmData {
   }
 
   // An outline with building:part inside is drawn by its parts: keeping it too would bury them.
-  // A part belongs to the outline that holds most of its corners (at least half of them).
-  // Not the outline around its center: an arched part, like the Eiffel Tower's legs, has
-  // its center in the empty space under the arch, outside every outline.
+  // A part belongs to the outline that holds most of its corners (at least half of them, or
+  // its center). Not just the outline around its center: an arched part, like the Eiffel
+  // Tower's legs, has its center in the empty space under the arch, outside every outline.
+  // Failing that, the outline holding any of its corners at all: parts often stick out past
+  // a roughly drawn outline (Cologne Cathedral's nave roof).
   const covered = new Set<Building>();
   for (const part of parts) {
     const c = centroid(part.outer);
     const corners = part.outer.length - 1;
     let owner: Building | undefined;
-    let best = 0;
+    let best = -1;
+    let fallback: Building | undefined;
+    let fallbackHeld = 0;
     for (const o of outlines) {
       const held = part.outer.slice(0, -1).filter((p) => pointInRing(p, o.outer)).length;
-      if (held * 2 < corners && !pointInRing(c, o.outer)) continue;
+      if (held * 2 < corners && !pointInRing(c, o.outer)) {
+        if (held > fallbackHeld) [fallback, fallbackHeld] = [o, held];
+        continue;
+      }
       if (held > best || (held === best && owner && ringArea(o.outer) > ringArea(owner.outer))) {
         owner = o;
         best = held;
       }
     }
+    owner ??= fallback;
     if (!owner) continue;
     covered.add(owner);
     part.group = owner.id;
     part.groupName = owner.name;
   }
+  groupOrphanParts(parts);
+  fillUnderFloatingParts(parts);
   data.buildings = [...outlines.filter((o) => !covered.has(o)), ...parts];
 
   for (const sea of seaPolygons(coast, bbox(ring))) {
     if (intersectsRing(sea.outer, ring, true)) data.waterAreas.push({ ...sea, kind: 'sea' });
   }
   return data;
+}
+
+// Parts mapped without a building outline around them would each be selected on their own.
+// Parts that touch or overlap are one building: group them (union-find), named after the
+// part that has a name.
+function groupOrphanParts(parts: Building[]) {
+  const orphans = parts.filter((p) => !p.group);
+  const root = orphans.map((_, i) => i);
+  const find = (i: number): number => (root[i] === i ? i : (root[i] = find(root[i])));
+  for (let i = 0; i < orphans.length; i++) {
+    for (let j = i + 1; j < orphans.length; j++) {
+      if (find(i) !== find(j) && footprintsMeet(orphans[i], orphans[j])) root[find(i)] = find(j);
+    }
+  }
+  const members = new Map<number, Building[]>();
+  orphans.forEach((p, i) => members.set(find(i), [...(members.get(find(i)) ?? []), p]));
+  for (const group of members.values()) {
+    if (group.length < 2) continue;
+    const name = group.find((p) => p.name)?.name;
+    for (const p of group) {
+      p.group = group[0].id;
+      p.groupName = name;
+    }
+  }
+}
+
+// A part starting above the ground with nothing of its own building under it (mappers often
+// draw a dome or a drum but not the body it stands on) would float, and can't be printed.
+// Extend it down to the top of whatever of its building is under it, or to the ground. Parts
+// resting on something even partly (a walkway between two towers) are left alone.
+function fillUnderFloatingParts(parts: Building[]) {
+  const byGroup = new Map<string, Building[]>();
+  for (const p of parts) if (p.group) byGroup.set(p.group, [...(byGroup.get(p.group) ?? []), p]);
+  for (const group of byGroup.values()) {
+    // Bottom up, so a filled part can carry the ones above it.
+    for (const p of [...group].sort((a, b) => a.minHeight - b.minHeight)) {
+      if (p.minHeight <= 1) continue;
+      // Only what's really under it: a neighbour touching it at a corner doesn't hold it up.
+      const below = group.filter((q) => q !== p && q.minHeight < p.minHeight && footprintsOverlap(p, q));
+      if (below.some((q) => q.height >= p.minHeight - 1.5)) continue;
+      p.minHeight = Math.max(0, ...below.map((q) => q.height));
+    }
+  }
+}
+
+// Whether two footprints overlap: a corner or the center of one inside the other.
+function footprintsOverlap(a: Polygon, b: Polygon): boolean {
+  return (
+    a.outer.some((p) => pointInRing(p, b.outer)) ||
+    b.outer.some((p) => pointInRing(p, a.outer)) ||
+    pointInRing(centroid(a.outer), b.outer) ||
+    pointInRing(centroid(b.outer), a.outer)
+  );
+}
+
+// Whether two footprints overlap or touch: a corner of one inside the other, or a shared corner.
+function footprintsMeet(a: Polygon, b: Polygon): boolean {
+  return (
+    a.outer.some((p) => pointInRing(p, b.outer)) ||
+    b.outer.some((p) => pointInRing(p, a.outer)) ||
+    a.outer.some((p) => b.outer.some((q) => same(p, q)))
+  );
 }
 
 function roof(t: Record<string, string>): Pick<Building, 'roofShape' | 'roofHeight' | 'roofDirection' | 'colour' | 'roofColour'> {

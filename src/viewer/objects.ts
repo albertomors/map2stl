@@ -44,13 +44,22 @@ type P = [number, number];
 export function buildBuildings(buildings: Building[], at: Placement): PickableMesh | null {
   const m = new MeshBuilder();
   const keys: string[] = [];
+  // All parts of one building stand on one ground level, the lowest point under any of them:
+  // on a slope, parts on their own ground would drift apart vertically (and more so when the
+  // building is enlarged and its footprint covers more of the slope).
+  const groundOf = new Map<string, number>();
+  for (const b of buildings) {
+    const key = editKey(b);
+    const low = Math.min(...b.outer.map((p) => at.elevation(p)));
+    groundOf.set(key, Math.min(groundOf.get(key) ?? Infinity, low));
+  }
   for (const b of buildings) {
     m.owner = keys.push(editKey(b)) - 1;
     const outer = ringToLocal(b.outer, at.frame);
     if (outer.length < 3) continue;
     const holes = b.holes.map((h) => ringToLocal(h, at.frame)).filter((h) => h.length >= 3);
-    // On the lowest ground under the footprint, so no corner floats on a slope.
-    const ground = Math.min(...b.outer.map((p) => at.elevation(p))) * at.terrainScale;
+    // On the lowest ground under the building, so no corner floats on a slope.
+    const ground = groundOf.get(editKey(b))! * at.terrainScale;
     m.ground = ground;
     const base = ground + b.minHeight * at.heightScale;
     const total = (b.height - b.minHeight) * at.heightScale;

@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Multi-part landmarks stand together: all parts of a building share one ground level (on a
+  slope like the Vatican hill, St. Peter's dome stood on different ground from its body and
+  drifted further when enlarged).
+- Parts mapped in mid-air with nothing of their building under them (St. Peter's drum and
+  corner domes, some of the Palace of Westminster) are extended down to what's below them
+  or to the ground, instead of floating.
+- Parts that stick out past a roughly drawn outline still join it (Cologne Cathedral's nave
+  roof), and parts mapped without any outline are grouped with the parts they touch.
+- Enlarging an object no longer shifts it when the slider is released: the preview and the
+  rebuild both scale around the middle of its bounding box.
+- The export fields no longer show values the browser restored into the wrong fields
+  (3 / 0.8 / 0.8 instead of 150 / 3 / 0.8).
+
 ## [0.5.0] - 2026-10-22
 
 Milestone 5, first part: export to STL and 3MF.

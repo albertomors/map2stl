@@ -75,21 +75,24 @@ export function editedTrees(trees: LngLat[], edits: Edits, baseHeight: number): 
   });
 }
 
-// The center each scaled object grows from (all parts of one key share it).
+// The center each scaled object grows from: the middle of its bounding box (all parts of
+// one key share it). The 3D view's live preview scales around the same point, so letting go
+// of the slider doesn't shift the object.
 function centers<T extends Polygon>(items: T[], key: (t: T) => string, edits: Edits): Map<string, LngLat> {
-  const sums = new Map<string, [number, number, number]>();
+  const boxes = new Map<string, [number, number, number, number]>();
   for (const it of items) {
     const kk = key(it);
     if ((edits.get(kk)?.scale ?? 1) === 1) continue;
-    const s = sums.get(kk) ?? [0, 0, 0];
+    const b = boxes.get(kk) ?? [Infinity, Infinity, -Infinity, -Infinity];
     for (const [lng, lat] of it.outer) {
-      s[0] += lng;
-      s[1] += lat;
-      s[2]++;
+      b[0] = Math.min(b[0], lng);
+      b[1] = Math.min(b[1], lat);
+      b[2] = Math.max(b[2], lng);
+      b[3] = Math.max(b[3], lat);
     }
-    sums.set(kk, s);
+    boxes.set(kk, b);
   }
-  return new Map([...sums].map(([kk, [x, y, n]]) => [kk, [x / n, y / n] as LngLat]));
+  return new Map([...boxes].map(([kk, [w, s, e, n]]) => [kk, [(w + e) / 2, (s + n) / 2] as LngLat]));
 }
 
 // Scaling longitude and latitude offsets by the same factor scales meters evenly too.
