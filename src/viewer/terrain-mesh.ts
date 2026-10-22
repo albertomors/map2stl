@@ -109,7 +109,9 @@ export function buildTerrain(
   top.setIndex(index);
   top.computeVertexNormals();
 
-  // Open edges of the surface (used by one face only) run along the outline.
+  // Open edges of the surface (used by one face only) run along the outline. Each keeps the
+  // direction its face goes round, so the walls hung from it can wind the opposite way: a
+  // shared edge crossed in opposite directions is what makes the tile one closed solid.
   const uses = new Map<string, [number, number]>();
   for (let i = 0; i < index.length; i += 3) {
     for (const [p, q] of [[index[i], index[i + 1]], [index[i + 1], index[i + 2]], [index[i + 2], index[i]]]) {
@@ -123,16 +125,32 @@ export function buildTerrain(
   const baseY = minY - baseDepth;
 
   const side: number[] = [];
+  const top3 = (i: number) => [pos[3 * i], pos[3 * i + 1], pos[3 * i + 2]];
+  const base3 = (i: number) => [pos[3 * i], baseY, pos[3 * i + 2]];
+  const next = new Map<number, number>();
   for (const [p, q] of uses.values()) {
-    const [px, py, pz] = [pos[3 * p], pos[3 * p + 1], pos[3 * p + 2]];
-    const [qx, qy, qz] = [pos[3 * q], pos[3 * q + 1], pos[3 * q + 2]];
-    side.push(px, py, pz, px, baseY, pz, qx, qy, qz);
-    side.push(qx, qy, qz, px, baseY, pz, qx, baseY, qz);
+    side.push(...top3(q), ...top3(p), ...base3(p));
+    side.push(...top3(q), ...base3(p), ...base3(q));
+    next.set(p, q);
   }
-  // The base: the outline itself, triangulated (free shapes can be concave).
-  const outline = ring.slice(0, -1).map((p) => new Vector2(...frame.toLocal(p)));
-  for (const tri of ShapeUtils.triangulateShape(outline, [])) {
-    for (const i of tri) side.push(outline[i].x, baseY, outline[i].y);
+  // The base: each rim loop at the base height, through the very same points as the walls'
+  // bottom edges, triangulated (free shapes can be concave) and facing down.
+  const seen = new Set<number>();
+  for (const start of next.keys()) {
+    if (seen.has(start)) continue;
+    const loop: number[] = [];
+    for (let v: number | undefined = start; v !== undefined && !seen.has(v); v = next.get(v)) {
+      seen.add(v);
+      loop.push(v);
+    }
+    if (loop.length < 3) continue;
+    const outline = loop.map((v) => new Vector2(pos[3 * v], pos[3 * v + 2]));
+    for (const [a, b, c] of ShapeUtils.triangulateShape(outline, [])) {
+      const [pa, pb, pc] = [base3(loop[a]), base3(loop[b]), base3(loop[c])];
+      // Normal y < 0 means facing down.
+      const ny = (pb[2] - pa[2]) * (pc[0] - pa[0]) - (pb[0] - pa[0]) * (pc[2] - pa[2]);
+      side.push(...pa, ...(ny < 0 ? pb : pc), ...(ny < 0 ? pc : pb));
+    }
   }
   const sides = new BufferGeometry();
   sides.setAttribute('position', new Float32BufferAttribute(side, 3));

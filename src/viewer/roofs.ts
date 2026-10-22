@@ -24,6 +24,9 @@ export function defaultRoofHeight(shape: string | undefined, outer: P[]): number
 export function buildRoof(m: MeshBuilder, outer: P[], eave: number, rise: number, shape: string, color: Color, wallColor: Color): boolean {
   const kind = canonical(shape);
   if (rise <= 0.01 || kind === 'flat') return false;
+  // Same direction round as the walls (negative signed area in plan), so the roof's faces
+  // wind outward like theirs and the two join into one closed solid.
+  if (signedArea(outer) >= 0) outer = [...outer].reverse();
   const box = orientedBox(outer);
   const [cx, cz] = box.center;
   const at = ([x, z]: P, y: number): Vec3 => [x, y, z];
@@ -64,14 +67,30 @@ export function buildRoof(m: MeshBuilder, outer: P[], eave: number, rise: number
   }
 
   // Gabled (ridge the full length) or hipped (ridge shortened by the width, slopes all round).
+  // Each eave corner rises to its own point on the ridge (u along it). Both sides of the roof
+  // meet on the ridge, so every side runs through *all* ridge points between its two ends:
+  // otherwise one side's ridge edge would end where the other's doesn't, leaving hairline
+  // gaps that break the printable solid.
   const [ux, uz] = box.longAxis;
   const ridge = kind === 'gabled' ? box.halfL : Math.max(0, box.halfL - box.halfW);
-  const inner = outer.map(([x, z]) => {
-    const u = Math.max(-ridge, Math.min(ridge, (x - cx) * ux + (z - cz) * uz));
-    return at([cx + u * ux, cz + u * uz], eave + rise);
-  });
-  // For gabled roofs the strip's end faces come out vertical: those are the gable walls.
-  strip(m, outer.map((p) => at(p, eave)), inner, color);
+  const us = outer.map(([x, z]) => Math.max(-ridge, Math.min(ridge, (x - cx) * ux + (z - cz) * uz)));
+  const stops = [...new Set(us)].sort((a, b) => a - b);
+  const onRidge = (u: number) => at([cx + u * ux, cz + u * uz], eave + rise);
+  const lower = outer.map((p) => at(p, eave));
+  for (let i = 0; i < outer.length; i++) {
+    const j = (i + 1) % outer.length;
+    const [ui, uj] = [us[i], us[j]];
+    // Ridge points from this side's end (uj) back to its start (ui).
+    const chain = stops.filter((u) => u >= Math.min(ui, uj) && u <= Math.max(ui, uj));
+    if (uj < ui) chain.reverse();
+    if (chain.length < 2) {
+      // Both corners rise to the same ridge point: a gable end (vertical) or a hip triangle.
+      m.tri(lower[i], lower[j], onRidge(uj), color);
+      continue;
+    }
+    m.tri(lower[i], lower[j], onRidge(chain[chain.length - 1]), color);
+    for (let k = chain.length - 1; k > 0; k--) m.tri(lower[i], onRidge(chain[k]), onRidge(chain[k - 1]), color);
+  }
   return true;
 }
 
@@ -83,12 +102,13 @@ function canonical(shape: string): string {
   return 'hipped';
 }
 
-// Quads between two rings with matching vertices (the inner may collapse to a line or point).
+// Quads between two rings with matching vertices (the inner may collapse to a point). The
+// outline runs the same way round as the walls, so these wind outward like them.
 function strip(m: MeshBuilder, lower: Vec3[], upper: Vec3[], color: Color) {
   for (let i = 0; i < lower.length; i++) {
     const j = (i + 1) % lower.length;
-    m.tri(lower[i], lower[j], upper[j], color, 'up');
-    m.tri(lower[i], upper[j], upper[i], color, 'up');
+    m.tri(lower[i], lower[j], upper[j], color);
+    m.tri(lower[i], upper[j], upper[i], color);
   }
 }
 
@@ -125,4 +145,14 @@ function orientedBox(pts: P[]) {
       : { area, center, longAxis: b, shortAxis: a, halfL: hb, halfW: ha };
   }
   return best;
+}
+
+function signedArea(ring: P[]): number {
+  let a = 0;
+  for (let i = 0; i < ring.length; i++) {
+    const [x0, z0] = ring[i];
+    const [x1, z1] = ring[(i + 1) % ring.length];
+    a += x0 * z1 - x1 * z0;
+  }
+  return a / 2;
 }

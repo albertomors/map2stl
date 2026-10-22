@@ -86,6 +86,21 @@ for (const id of ['terrain-scale', 'height-scale']) {
 }
 showScales();
 
+// Export: what's in the 3D view (edits, multipliers, visible layers), in millimeters.
+let exportFormat: 'stl' | '3mf' = 'stl';
+const FORMAT_HINTS = {
+  stl: 'One solid, for any slicer.',
+  '3mf': 'One colored part per layer (terrain, buildings, structures, trees), for multi-color printers.',
+};
+function showFormat() {
+  for (const f of ['stl', '3mf'] as const) $(`format-${f}`).setAttribute('aria-pressed', String(f === exportFormat));
+  $('format-hint').textContent = FORMAT_HINTS[exportFormat];
+  $('download').textContent = `Download ${exportFormat.toUpperCase()}`;
+}
+for (const f of ['stl', '3mf'] as const) $(`format-${f}`).addEventListener('click', () => ((exportFormat = f), showFormat()));
+showFormat();
+$('download').addEventListener('click', () => downloadModel());
+
 // Object editing in the 3D view.
 for (const [id, field] of [['object-size', 'scale'], ['object-height', 'heightScale']] as const) {
   let timer: number | undefined;
@@ -469,4 +484,41 @@ function showSelectHint() {
   $('select-hint').textContent = viewer?.canSelect
     ? 'Click a building, tree, bridge or structure to edit it.'
     : 'Selecting and editing become available when the detailed data arrives.';
+}
+
+async function downloadModel() {
+  if (!areaData) return;
+  const button = $<HTMLButtonElement>('download');
+  const status = $('export-status');
+  const num = (id: string, fallback: number) => {
+    const v = Number($<HTMLInputElement>(id).value);
+    return Number.isFinite(v) && v > 0 ? v : fallback;
+  };
+  button.disabled = true;
+  status.textContent = 'Building the model…';
+  // Let the message paint before the main thread is busy for a moment.
+  await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
+  try {
+    const [{ buildPrintModel }, { toSTL, to3MF }] = await Promise.all([import('./export'), import('./export-files')]);
+    const model = buildPrintModel(areaData, edits, scales(), visibleLayers, {
+      sizeMm: num('print-size', 150),
+      baseMm: num('print-base', 3),
+      minFeatureMm: num('print-min', 0.8),
+    });
+    const [lng, lat] = areaData.selection.center;
+    const name = `map2stl-${lat.toFixed(4)}-${lng.toFixed(4)}`;
+    const blob = exportFormat === 'stl' ? toSTL(model) : to3MF(model, name);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${name}.${exportFormat}`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+    const [x, y, z] = model.sizeMm.map((v) => Math.round(v));
+    status.textContent = `${x} × ${y} × ${z} mm · ${model.triangleCount.toLocaleString()} triangles · ${formatBytes(blob.size)}. Credit "© OpenStreetMap contributors" when you share it.`;
+  } catch (err) {
+    console.error('Export failed', err);
+    status.textContent = `The export failed: ${(err as Error).message}`;
+  } finally {
+    button.disabled = false;
+  }
 }

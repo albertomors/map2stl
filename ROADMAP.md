@@ -2,14 +2,15 @@
 
 Open work only: built items move to the README and CHANGELOG.
 
-## Milestone 5: export
+## Milestone 5: export (rest)
 
-- Physical size in mm, base thickness, minimum feature size so nothing prints too thin.
+- Roads, water, parks and squares in the print: today they're only painted in the 3D view.
+  Raise them slightly (or inset them) as their own 3MF parts, so multi-color prints show them.
 - Roofs that follow concave footprints exactly (straight skeleton); today gabled and hipped
   roofs are exact only for rectangular footprints.
-- Merge into a watertight solid with `manifold-3d` (WASM).
-- STL (single solid) and 3MF (one part per category, for multi-color printing).
-- Embed the "© OpenStreetMap contributors" credit.
+- Optionally merge everything into one watertight solid with `manifold-3d` (WASM). Today
+  each object is a closed solid and slicers merge the overlaps, which works in practice.
+- A print preview of the scale problem: warn when details fall below the nozzle width.
 
 ## Faster, more reliable data
 

@@ -31,12 +31,10 @@ import { clipObjects, clipToSelection } from '../clip';
 import { applyEdits, editedTrees, editKey, type Edits, type ObjectEdit } from '../edits';
 import type { LngLat } from '../geo';
 import type { OsmData } from '../osm';
-import { describe } from '../selection';
-import { LocalFrame } from '../local';
-import { elevationAt } from '../terrain';
 import { GroundTexture } from './ground';
 import { buildBridges, buildBuildings, buildStructures, buildTrees, COLORS, TREE_HEIGHT_M, type PickableMesh, type Placement } from './objects';
-import { buildTerrain, type Bounds } from './terrain-mesh';
+import { prepareScene } from './scene';
+import { buildTerrain } from './terrain-mesh';
 
 // What the panel shows about a clicked object, and which edits it supports.
 export interface ObjectPick {
@@ -268,38 +266,20 @@ export class Viewer {
     this.stretch.uHeightK.value = 1;
     this.terrain.scale.y = 1;
     const data = this.data!;
-    const { terrain, selection } = data;
+    const { terrain } = data;
     disposeChildren(this.terrain);
 
-    const ring = (this.ring = describe(selection).ring);
+    const { ring, frame, bounds, placement, groundHeight } = prepareScene(data, scales);
+    this.ring = ring;
+    this.placement = placement;
     // Nothing may stick out past the tile edge.
     const osm = (this.clipped ??= clipToSelection(data.osm, ring));
-    const frame = new LocalFrame(selection.center);
-    const local = ring.map((p) => frame.toLocal(p));
-    const bounds: Bounds = {
-      minX: Math.min(...local.map((p) => p[0])),
-      maxX: Math.max(...local.map((p) => p[0])),
-      minZ: Math.min(...local.map((p) => p[1])),
-      maxZ: Math.max(...local.map((p) => p[1])),
-    };
-
-    // Terrarium includes the sea floor: where there's sea, the water surface is the ground.
-    const hasSea = osm.waterAreas.some((a) => a.kind === 'sea');
-    const clampSea = (h: number) => (hasSea ? Math.max(h, 0) : h);
-    // Heights relative to the lowest point, so the model sits near y = 0 wherever it is.
-    const ref = clampSea(terrain.min);
-    this.placement = {
-      frame,
-      elevation: ([lng, lat]) => clampSea(elevationAt(terrain, lng, lat)) - ref,
-      terrainScale: scales.terrain,
-      heightScale: scales.heights,
-    };
 
     if (!this.ground) {
       this.ground = new GroundTexture(osm, frame, bounds, this.renderer.capabilities.maxTextureSize);
       this.ground.paint(this.visible);
     }
-    const tile = buildTerrain(terrain, ring, frame, bounds, (h) => (clampSea(h) - ref) * scales.terrain, BASE_DEPTH_M);
+    const tile = buildTerrain(terrain, ring, frame, bounds, groundHeight, BASE_DEPTH_M);
     const top = new Mesh(tile.top, new MeshLambertMaterial({ map: this.ground.texture }));
     top.receiveShadow = true;
     const sides = new Mesh(tile.sides, new MeshLambertMaterial({ color: '#b9ab96', side: DoubleSide }));

@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Export to STL and 3MF** (milestone 5): print size of the longest side, base thickness and
+  thinnest detail in millimeters. Exports what the 3D view shows: edits, height multipliers
+  and visible layers. Every object is a closed solid (sunk 1 m into the ground so nothing
+  floats on slopes), the terrain is one closed block with a flat base, and both files credit
+  OpenStreetMap. The 3MF is one object with a named, colored part per layer.
+
 ### Changed
 
 - A selected object lifts off the ground (6 m, or 12% of its height for tall ones) and is
@@ -20,6 +28,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Hiding a layer also hides its selected (lifted) object.
+- Gabled and hipped roofs are closed solids: their two sides now meet in the same ridge
+  points (before, irregular footprints left hairline gaps along the ridge).
 - Landmarks with arched parts stay one building: the Eiffel Tower's four legs were
   selected separately because the center of an arch lies outside the tower's outline.
 - Shorter README, aimed at hobbyists: what it's for, three steps, features, how to run it.
