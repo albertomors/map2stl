@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Hiding a layer also hides its selected (lifted) object.
+- Landmarks with arched parts stay one building: the Eiffel Tower's four legs were
+  selected separately because the center of an arch lies outside the tower's outline.
 - Shorter README, aimed at hobbyists: what it's for, three steps, features, how to run it.
 
 ### Added

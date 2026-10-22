@@ -3,7 +3,7 @@
 // a width.
 
 import { seaPolygons } from './coast';
-import { bbox, centroid, intersectsRing, pointInRing, type LngLat } from './geo';
+import { bbox, centroid, intersectsRing, pointInRing, ringArea, type LngLat } from './geo';
 import type { OverpassElement } from './overpass';
 
 export interface Polygon {
@@ -229,10 +229,23 @@ export function parse(elements: OverpassElement[], ring: LngLat[]): OsmData {
   }
 
   // An outline with building:part inside is drawn by its parts: keeping it too would bury them.
+  // A part belongs to the outline that holds most of its corners (at least half of them).
+  // Not the outline around its center: an arched part, like the Eiffel Tower's legs, has
+  // its center in the empty space under the arch, outside every outline.
   const covered = new Set<Building>();
   for (const part of parts) {
     const c = centroid(part.outer);
-    const owner = outlines.find((o) => pointInRing(c, o.outer));
+    const corners = part.outer.length - 1;
+    let owner: Building | undefined;
+    let best = 0;
+    for (const o of outlines) {
+      const held = part.outer.slice(0, -1).filter((p) => pointInRing(p, o.outer)).length;
+      if (held * 2 < corners && !pointInRing(c, o.outer)) continue;
+      if (held > best || (held === best && owner && ringArea(o.outer) > ringArea(owner.outer))) {
+        owner = o;
+        best = held;
+      }
+    }
     if (!owner) continue;
     covered.add(owner);
     part.group = owner.id;
