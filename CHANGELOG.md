@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-22
+
+Fixes for landmarks, editing and the export panel, and a tidier 3D view.
+
 ### Changed
 
 - The 3D view's left panel holds only the two height multipliers and the layers. The
