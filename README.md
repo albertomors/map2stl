@@ -45,7 +45,7 @@ Needs [Node.js](https://nodejs.org) 20.19+.
 map2stl is free and has no ads. If it made your favorite place into a print, you can buy me
 a coffee:
 
-[![Support me on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/albertomorselli)
+[![Support me on Ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/W7A529A7ZI)
 
 ## Credits
 
