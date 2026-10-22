@@ -17,6 +17,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Export is a floating card at the bottom right of the 3D view, shown once the detailed
+  data has arrived.
+
 - A selected object lifts off the ground (6 m, or 12% of its height for tall ones) and is
   tinted light orange, keeping the shading of its own colors.
 - The height multiplier sliders are instant: dragging stretches the scene on the graphics

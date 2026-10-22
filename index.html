@@ -102,24 +102,6 @@ nom<!doctype html>
         </div>
       </section>
 
-      <section id="export" class="view3d-only">
-        <h2>Export</h2>
-        <div class="fields">
-          <label for="print-size">Print size, longest side</label>
-          <span class="field"><input id="print-size" type="number" min="30" max="500" step="5" value="150" /> mm</span>
-          <label for="print-base">Base thickness</label>
-          <span class="field"><input id="print-base" type="number" min="0.5" max="20" step="0.5" value="3" /> mm</span>
-          <label for="print-min">Thinnest detail</label>
-          <span class="field"><input id="print-min" type="number" min="0.2" max="3" step="0.1" value="0.8" /> mm</span>
-        </div>
-        <div class="format" role="group" aria-label="File format">
-          <button id="format-stl" data-format="stl" aria-pressed="true">STL</button>
-          <button id="format-3mf" data-format="3mf" aria-pressed="false">3MF</button>
-        </div>
-        <p id="format-hint" class="hint"></p>
-        <button id="download" class="primary">Download STL</button>
-        <p id="export-status" class="hint" aria-live="polite"></p>
-      </section>
 
       <section id="data" hidden>
         <h2>3D data</h2>
@@ -137,6 +119,26 @@ nom<!doctype html>
         <p class="hint credit">© OpenStreetMap contributors · terrain: AWS Terrain Tiles</p>
       </section>
     </aside>
+
+    <!-- Floating over the 3D view, once the detailed data is in. -->
+    <section id="export" class="export-panel" hidden>
+      <h2>Export</h2>
+      <div class="fields">
+        <label for="print-size">Longest side</label>
+        <span class="field"><input id="print-size" type="number" min="30" max="500" step="5" value="150" /> mm</span>
+        <label for="print-base">Base thickness</label>
+        <span class="field"><input id="print-base" type="number" min="0.5" max="20" step="0.5" value="3" /> mm</span>
+        <label for="print-min">Thinnest detail</label>
+        <span class="field"><input id="print-min" type="number" min="0.2" max="3" step="0.1" value="0.8" /> mm</span>
+      </div>
+      <div class="format" role="group" aria-label="File format">
+        <button id="format-stl" data-format="stl" aria-pressed="true">STL</button>
+        <button id="format-3mf" data-format="3mf" aria-pressed="false">3MF</button>
+      </div>
+      <p id="format-hint" class="hint"></p>
+      <button id="download" class="primary">Download STL</button>
+      <p id="export-status" class="hint" aria-live="polite"></p>
+    </section>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

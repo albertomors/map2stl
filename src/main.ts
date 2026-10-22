@@ -335,6 +335,7 @@ function showData(data: AreaData) {
   $('data-terrain').textContent =
     `Terrain ${Math.round(t.min)}–${Math.round(t.max)} m above sea level, ${t.width}×${t.height} grid (≈${spacing.toFixed(0)} m).`;
   if (replacing) viewer?.show(data, visibleLayers, scales(), { keepCamera: true, edits });
+  showExport();
   showSelectHint();
 }
 
@@ -404,6 +405,7 @@ async function open3d() {
     $('viewer').hidden = false;
     viewer = new Viewer($('viewer'), showPick);
     viewer.show(areaData, visibleLayers, scales(), { edits });
+    showExport();
     showSelectHint();
     showEditsSummary();
   } catch (err) {
@@ -420,6 +422,7 @@ async function open3d() {
 function close3d() {
   viewer?.dispose();
   viewer = null;
+  showExport();
   showPick(null);
   $('viewer').hidden = true;
   document.body.classList.remove('mode-3d');
@@ -521,4 +524,10 @@ async function downloadModel() {
   } finally {
     button.disabled = false;
   }
+}
+
+// The export card floats over the 3D view, and only once the detailed data is in: the quick
+// tile data has no roofs, trees or walls and isn't worth printing.
+function showExport() {
+  $('export').hidden = !(viewer && areaData?.detail === 'full');
 }
