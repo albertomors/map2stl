@@ -7,38 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-10-22
+
+Gentler, chunked requests to the OSM servers, a better download estimate, and exports that
+open cleanly in OrcaSlicer.
+
 ### Changed
 
-- 3MF for OrcaSlicer and Bambu Studio: parts are named (Terrain, Buildings, Bridges and
-  structures, Trees) and pre-assigned to filaments 1-4. Other slicers ignore this.
-- 3MF: neighbouring buildings no longer share points where their walls touch, which
-  slicers reported as non-manifold edges.
-
-- The download time estimate follows the building count instead of the area: about 44 s
-  per request (the server's wait, whatever the size) plus 1.9 s per 1,000 buildings (what
-  comes back). On 10 real requests it's off by 6 s on average instead of 10 s, and a dense
-  5.9 km² area is now estimated at 107 s (real: 103 s) instead of 61 s. It learns from
-  downloads using the same building count, from a fresh start.
-
-- The map's controls hint moved to a box at the top right, the same box that shows the 3D
-  controls in the 3D view.
-- README screenshots of Vatican City.
-
-- Big selections are requested in parts, one after another: at most about 10 km² or
-  25,000 buildings each (planned from the quick data), merged without duplicates. Each part is
+- Big selections are requested in parts, one after another: at most about 10 km² or 25,000
+  buildings each (planned from the quick data), merged without duplicates. Each part is
   cached on its own, so a retry only asks for what's missing.
 - Gentler on the public servers: before each request the main server is asked when a slot
   is free, and a refusal is followed by a wait that doubles each time (5 s up to 60 s, or
   the server's Retry-After), as the server asks. The progress bar shows the part and the
   wait; the estimate is the sum over the parts.
-
+- The download time estimate follows the building count instead of the area: about 44 s
+  per request (the server's wait, whatever the size) plus 1.9 s per 1,000 buildings (what
+  comes back). On 10 real requests it's off by 6 s on average instead of 10 s, and a dense
+  5.9 km² area is now estimated at 107 s (real: 103 s) instead of 61 s.
 - Exports keep the shape the way it was drawn: a rectangle or hexagon drawn on a turned
   map lies straight on the print bed, and the print size is its own longest side.
+- 3MF for OrcaSlicer and Bambu Studio: parts are named (Terrain, Buildings, Bridges and
+  structures, Trees) and pre-assigned to filaments 1–4. Other slicers ignore this.
+- The map's controls hint moved to a box at the top right, the same box that shows the 3D
+  controls in the 3D view.
+- README screenshots of Vatican City.
 
 ### Fixed
 
-- Rectangles and hexagons fetched as a single part came back empty (their corners lie on
-  the part's edge, and the part was dropped).
+- 3MF: neighbouring buildings no longer share points where their walls touch, which
+  slicers reported as non-manifold edges.
 
 ## [0.5.1] - 2026-10-22
 
