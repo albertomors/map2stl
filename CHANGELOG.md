@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- A selected object lifts off the ground (6 m, or 12% of its height for tall ones) with a
+  red outline of its footprint below, instead of turning orange. It keeps its own colors.
+- Shorter README, aimed at hobbyists: what it's for, three steps, features, how to run it.
+
 ## [0.4.0] - 2026-10-21
 
 Milestone 4: editing objects in the 3D view.

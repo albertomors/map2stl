@@ -1,22 +1,31 @@
 // The 3D view of a fetched area: terrain tile with the flat layers painted on, buildings with
 // roofs, structures, bridges and trees. Layers toggle on and off; the two height multipliers
-// rebuild it. A click on a building, tree, bridge or structure selects it (tinted orange) for
-// editing: delete, enlarge, or stretch its height.
+// rebuild it. A click on a building, tree, bridge or structure selects it for editing (delete,
+// enlarge, stretch its height): the object lifts off the ground, and a red band marks its
+// footprint below.
 
 import {
+  Box3,
+  BufferAttribute,
   Color,
   DirectionalLight,
   DoubleSide,
   Group,
   HemisphereLight,
   InstancedMesh,
+  Matrix4,
   Mesh,
+  MeshBasicMaterial,
   MeshLambertMaterial,
   PCFShadowMap,
   PerspectiveCamera,
   Raycaster,
   Scene,
+  Shape,
+  ShapeGeometry,
+  Path,
   Vector2,
+  Vector3,
   WebGLRenderer,
   type Object3D,
 } from 'three';
@@ -52,7 +61,14 @@ export interface ViewScales {
 // Below the lowest ground, so the tile reads as a solid block.
 const BASE_DEPTH_M = 12;
 const TEXTURE_LAYERS: Layer[] = ['green', 'surfaces', 'paved', 'water', 'roads', 'railways'];
-const SELECTION_COLOR = new Color('#ff6b2c');
+// How high a selected object floats (at least LIFT_M, more for tall objects), and its
+// footprint band.
+const LIFT_M = 6;
+const LIFT_SHARE = 0.12;
+const LIFT_EASE = 0.18;
+const OUTLINE_COLOR = new Color('#d62828');
+const OUTLINE_OUT_M = 3.5;
+const OUTLINE_IN_M = 0.8;
 // A press and release closer than this is a click (select), not an orbit.
 const CLICK_PX = 5;
 
@@ -60,6 +76,8 @@ const CLICK_PX = 5;
 interface Pickable {
   object: Mesh;
   keyAt: (faceIndex: number | undefined, instanceId: number | undefined) => string | undefined;
+  // Makes one object vanish from the merged mesh (it's drawn lifted instead); returns the undo.
+  hide: (key: string) => (() => void) | null;
 }
 
 export class Viewer {
@@ -72,7 +90,12 @@ export class Viewer {
   private terrain = new Group();
   // Buildings, structures, bridges, trees: rebuilt on every edit too.
   private objects = new Group();
+  // The selected object, lifted; its footprint band stays on the ground.
   private highlight = new Group();
+  private footprint = new Group();
+  private liftKey: string | null = null;
+  private liftHeight = 0;
+  private unhide: (() => void) | null = null;
   private layerObjects = new Map<Layer, Object3D[]>();
   private ground: GroundTexture | null = null;
   private data: AreaData | null = null;
@@ -103,7 +126,7 @@ export class Viewer {
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
     this.sun.shadow.bias = -0.0005;
-    this.scene.add(this.sun, this.sun.target, this.terrain, this.objects, this.highlight);
+    this.scene.add(this.sun, this.sun.target, this.terrain, this.objects, this.highlight, this.footprint);
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
@@ -120,7 +143,11 @@ export class Viewer {
     this.resize = new ResizeObserver(() => this.fit());
     this.resize.observe(container);
     this.fit();
+    const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
     this.renderer.setAnimationLoop(() => {
+      const target = this.liftKey ? this.liftHeight : 0;
+      const y = this.highlight.position.y;
+      this.highlight.position.y = reducedMotion ? target : y + (target - y) * LIFT_EASE;
       this.controls.update();
       this.renderer.render(this.scene, this.camera);
     });
@@ -171,7 +198,7 @@ export class Viewer {
   dispose() {
     this.renderer.setAnimationLoop(null);
     this.resize.disconnect();
-    for (const g of [this.terrain, this.objects, this.highlight]) disposeChildren(g);
+    for (const g of [this.terrain, this.objects, this.highlight, this.footprint]) disposeChildren(g);
     this.ground?.dispose();
     this.controls.dispose();
     this.renderer.dispose();
@@ -244,6 +271,8 @@ export class Viewer {
 
   // Edits first, then the cut at the tile edge: an enlarged landmark is still trimmed there.
   private buildObjects() {
+    // The old meshes go away, and the object hidden in them with them.
+    this.unhide = null;
     disposeChildren(this.objects);
     for (const layer of ['buildings', 'structures', 'roads', 'railways', 'trees'] as Layer[]) this.layerObjects.delete(layer);
     this.pickables = [];
@@ -258,7 +287,27 @@ export class Viewer {
       mesh.castShadow = true;
       mesh.receiveShadow = true;
       this.add(layer, mesh);
-      this.pickables.push({ object: mesh, keyAt: (face) => (face === undefined ? undefined : result.keys[result.owners[face]]) });
+      this.pickables.push({
+        object: mesh,
+        keyAt: (face) => (face === undefined ? undefined : result.keys[result.owners[face]]),
+        // Collapse the object's triangles to a point; keep the originals to put them back.
+        hide: (key) => {
+          const pos = mesh.geometry.getAttribute('position') as BufferAttribute;
+          const array = pos.array as Float32Array;
+          const saved: [number, Float32Array][] = [];
+          result.owners.forEach((owner, tri) => {
+            if (result.keys[owner] !== key) return;
+            saved.push([tri * 9, array.slice(tri * 9, tri * 9 + 9)]);
+            array.fill(0, tri * 9, tri * 9 + 9);
+          });
+          if (!saved.length) return null;
+          pos.needsUpdate = true;
+          return () => {
+            for (const [at, values] of saved) array.set(values, at);
+            pos.needsUpdate = true;
+          };
+        },
+      });
     };
     solid(buildBuildings(edited.buildings, at), 'buildings');
     solid(buildStructures({ ...osm, ...edited }, at), 'structures');
@@ -269,7 +318,22 @@ export class Viewer {
     const treeMesh = buildTrees(trees, at);
     if (treeMesh) {
       this.add('trees', treeMesh);
-      this.pickables.push({ object: treeMesh, keyAt: (_face, instance) => (instance === undefined ? undefined : trees[instance]?.key) });
+      this.pickables.push({
+        object: treeMesh,
+        keyAt: (_face, instance) => (instance === undefined ? undefined : trees[instance]?.key),
+        hide: (key) => {
+          const i = trees.findIndex((t) => t.key === key);
+          if (i < 0) return null;
+          const saved = new Matrix4();
+          treeMesh.getMatrixAt(i, saved);
+          treeMesh.setMatrixAt(i, new Matrix4().makeScale(0, 0, 0));
+          treeMesh.instanceMatrix.needsUpdate = true;
+          return () => {
+            treeMesh.setMatrixAt(i, saved);
+            treeMesh.instanceMatrix.needsUpdate = true;
+          };
+        },
+      });
     }
     this.drawHighlight();
   }
@@ -280,54 +344,64 @@ export class Viewer {
     const ndc = new Vector2(((e.clientX - rect.left) / rect.width) * 2 - 1, -((e.clientY - rect.top) / rect.height) * 2 + 1);
     const ray = new Raycaster();
     ray.setFromCamera(ndc, this.camera);
+    // A click on the lifted object itself keeps it selected.
+    if (this.liftKey && ray.intersectObjects(this.highlight.children, true).length) return;
     const visible = this.pickables.filter((p) => p.object.visible);
     const hit = ray.intersectObjects(visible.map((p) => p.object), false)[0];
     const pickable = hit && visible.find((p) => p.object === hit.object);
     this.select(pickable?.keyAt(hit.faceIndex ?? undefined, hit.instanceId) ?? null);
   }
 
-  // The selected object drawn again in solid orange, just in front of itself.
+  // The selected object vanishes from its merged mesh and is drawn again on its own, lifted
+  // (the render loop eases it up), with a red band around its footprint on the ground.
   private drawHighlight() {
+    this.unhide?.();
+    this.unhide = null;
     disposeChildren(this.highlight);
+    disposeChildren(this.footprint);
     const key = this.selected;
     const at = this.placement;
     const e = this.edited;
+    // A new object starts from the ground; a rebuild of the same one keeps its height.
+    if (key !== this.liftKey) this.highlight.position.y = 0;
+    this.liftKey = key;
     if (!key || !at || !e || !this.data) return;
-    const material = () =>
-      new MeshLambertMaterial({
-        color: SELECTION_COLOR,
-        emissive: SELECTION_COLOR.clone().multiplyScalar(0.35),
-        side: DoubleSide,
-        // Wins the depth test against the object it covers.
-        polygonOffset: true,
-        polygonOffsetFactor: -2,
-        polygonOffsetUnits: -2,
-      });
-    const show = (result: PickableMesh | null) => result && this.highlight.add(new Mesh(result.geometry, material()));
+
+    const undos = this.pickables.map((p) => p.hide(key)).filter((u): u is () => void => !!u);
+    this.unhide = () => undos.forEach((u) => u());
+
+    const add = (result: PickableMesh | null, color?: Color) => {
+      if (!result) return;
+      const material = new MeshLambertMaterial(color ? { color, side: DoubleSide } : { vertexColors: true, side: DoubleSide });
+      const mesh = new Mesh(result.geometry, material);
+      mesh.castShadow = true;
+      this.highlight.add(mesh);
+    };
     if (key.startsWith('tree/')) {
       const tree = editedTrees(this.data.osm.trees, this.edits, TREE_HEIGHT_M).find((t) => t.key === key);
-      const mesh = tree ? buildTrees([tree], at, SELECTION_COLOR) : null;
-      if (mesh) {
-        mesh.castShadow = false;
-        // A hair larger than the tree, so it covers it.
-        mesh.scale.setScalar(1.02);
-        this.highlight.add(mesh);
-      }
-      return;
+      const mesh = tree ? buildTrees([tree], at) : null;
+      if (mesh) this.highlight.add(mesh);
+    } else {
+      add(buildBuildings(e.buildings.filter((b) => editKey(b) === key), at));
+      add(
+        buildStructures(
+          {
+            ...this.data.osm,
+            structureAreas: e.structureAreas.filter((s) => s.id === key),
+            structureLines: e.structureLines.filter((s) => s.id === key),
+            towers: e.towers.filter((t) => t.id === key),
+          },
+          at,
+        ),
+      );
+      add(buildBridges(e.roads.filter((l) => l.id === key), at, COLORS.road), COLORS.road);
+      add(buildBridges(e.railways.filter((l) => l.id === key), at, COLORS.rail), COLORS.rail);
     }
-    show(buildBuildings(e.buildings.filter((b) => editKey(b) === key), at));
-    show(
-      buildStructures(
-        {
-          ...this.data.osm,
-          structureAreas: e.structureAreas.filter((s) => s.id === key),
-          structureLines: e.structureLines.filter((s) => s.id === key),
-          towers: e.towers.filter((t) => t.id === key),
-        },
-        at,
-      ),
-    );
-    show(buildBridges([...e.roads, ...e.railways].filter((l) => l.id === key), at, SELECTION_COLOR));
+    const band = footprintBand(this.highlight);
+    if (band) this.footprint.add(band);
+    const box = new Box3().setFromObject(this.highlight);
+    const tall = box.isEmpty() ? 0 : box.max.y - box.min.y;
+    this.liftHeight = Math.max(LIFT_M * at.heightScale, LIFT_SHARE * tall);
   }
 
   private describeObject(key: string): ObjectPick | null {
@@ -387,4 +461,60 @@ function disposeChildren(group: Group) {
     });
     group.remove(o);
   }
+}
+
+// A flat red band around an object's footprint (the convex outline of everything in `group`,
+// seen from above), at the height of its base.
+function footprintBand(group: Group): Mesh | null {
+  const pts: [number, number][] = [];
+  let baseY = Infinity;
+  const v = new Vector3();
+  group.updateMatrixWorld(true);
+  group.traverse((o) => {
+    if (!(o instanceof Mesh)) return;
+    const pos = o.geometry.getAttribute('position');
+    const instances = o instanceof InstancedMesh ? o.count : 1;
+    const m = new Matrix4();
+    for (let i = 0; i < instances; i++) {
+      if (o instanceof InstancedMesh) o.getMatrixAt(i, m);
+      for (let k = 0; k < pos.count; k++) {
+        v.fromBufferAttribute(pos, k);
+        if (o instanceof InstancedMesh) v.applyMatrix4(m);
+        pts.push([v.x, v.z]);
+        baseY = Math.min(baseY, v.y);
+      }
+    }
+  });
+  if (pts.length < 3) return null;
+  // Convex hull (monotone chain).
+  pts.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cross = (o: number[], a: number[], b: number[]) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const half = (list: [number, number][]) => {
+    const h: [number, number][] = [];
+    for (const p of list) {
+      while (h.length > 1 && cross(h[h.length - 2], h[h.length - 1], p) <= 0) h.pop();
+      h.push(p);
+    }
+    return h.slice(0, -1);
+  };
+  const hull = [...half(pts), ...half([...pts].reverse())];
+  if (hull.length < 3) return null;
+  const cx = hull.reduce((s, p) => s + p[0], 0) / hull.length;
+  const cz = hull.reduce((s, p) => s + p[1], 0) / hull.length;
+  const grow = (d: number) =>
+    hull.map(([x, z]) => {
+      const r = Math.hypot(x - cx, z - cz) || 1;
+      return new Vector2(x + ((x - cx) / r) * d, z + ((z - cz) / r) * d);
+    });
+  const shape = new Shape(grow(OUTLINE_OUT_M));
+  shape.holes.push(new Path(grow(OUTLINE_IN_M)));
+  const geometry = new ShapeGeometry(shape).rotateX(Math.PI / 2);
+  const band = new Mesh(
+    geometry,
+    // Drawn over everything, so the lifted object can't hide its own footprint.
+    new MeshBasicMaterial({ color: OUTLINE_COLOR, side: DoubleSide, depthTest: false, transparent: true, opacity: 0.9 }),
+  );
+  band.renderOrder = 10;
+  band.position.y = baseY + 0.3;
+  return band;
 }
