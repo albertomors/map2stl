@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The download time estimate follows the building count instead of the area: about 44 s
+  per request (the server's wait, whatever the size) plus 1.9 s per 1,000 buildings (what
+  comes back). On 10 real requests it's off by 6 s on average instead of 10 s, and a dense
+  5.9 km² area is now estimated at 107 s (real: 103 s) instead of 61 s. It learns from
+  downloads using the same building count, from a fresh start.
+
 - The map's controls hint moved to a box at the top right, the same box that shows the 3D
   controls in the 3D view.
 - README screenshots of Vatican City.

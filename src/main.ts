@@ -244,7 +244,8 @@ async function fetchData(sel: Selection) {
     // Teach the estimate how long a single request really took (cache hits, chunked
     // requests and waits for the server say nothing clean about one request).
     if (!last.osmCached && wait.doneAt && last.chunks?.length === 1 && !wait.waited) {
-      recordSample(etaInput, (wait.doneAt - wait.since) / 1000);
+      // The same building count the estimate uses: the quick data's.
+      recordSample({ km2: last.chunks[0].km2, buildings: last.chunks[0].buildings }, (wait.doneAt - wait.since) / 1000);
     }
     showData(data);
   } catch (err) {

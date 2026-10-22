@@ -19,13 +19,14 @@ interface Sample extends EtaInput {
 }
 
 // seconds = a + b·km² + c·(1000 buildings); the area-only form is used without a count.
-// Fitted on real use (October 2026): the busiest public server takes about 44 s for almost any
-// request (0.13–1.5 km², 30–1,200 buildings all waited 44–49 s: that's its queue, not our
-// area), and only larger areas add a few seconds (3.2 km²: 52–58 s). Density showed no effect
-// beyond that, so the building term starts at zero and is only learned from real downloads.
-const DEFAULT_FULL = [43, 3, 0];
-const DEFAULT_AREA = [43, 3];
-const STORAGE_KEY = 'map2stl.eta-samples.v1';
+// Fitted on real use (October 2026, 10 completed requests from 0.03 to 5.9 km²): the public
+// server waits about 44 s before answering whatever the size, and then what costs time is how
+// much comes back, which follows the building count (26,800 buildings: 47 MB, 62 s), not the
+// area. Without a count, the area stands in for it.
+const DEFAULT_FULL = [44, 0, 1.9];
+const DEFAULT_AREA = [44, 3];
+// v2: samples count buildings from the quick data (v1 counted those visible on the map).
+const STORAGE_KEY = 'map2stl.eta-samples.v2';
 const MAX_SAMPLES = 30;
 // Below this many own samples, the defaults weigh in as if they were this many samples.
 const PRIOR_WEIGHT = 4;
