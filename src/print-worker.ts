@@ -85,9 +85,10 @@ self.onmessage = async (e: MessageEvent<PrintJob>) => {
     report('write', 0, 'Writing the file');
     // Models found online came with a license asking for credit.
     const credits = job.models.flatMap((m) => (m.source.kind !== 'upload' ? [`3D model "${m.source.title}" by ${m.source.author}, ${m.source.license}, ${m.source.url}`] : []));
-    // So did the terrain, where it's national LiDAR, and the sea depths.
+    // So did the terrain, where it's national LiDAR, and the sea floor (printed only with
+    // water off).
     if (job.data.terrain.source?.credit) credits.push(job.data.terrain.source.credit);
-    if (job.data.bathymetry && job.data.osm.waterAreas.some((a) => a.kind === 'sea')) credits.push(BATHYMETRY_CREDIT);
+    if (job.data.bathymetry && !job.visible.includes('water') && job.data.osm.waterAreas.some((a) => a.kind === 'sea')) credits.push(BATHYMETRY_CREDIT);
     const file = job.kind === 'stl' ? toSTL(merged.model) : to3MF(merged.model, job.name, credits);
     // The unmerged model's size and counts are what the page reports; no need to send its
     // triangles back.

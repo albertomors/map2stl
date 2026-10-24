@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The nozzle goes down to 0.1 mm (such nozzles exist), the thinnest detail to 0.01 mm; their
+  arrows step by 0.1 mm, and by 0.01 mm below 0.1 (0.1 up is 0.2, not 0.11).
+
 ### Added
 
 - Relief shading in the 3D view: steep ground turns to rock (whatever's painted there:
@@ -16,17 +21,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   are placed inside it on a jittered grid (the same every time), varied in size, clear of
   roads and water, and spaced no closer than the print can resolve (at most 40,000). They
   show in the 3D view and print in the Trees part; a click on one selects its wood, and a
-  wood deleted or printed as something else loses its trees.
-- The sea prints deeper where it really is: sea depths from EMODnet Bathymetry (European
-  seas, about 115 m, CC BY 4.0; the terrain tiles have almost none near coasts) shelve the
-  sea off from the shore, up to three more steps, compressed so it shows at any scale (all
-  three from 200 m down). Fetched only for areas with sea; the data panel shows how deep it
-  goes, and the export credits it. Elsewhere the sea prints flat, as before.
+  wood printed as something else loses its trees. Delete on a wood ("Delete trees") takes
+  only its trees: the wood stays; Restore deleted brings them back.
+- The sea floor, from EMODnet Bathymetry (European seas, about 115 m, CC BY 4.0; the
+  terrain tiles have almost none near coasts): switch the Water layer off and the sea
+  becomes ground at its real depths, in the 3D view and in the print, the deepest point
+  the model's lowest with the base under it (the whole map stands taller). With Water on,
+  sea level is the lowest point, as before. Fetched only for areas with sea; the data
+  panel shows how deep it goes, and an export showing the sea floor credits EMODnet.
 - National LiDAR terrain where a country publishes it: Norway first, Kartverket's height
   model (about 1 m, CC BY 4.0), asked for at the detail the print can use (about 1–2.5 m
   depending on the area's size) and fitted into the same grid as the worldwide tiles, which
   fill anything it doesn't cover. Ridges, gullies and rock faces come out sharp instead of
   rounded. The data panel names the terrain's source and spacing, and the export credits it.
+- Aerial photo on the ground in the 3D view (on screen only), in place of the painted map:
+  the sharpest open source for the area, national orthophotos where a country publishes
+  them openly (Netherlands, Switzerland, France, Spain: 10–25 cm) and Sentinel-2 cloudless
+  (10 m, CC BY-NC-SA: NonCommercial) elsewhere, credited under the checkbox.
 
 ## [0.6.0] - 2026-10-24
 

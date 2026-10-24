@@ -60,7 +60,8 @@ export function buildPrintModel(
   // Hears how far along the build is (0 to 1) and what it's doing.
   progress: (fraction: number, label: string) => void = () => {},
 ): PrintModel {
-  const { ring, frame, bounds, placement, groundHeight } = prepareScene(data, scales);
+  // Water off: the sea floor prints (its real depths), the deepest point the lowest.
+  const { ring, frame, bounds, placement, groundHeight } = prepareScene(data, scales, !visible.has('water'));
   // The print keeps the shape the way it was drawn: its "up" (the map bearing when drawn)
   // becomes the print's +Y, so a rectangle drawn on a turned map lies straight on the bed and
   // the longest side is the shape's own. In plan (X east, Y north) that's a counterclockwise
@@ -80,7 +81,7 @@ export function buildPrintModel(
   // Streets, water, squares, parks and sand, carved into the terrain in steps of the thinnest
   // detail; the terrain then comes carved from there instead.
   // Edited: deleted streets and areas gone, widened ones wider, retyped areas moved.
-  const ground = buildGroundSolids(wasm, applyEdits(data.osm, edits), data.terrain, ring, frame, groundHeight, show, at.minWidth, options.baseMm / mmPerUnit, data.bathymetry, (f, label) =>
+  const ground = buildGroundSolids(wasm, applyEdits(data.osm, edits), data.terrain, ring, frame, groundHeight, show, at.minWidth, options.baseMm / mmPerUnit, (f, label) =>
     progress(0.7 * f, label),
   );
   const tile = ground.terrain ? null : buildTerrain(data.terrain, ring, frame, bounds, groundHeight, options.baseMm / mmPerUnit);
@@ -125,7 +126,7 @@ export function buildPrintModel(
     (() => {
       // Forests' trees too, spaced no closer than the print can tell apart, inside the selection.
       const spacing = Math.max(FOREST_SPACING_M, 3 * at.minWidth);
-      const forest = forestTrees(applyEdits(data.osm, edits), spacing).filter((t) => pointInRing(t.at, ring));
+      const forest = forestTrees(applyEdits(data.osm, edits), spacing, (id) => !!edits.get(id)?.noTrees).filter((t) => pointInRing(t.at, ring));
       const g = show('trees') ? treesGeometry([...editedTrees(data.osm.trees, edits, TREE_HEIGHT_M), ...forest], at) : null;
       // Each tree is a cone of the same number of triangles, one after another.
       const perTree = new ConeGeometry(1, 1, 7).toNonIndexed().getAttribute('position').count / 3;

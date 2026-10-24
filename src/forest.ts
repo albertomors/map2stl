@@ -20,8 +20,9 @@ const ROAD_CLEARANCE_M = 2;
 const MAX_TREES = 40_000;
 const METERS_PER_DEGREE = 111_320;
 
-export function forestTrees(osm: OsmData, spacingM: number): EditedTree[] {
-  const forests = osm.green.filter((a) => FOREST.test(a.kind));
+// `bare`: woods whose trees were deleted (the wood stays).
+export function forestTrees(osm: OsmData, spacingM: number, bare: (id: string) => boolean = () => false): EditedTree[] {
+  const forests = osm.green.filter((a) => FOREST.test(a.kind) && !bare(a.id));
   if (!forests.length) return [];
   const lat = forests[0].outer[0][1];
   const kLat = 1 / METERS_PER_DEGREE;

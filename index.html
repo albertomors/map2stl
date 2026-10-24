@@ -186,9 +186,9 @@ nom<!doctype html>
         <label for="print-base">Base thickness</label>
         <span class="field"><input id="print-base" type="number" autocomplete="off" min="1" step="0.5" value="3" /> mm</span>
         <label for="print-min">Thinnest detail</label>
-        <span class="field"><input id="print-min" type="number" autocomplete="off" min="0.01" step="0.01" value="0.4" /> mm</span>
+        <span class="field"><span class="stepper"><input id="print-min" type="number" autocomplete="off" min="0.01" step="any" value="0.4" /><span class="steps"><button type="button" data-step="1" aria-label="Thinner detail up" tabindex="-1">▴</button><button type="button" data-step="-1" aria-label="Thinner detail down" tabindex="-1">▾</button></span></span> mm</span>
         <label for="print-nozzle">Nozzle</label>
-        <span class="field"><input id="print-nozzle" type="number" autocomplete="off" min="0.01" step="0.01" value="0.4" /> mm</span>
+        <span class="field"><span class="stepper"><input id="print-nozzle" type="number" autocomplete="off" min="0.1" step="any" value="0.4" /><span class="steps"><button type="button" data-step="1" aria-label="Nozzle up" tabindex="-1">▴</button><button type="button" data-step="-1" aria-label="Nozzle down" tabindex="-1">▾</button></span></span> mm</span>
       </div>
       <button id="preview-print" aria-pressed="false">Preview export</button>
       <p id="print-warning" class="warning" hidden></p>

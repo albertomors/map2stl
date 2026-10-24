@@ -20,6 +20,8 @@ export interface ObjectEdit {
   width?: number;
   // Areas: printed as this kind instead.
   ground?: GroundKind;
+  // Woods: their trees deleted (the wood itself stays).
+  noTrees?: boolean;
 }
 
 // What an area can print as.

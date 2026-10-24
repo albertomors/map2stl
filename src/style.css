@@ -881,6 +881,36 @@ button.link:disabled {
   font-variant-numeric: tabular-nums;
 }
 
+.stepper {
+  display: inline-flex;
+  align-items: stretch;
+}
+
+/* Our own arrows (see main.ts): the browser's step by a fixed amount. */
+.stepper input {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+.stepper input::-webkit-inner-spin-button,
+.stepper input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.stepper .steps {
+  display: flex;
+  flex-direction: column;
+  margin-left: 2px;
+}
+
+.stepper .steps button {
+  padding: 0 4px;
+  font-size: 9px;
+  line-height: 1.2;
+  border-radius: 3px;
+}
+
 .field input:focus {
   outline: none;
   border-color: var(--accent);

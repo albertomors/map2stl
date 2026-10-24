@@ -35,7 +35,7 @@ import { clipObjects, clipToSelection } from '../clip';
 import { applyEdits, editedTrees, editKey, type Edits, type GroundKind, type ObjectEdit } from '../edits';
 import { centroid, pointInRing, ringArea, type LngLat } from '../geo';
 import type { Area, Building, Line, OsmData } from '../osm';
-import { FOREST_SPACING_M, forestTrees, isForestTree } from '../forest';
+import { FOREST, FOREST_SPACING_M, forestTrees, isForestTree } from '../forest';
 import { imagerySource, loadImagery, type ImagerySource } from '../imagery';
 import { GroundTexture } from './ground';
 import { groundAt } from './ground-pick';
@@ -65,6 +65,8 @@ export interface ObjectPick {
   // Streets, railways, rivers, paths: their width can change. Areas: what they print as.
   canWidth?: boolean;
   ground?: GroundKind;
+  // A wood with its trees: Delete takes the trees, not the wood.
+  forest?: boolean;
   // Other buildings in the same place (OSM sometimes has one drawn over another): picking
   // gets the one on top, these are the others, to select by name.
   alsoHere?: { key: string; title: string }[];
@@ -437,6 +439,8 @@ export class Viewer {
     for (const o of this.layerObjects.get(layer) ?? []) o.visible = visible;
     if (layer === this.liftLayer) this.highlight.visible = visible && !this.print.children.length;
     if (TEXTURE_LAYERS.includes(layer)) this.paintGround();
+    // Water on or off moves the ground itself where there's sea: sea level, or the sea floor.
+    if (layer === 'water' && this.data?.osm.waterAreas.some((a) => a.kind === 'sea') && this.builtScales) this.build(this.builtScales, false);
   }
 
   dispose() {
@@ -459,7 +463,8 @@ export class Viewer {
     const { terrain } = data;
     disposeChildren(this.terrain);
 
-    const { ring, frame, bounds, placement, groundHeight } = prepareScene(data, scales);
+    // Water off: the sea floor shows (its real depths), the deepest point the lowest.
+    const { ring, frame, bounds, placement, groundHeight } = prepareScene(data, scales, !this.visible.has('water'));
     this.ring = ring;
     this.placement = placement;
     // Nothing may stick out past the tile edge.
@@ -559,7 +564,7 @@ export class Viewer {
 
     // OSM's single trees, and forests' trees (forest.ts), from the edited woods: a wood
     // deleted or printed as something else loses its trees.
-    const forest = forestTrees(applyEdits(this.clipped ?? osm, this.edits), FOREST_SPACING_M);
+    const forest = forestTrees(applyEdits(this.clipped ?? osm, this.edits), FOREST_SPACING_M, (id) => !!this.edits.get(id)?.noTrees);
     const trees = [...editedTrees(osm.trees, this.edits, TREE_HEIGHT_M), ...forest];
     const treeMesh = buildTrees(trees, at);
     this.trees = treeMesh ? { mesh: treeMesh, built: (treeMesh.instanceMatrix.array as Float32Array).slice() } : null;
@@ -778,7 +783,9 @@ export class Viewer {
       if (!parts.length) continue;
       const m2 = parts.reduce((n, a) => n + ringArea(a.outer) - a.holes.reduce((h, r) => h + ringArea(r), 0), 0);
       const size = m2 > 1e4 ? `${(m2 / 1e4).toFixed(1)} ha` : `${Math.round(m2)} m²`;
-      return { key, title: parts[0].name ?? nice(parts[0].kind), info: `${nice(parts[0].kind)} · ${size}`, canSize: false, canHeight: false, canModel: false, ground: e?.ground ?? kind };
+      const forest = (e?.ground ?? kind) === 'green' && FOREST.test(parts[0].kind) && !e?.noTrees;
+      const trees = FOREST.test(parts[0].kind) && e?.noTrees ? ' · trees deleted' : '';
+      return { key, title: parts[0].name ?? nice(parts[0].kind), info: `${nice(parts[0].kind)} · ${size}${trees}`, canSize: false, canHeight: false, canModel: false, ground: e?.ground ?? kind, forest };
     }
     return null;
   }
