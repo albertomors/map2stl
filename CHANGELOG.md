@@ -7,16 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.6.3] - 2026-10-24
+## [0.6.0] - 2026-10-24
 
-Preview the export before downloading it, and model downloads that keep going while you
-work on something else.
+Landmarks and bridges as real 3D models, your own or openly licensed ones found on
+Wikimedia Commons and Sketchfab; streets, rivers and areas you can select and change; and a
+preview of the export before downloading it.
 
 ### Added
 
-- A model download keeps going when you select something else: a line at the top right
-  shows its progress (with Cancel) wherever you are, and when it's done the model goes on
-  the building it was for, which stays as selected or not as it was.
+- Replace a building or a bridge with a 3D model (STL, OBJ, GLB, or glTF with its data
+  inside): select it, then "Replace with a 3D model…". It's fitted automatically: turned
+  upright, its outline lined up with the footprint (the long sides together), scaled evenly
+  to fit inside it, standing on the lowest ground under it (for a bridge, the river bed; a
+  bridge deck fits its outline, a road or rail bridge its line at its width). Size (now down
+  to ×0.25) and Height still apply; Turn 90° and Stand up fix a wrong guess; Remove brings
+  the original back. It prints with the buildings (or bridges), merged and checked for thin
+  details like the rest.
+- Find a 3D model online: openly licensed models on Wikimedia Commons (the landmark's own
+  Wikidata model first, then files depicting it, then a name search) and Sketchfab's much
+  bigger catalog (the Leaning Tower of Pisa has a dozen). Landmarks are searched by their
+  English name from Wikidata as well as the local one from OSM; a search box refines it by
+  hand. Every result shows a thumbnail, license, author, size and triangle count;
+  NonCommercial and ShareAlike licenses are highlighted, not hidden; the export credits the
+  model (in a 3MF's metadata, and in the status line to copy when sharing). Searching needs
+  no account; Sketchfab downloads ask once for your API token (a free account works), kept
+  in this browser, with a link to forget it.
+- Models come as zipped glTF too (as Sketchfab sends them); textures are skipped, and models
+  over 300,000 triangles are simplified, all read in the background. A progress bar shows
+  the download in the result you clicked, and a line at the top right shows it wherever
+  you are; Use becomes Cancel meanwhile, using another model cancels it, and a download
+  keeps going if you select something else, landing on the building it was for.
+- How tall a model comes out, against the building's height in OpenStreetMap: where that
+  height is real and the two differ a lot, a warning says why it may be (a base or square
+  around it, a lean, a whole scene) with a one-click "Make it N m tall". A model lying on
+  its side stands up by itself (the axis that matches the building's height, or for a
+  bridge the one that makes it lowest).
+- Streets, railways, rivers and paths, and areas (water, parks, squares, sand), are
+  selectable in the 3D view: click them on the ground, they light up in orange. Streets,
+  railways and rivers get a Width slider (×0.25 to ×4); areas a "Prints as" choice (water,
+  park, square, sand); all can be deleted. The print follows, and Reset, Restore deleted and
+  Reset all cover them too. The panel names them as OpenStreetMap does.
+- "Also here": where OpenStreetMap has buildings drawn over each other (the Arena di
+  Verona's detailed 2024 remapping covers the named outline), the card lists the others,
+  named first, one click to select. An unnamed building drawn over a named landmark is
+  searched for 3D models by the landmark's name.
 
 ### Changed
 
@@ -24,140 +58,73 @@ work on something else.
   the preview: the file is written from the model previewed, merged and saved without being
   built a second time. While the preview rebuilds after a change, Download waits for it.
 
-## [0.6.2] - 2026-10-24
-
-Streets, rivers and areas you can select and change, 3D models for bridges, and model
-downloads you can cancel.
-
-### Added
-
-- Streets, railways, rivers and paths, and areas (water, parks, squares, sand), are
-  selectable in the 3D view like buildings: click them on the ground, they light up in
-  orange. Streets, railways and rivers get a Width slider (×0.25 to ×4); areas a "Prints as"
-  choice (water, park, square, sand), to print a car park as a plain square or a fountain
-  as water; all can be deleted. The print follows, and Reset, Restore deleted and Reset all
-  cover them too. The panel names them as OpenStreetMap does ("Lungarno degli Acciaioli").
-- Bridges take 3D models too, from a file or found online, like buildings: a bridge deck
-  fits its outline, a road or rail bridge its line at its width; it stands on the river
-  bed. With no height in OpenStreetMap to check against, the model is stood up so it comes
-  out lowest (a bridge is long and low).
-- "Also here": where OpenStreetMap has buildings drawn over each other (the Arena di
-  Verona's detailed 2024 remapping covers the named outline), the card lists the others,
-  named first, one click to select. An unnamed building drawn over a named landmark is
-  searched for 3D models by the landmark's name.
-- Cancel a model download: while it loads, its Use button reads Cancel. Using another model
-  (or selecting another object) cancels the one in progress.
-
 ### Fixed
 
+- Delete, then Restore deleted, brings an object back as it was: its size and height edits
+  are kept through the delete.
 - Rows a selected object doesn't have (a wall's Size, a bridge's Height) are hidden: they
   showed for every object.
 
-## [0.6.1] - 2026-10-24
+## [0.5.0] - 2026-10-24
 
-Sketchfab's much bigger catalog of 3D models next to Wikimedia Commons, with smarter
-fitting and a few selection fixes.
-
-### Added
-
-- Sketchfab in the 3D model search, next to Wikimedia Commons: a much bigger catalog (the
-  Leaning Tower of Pisa has a dozen downloadable models). Searching needs no account; using
-  a model asks once for your Sketchfab API token (a free account works), kept in this
-  browser, with a link to forget it. Every result shows a thumbnail, its license, author,
-  size and triangle count; NonCommercial and ShareAlike licenses are highlighted, not
-  hidden. Landmarks are searched by their English name (from Wikidata) as well as the local
-  one from OSM, which finds many more.
-- Models come as zipped glTF too (as Sketchfab sends them). Textures are skipped (a print
-  doesn't use them), and models over 300,000 triangles are simplified, so a laser scan
-  loads in seconds. Files are read in the background: the page doesn't freeze.
-- A search box, shown once "Find a 3D model online" has run, to search both sites by hand:
-  it holds the name the automatic search used, to refine.
-- A progress bar in the result you clicked while its model downloads (the real size, not
-  the one Sketchfab lists), then reads.
-- How tall a model comes out, against the building's height in OpenStreetMap. Where that
-  height is real and the two differ a lot, a warning says why it may be (a base or square
-  around it, a lean, a whole scene) with a one-click "Make it N m tall".
-- A model lying on its side stands up by itself: of its three axes, the one that makes it
-  closest to the building's known height is up (the file's own unless another is clearly
-  better). Stand up still cycles them by hand.
-- Size goes down to ×0.25, for models that come out too big.
-
-### Fixed
-
-- A building replaced by a 3D model can be selected again (to resize, replace or delete
-  it): its bounds were cached while it was hidden for the selection, and clicks missed it.
-- Delete, then Restore deleted, brings an object back as it was: size, height and 3D model
-  are kept through the delete.
-- The selected object's card no longer runs under the Export card: the cards at the top
-  right stop above it, however tall it gets, and scroll.
-
-## [0.6.0] - 2026-10-24
-
-Landmarks as real 3D models: your own file, or an openly licensed one found on Wikimedia
-Commons, fitted to the building automatically.
+Milestone 5: export to STL and 3MF, with a print preview, streets, water and parks carved
+into the print as their own colors, every export merged into one watertight solid, and
+gentler, chunked requests to the OSM servers.
 
 ### Added
 
-- Replace a building with your own 3D model (STL, OBJ, GLB, or glTF with its data inside):
-  select it, then "Replace with a 3D model…". The model is fitted automatically: turned
-  upright, its outline lined up with the building's footprint (the long sides together),
-  scaled evenly to fit inside it, standing on the lowest ground under it. Size and Height
-  still apply; Turn 90° and Stand up fix a wrong guess; Remove brings the building back. It
-  prints in the Buildings part, merged and checked for thin details like the rest.
-- Find a 3D model of the selected landmark online: openly licensed STL models on Wikimedia
-  Commons, most precise first: the one its Wikidata item names as its 3D model (OSM's
-  `wikidata` tag), then files marked as depicting it, then a search by its name. Each shows
-  its license and author before use, and the export credits it (in a 3MF's metadata, and in
-  the status line to copy when sharing). Coverage is uneven: about 5,700 Wikidata items have
-  a model (castles, churches, monuments), many famous ones don't.
-
-## [0.5.3] - 2026-10-24
-
-A print preview, streets, water and parks carved into the print as their own colors, and
-every export merged into one watertight solid, built in the background.
-
-### Added
-
-- Print preview: a Preview print button in the Export card shows, in the 3D view, the model
-  exactly as it will be exported: the base thickness, the thinnest-detail widening (walls,
-  masts, trees, bridges) and one color per part, as in the 3MF. Changing the print settings,
-  multipliers or layers rebuilds it; editing objects is paused meanwhile.
-- Nozzle width in the Export card (0.4 mm by default), and a warning when objects come out
-  narrower than it at the chosen print size: they're shown in red in the preview, counted per
-  part, with what to do about it. The width is that of the whole object seen from above, so a
-  thin part flush against a wider one isn't flagged.
-- The print preview follows the chosen format: one plain color for an STL (what a single
-  filament prints), each part's own color for a 3MF. Switching repaints it at once.
+- **Export to STL and 3MF**: print size of the longest side, base thickness, thinnest
+  detail and nozzle width in millimeters (each with a minimum, none with a maximum), in a
+  card at the bottom right of the 3D view once the detailed data has arrived. Exports what
+  the 3D view shows: edits, height multipliers and visible layers, the shape lying on the
+  bed as it was drawn. Every object is a closed solid (sunk into the ground so nothing
+  floats on slopes), the terrain one closed block with a flat base, and both files credit
+  OpenStreetMap. The 3MF has a named, colored part per layer (Terrain, Water, Streets,
+  Squares, Parks, Sand and rock, Buildings, Bridges and structures, Trees), pre-assigned to
+  filaments in OrcaSlicer and Bambu Studio.
+- Print preview: the model exactly as it will be exported, in the 3D view, in one plain
+  color for an STL or the parts' colors for a 3MF. Objects narrower than the nozzle are
+  shown in red, with a warning counting them per part and what to do about it.
 - Streets, water, squares, parks and sand in the print, carved into the ground like a
-  relief, in steps of the thinnest detail (the smallest height that prints): squares, parks
-  and sand flush with the ground, streets a step below, water two steps below, so a river
-  always lies lowest. Each follows the terrain's own triangles, so nothing cuts into a slope
-  or floats above it. In a 3MF each is its own part (Water, Streets, Squares, Parks, Sand
-  and rock), carved a step deeper and filled back, so a slicer can give it its own filament
-  or the terrain's. Each spot belongs to one kind (water first, then streets, squares,
-  sand, parks). Streets, railways and streams are widened to the thinnest detail if
-  narrower; footpaths, tracks and steps print only if their real width is enough, so a
-  city center doesn't turn into thick bands. Gaps and slivers far too thin to print are
-  tidied away.
+  relief, in steps of the thinnest detail: squares, parks and sand flush with the ground,
+  streets a step below, water two steps below, so a river always lies lowest. Each follows
+  the terrain's own triangles, so nothing cuts into a slope or floats above it, and each is
+  its own 3MF part. Streets, railways and streams are widened to the thinnest detail if
+  narrower; footpaths, tracks and steps print only if their real width is enough; gaps and
+  slivers far too thin to print are tidied away.
 - Every export is merged into one watertight solid with manifold-3d (WebAssembly, about
-  200 kB, loaded on the first export): no hidden faces where objects overlap, as CAD tools,
-  mesh checkers and print services expect. A 3MF gets one solid per colored part. A solid
-  that can't be merged is included as it is, and the status line says so.
+  200 kB, loaded on the first export); a 3MF gets one solid per colored part.
+- The preview and downloads are built in a background worker: the page stays responsive,
+  a change made meanwhile drops the stale build, and a job over a second shows a progress
+  bar with the step it's on.
+- Ko-fi support link in the README and a Sponsor button on the GitHub page.
 
 ### Changed
 
-- The 3D view uses the map's controls: drag pans, right-drag (or Ctrl+drag) orbits, scroll
-  zooms. One hint at the top right explains both; the "click to edit" hint moved to the
-  edits card below it.
-- Print settings have only a minimum (longest side and base 1 mm, thinnest detail and nozzle
-  0.01 mm) and no maximum; a value below it is refused with a message instead of silently
-  replaced. Thinnest detail now defaults to 0.4 mm, the nozzle width.
-- 3MF files list each point of a solid by its exact position: points a hair apart are no
-  longer fused, which folded the tiny triangles between them.
-- The print preview and downloads are built in a background worker: the page stays
-  responsive while a big area builds, and a change made meanwhile (say to the thinnest
-  detail) drops the stale build instead of queueing behind it. A job that runs over a
-  second shows a progress bar with the step it's on.
+- The 3D view uses the map's controls (drag pans, right-drag or Ctrl+drag orbits, scroll
+  zooms), with one hint at the top right; the edit summary and the selected object's card
+  float at the top right too, and the left panel holds only the multipliers and layers.
+- A selected object lifts off the ground and is tinted light orange; the height
+  multipliers and an object's Size and Height sliders are instant, rebuilt when let go.
+- Big selections are requested in parts (about 10 km² or 25,000 buildings each), each
+  cached on its own; the main server is asked for a free slot first, and refusals are
+  followed by a wait that doubles each time, as the server asks.
+- The download time estimate follows the building count: about 44 s per request plus 1.9 s
+  per 1,000 buildings, fitted on real requests.
+- Shorter README aimed at hobbyists, with screenshots of Vatican City.
+
+### Fixed
+
+- Gabled and hipped roofs are closed solids (irregular footprints left hairline gaps along
+  the ridge).
+- Multi-part landmarks stand together on one ground level; parts mapped in mid-air are
+  extended down to what's below them; parts sticking out past a roughly drawn outline, or
+  mapped without one, join their building; the Eiffel Tower's legs are one building.
+- 3MF: neighbouring buildings no longer share points where their walls touch, and points a
+  hair apart are no longer fused (both showed as broken edges in slicers).
+- Hiding a layer hides its selected object; a selected object no longer jumps or shifts
+  when its sliders are released; the export fields no longer show values the browser
+  restored into the wrong fields.
 
 ### Known issues
 
@@ -165,98 +132,6 @@ every export merged into one watertight solid, built in the background.
   selection, the terrain isn't quite closed at that spot (a few in a square kilometer).
   manifold-3d then won't merge it: it goes into the file as it is, and the status line says
   so. Slicers print it fine.
-
-## [0.5.2] - 2026-10-22
-
-Gentler, chunked requests to the OSM servers, a better download estimate, and exports that
-open cleanly in OrcaSlicer.
-
-### Changed
-
-- Big selections are requested in parts, one after another: at most about 10 km² or 25,000
-  buildings each (planned from the quick data), merged without duplicates. Each part is
-  cached on its own, so a retry only asks for what's missing.
-- Gentler on the public servers: before each request the main server is asked when a slot
-  is free, and a refusal is followed by a wait that doubles each time (5 s up to 60 s, or
-  the server's Retry-After), as the server asks. The progress bar shows the part and the
-  wait; the estimate is the sum over the parts.
-- The download time estimate follows the building count instead of the area: about 44 s
-  per request (the server's wait, whatever the size) plus 1.9 s per 1,000 buildings (what
-  comes back). On 10 real requests it's off by 6 s on average instead of 10 s, and a dense
-  5.9 km² area is now estimated at 107 s (real: 103 s) instead of 61 s.
-- Exports keep the shape the way it was drawn: a rectangle or hexagon drawn on a turned
-  map lies straight on the print bed, and the print size is its own longest side.
-- 3MF for OrcaSlicer and Bambu Studio: parts are named (Terrain, Buildings, Bridges and
-  structures, Trees) and pre-assigned to filaments 1–4. Other slicers ignore this.
-- The map's controls hint moved to a box at the top right, the same box that shows the 3D
-  controls in the 3D view.
-- README screenshots of Vatican City.
-
-### Fixed
-
-- 3MF: neighbouring buildings no longer share points where their walls touch, which
-  slicers reported as non-manifold edges.
-
-## [0.5.1] - 2026-10-22
-
-Fixes for landmarks, editing and the export panel, and a tidier 3D view.
-
-### Changed
-
-- The 3D view's left panel holds only the two height multipliers and the layers. The
-  controls hint, the edit summary (Restore deleted, Reset all) and the selected object's
-  card float at the top right, above the export card.
-
-### Fixed
-
-- Multi-part landmarks stand together: all parts of a building share one ground level (on a
-  slope like the Vatican hill, St. Peter's dome stood on different ground from its body and
-  drifted further when enlarged).
-- Parts mapped in mid-air with nothing of their building under them (St. Peter's drum and
-  corner domes, some of the Palace of Westminster) are extended down to what's below them
-  or to the ground, instead of floating.
-- Parts that stick out past a roughly drawn outline still join it (Cologne Cathedral's nave
-  roof), and parts mapped without any outline are grouped with the parts they touch.
-- Enlarging an object no longer shifts it when the slider is released: the preview and the
-  rebuild both scale around the middle of its bounding box.
-- The export fields no longer show values the browser restored into the wrong fields
-  (3 / 0.8 / 0.8 instead of 150 / 3 / 0.8).
-
-## [0.5.0] - 2026-10-22
-
-Milestone 5, first part: export to STL and 3MF.
-
-### Added
-
-- **Export to STL and 3MF**: print size of the longest side, base thickness and thinnest
-  detail in millimeters, in a floating card at the bottom right of the 3D view once the
-  detailed data has arrived. Exports what the 3D view shows: edits, height multipliers and
-  visible layers. Every object is a closed solid (sunk 1 m into the ground so nothing floats
-  on slopes), the terrain is one closed block with a flat base, and both files credit
-  OpenStreetMap. The 3MF is one object with a named, colored part per layer.
-- Ko-fi support link in the README and a Sponsor button on the GitHub page.
-
-### Changed
-
-- A selected object lifts off the ground (6 m, or 12% of its height for tall ones) and is
-  tinted light orange, keeping the shading of its own colors.
-- The height multiplier sliders are instant: dragging stretches the scene on the graphics
-  card (trees and shadows included), and the scene is rebuilt once when you let go.
-- An object's own Size and Height sliders are instant too: dragging stretches the lifted
-  object, letting go rebuilds just that object, and the rest of the scene catches up when
-  the selection changes.
-- The download time estimate is fitted on real requests: about 43 s plus 3 s per km² (the
-  public server has a ~44 s floor for almost any area), instead of 28 s + 12.6 s/km².
-- Shorter README, aimed at hobbyists: what it's for, three steps, features, how to run it.
-
-### Fixed
-
-- Gabled and hipped roofs are closed solids: their two sides now meet in the same ridge
-  points (before, irregular footprints left hairline gaps along the ridge).
-- Landmarks with arched parts stay one building: the Eiffel Tower's four legs were
-  selected separately because the center of an arch lies outside the tower's outline.
-- Hiding a layer also hides its selected (lifted) object.
-- A selected object no longer jumps higher when its Height or Size slider is released.
 
 ## [0.4.0] - 2026-10-21
 
