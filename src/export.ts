@@ -8,6 +8,7 @@ import { clipObjects } from './clip';
 import { applyEdits, editedTrees, type Edits } from './edits';
 import type { Wasm } from './merge';
 import { buildGroundSolids } from './print-ground';
+import { buildModels } from './viewer/models';
 import { buildBridges, buildBuildings, buildStructures, COLORS, TREE_HEIGHT_M, treesGeometry, type PickableMesh } from './viewer/objects';
 import { prepareScene } from './viewer/scene';
 import { buildTerrain } from './viewer/terrain-mesh';
@@ -101,7 +102,12 @@ export function buildPrintModel(
     { name: 'Squares', color: '#c9c6c1', pieces: [solids(ground.squares)] },
     { name: 'Parks', color: '#5fae4c', pieces: [solids(ground.parks)] },
     { name: 'Sand and rock', color: '#e8d6a4', pieces: [solids(ground.sand)] },
-    { name: 'Buildings', color: '#' + COLORS.wall.getHexString(), pieces: [show('buildings') ? pick(buildBuildings(edited.buildings, at)) : null] },
+    {
+      name: 'Buildings',
+      color: '#' + COLORS.wall.getHexString(),
+      // Buildings replaced by 3D models are models here too.
+      pieces: show('buildings') ? [pick(buildBuildings(edited.buildings, at)), pick(buildModels(data.osm.buildings, edits, at))] : [],
+    },
     {
       name: 'Bridges and structures',
       color: '#' + COLORS.structure.getHexString(),

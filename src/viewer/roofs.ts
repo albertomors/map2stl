@@ -117,7 +117,7 @@ function fanCap(m: MeshBuilder, ring: Vec3[], color: Color) {
 }
 
 // Smallest-area rectangle aligned with one of the footprint's edges.
-function orientedBox(pts: P[]) {
+export function orientedBox(pts: P[]) {
   let best = { area: Infinity, center: [0, 0] as P, longAxis: [1, 0] as P, shortAxis: [0, 1] as P, halfL: 0, halfW: 0 };
   for (let i = 0; i < pts.length; i++) {
     const [x0, z0] = pts[i];

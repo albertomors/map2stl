@@ -4,19 +4,17 @@ Open work only: built items move to the README and CHANGELOG.
 
 ## Improve objects and terrain
 
-An "Improve" button on the selected object (and one for the terrain) that swaps the OSM
-approximation for something better. Google's photorealistic tiles can't be used (their terms
-forbid extracting them), and no open worldwide photogrammetry exists, so:
+Swapping the OSM approximation for something better. Google's photorealistic tiles can't be
+used (their terms forbid extracting them), and no open worldwide photogrammetry exists, so:
 
-- **Better terrain everywhere:** Copernicus GLO-30 / FABDEM, worldwide and open, instead of the
-  AWS tiles where those are coarse.
-- **Find a model:** search CC0 / CC-BY 3D models of the selected landmark by name (OSM's
-  `wikidata` tag makes it precise): Wikimedia Commons first (no key), Sketchfab later (needs
-  the user's login). License shown before use; CC-BY credit written into the export.
-- **Upload a model:** the user's own STL / glTF / OBJ.
-- Both are **scaled and placed automatically**: fitted to the OSM footprint and height,
-  rotated to line up with the footprint, standing on the ground; then adjustable with the
-  usual handles. Checked for printability like the rest of the export.
+- **Better terrain where it exists:** national LiDAR terrain models (about 1 m: Norway's
+  høydedata, the Netherlands' AHN, Switzerland's swissALTI3D, Denmark, much of Spain and the
+  US), country by country where the service lets a browser load it. Not Copernicus GLO-30:
+  it's a surface model, with buildings and tree canopy in its heights, so the ground would
+  bump up under every city block. FABDEM (GLO-30 cleaned of them) is non-commercial only,
+  and served as archives a browser can't read.
+- **More models:** Sketchfab's downloadable CC models (needs the user's login), next to
+  Wikimedia Commons.
 - **Photogrammetry from tourist photos** (research): reconstruct famous landmarks from
   hundreds of openly licensed photos (Wikimedia Commons) with COLMAP-style structure from
   motion. Real geometry, but heavy server compute: needs a backend.
@@ -26,11 +24,8 @@ forbid extracting them), and no open worldwide photogrammetry exists, so:
 Overpass is the most complete OSM source but the slowest part of the app (40–100 s for a
 city center, and the public servers are often busy).
 
-- Add the `overpass.kumi.systems` mirror.
 - Overture Maps buildings to fill gaps in OSM heights (cloud GeoParquet, no API).
 - Our own Overpass instance (or a commercial extract service) before going public.
-- National LiDAR terrain where available (e.g. Norway's høydedata, 1 m), Copernicus GLO-30
-  elsewhere when the AWS tiles are coarse.
 
 ## Later
 

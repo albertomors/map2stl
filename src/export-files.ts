@@ -34,7 +34,8 @@ export function toSTL(model: PrintModel): Blob {
   return new Blob([buffer], { type: 'model/stl' });
 }
 
-export function to3MF(model: PrintModel, title: string): Blob {
+// `credits`: for 3D models used in place of buildings (their licenses ask for it).
+export function to3MF(model: PrintModel, title: string, credits: string[] = []): Blob {
   const objects: string[] = [];
   const items: string[] = [];
   const bases: string[] = [];
@@ -79,7 +80,8 @@ export function to3MF(model: PrintModel, title: string): Blob {
     `<?xml version="1.0" encoding="UTF-8"?>` +
     `<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">` +
     `<metadata name="Title">${xml(title)}</metadata>` +
-    `<metadata name="Copyright">© OpenStreetMap contributors (ODbL)</metadata>` +
+    `<metadata name="Copyright">${xml(['© OpenStreetMap contributors (ODbL)', ...credits].join('; '))}</metadata>` +
+    (credits.length ? `<metadata name="LicenseTerms">${xml(credits.join('; '))}</metadata>` : '') +
     `<metadata name="Application">map2stl</metadata>` +
     `<resources><basematerials id="1">${bases.join('')}</basematerials>${objects.join('')}</resources>` +
     `<build><item objectid="${assemblyId}"/></build></model>`;

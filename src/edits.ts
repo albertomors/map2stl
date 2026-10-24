@@ -5,6 +5,7 @@
 
 import type { LngLat } from './geo';
 import type { Building, OsmData, Polygon } from './osm';
+import type { ModelChoice } from './model-assets';
 
 export interface ObjectEdit {
   deleted?: boolean;
@@ -12,6 +13,8 @@ export interface ObjectEdit {
   scale?: number;
   // Height only, on top of `scale`.
   heightScale?: number;
+  // A 3D model drawn instead of the building (see viewer/models.ts).
+  model?: ModelChoice;
 }
 
 export type Edits = Map<string, ObjectEdit>;
@@ -33,6 +36,8 @@ export interface EditedTree {
 export function applyEdits(osm: OsmData, edits: Edits): OsmData {
   if (!edits.size) return osm;
   const keep = <T>(items: T[], key: (t: T) => string) => items.filter((t) => !edits.get(key(t))?.deleted);
+  // A building replaced by a model is drawn from the model instead.
+  const keepBuilding = (b: Building) => !edits.get(editKey(b))?.deleted && !edits.get(editKey(b))?.model;
   const k = (key: string) => edits.get(key)?.scale ?? 1;
   const h = (key: string) => (edits.get(key)?.scale ?? 1) * (edits.get(key)?.heightScale ?? 1);
 
@@ -40,7 +45,7 @@ export function applyEdits(osm: OsmData, edits: Edits): OsmData {
   const areaCenters = centers(osm.structureAreas, (a) => a.id, edits);
   return {
     ...osm,
-    buildings: keep(osm.buildings, editKey).map((b) => {
+    buildings: osm.buildings.filter(keepBuilding).map((b) => {
       const key = editKey(b);
       const c = buildingCenters.get(key);
       return c || h(key) !== 1

@@ -24,10 +24,13 @@ export interface Building extends Polygon {
   colour?: string;
   roofColour?: string;
   name?: string;
+  // Its Wikidata item ("Q39054"), the precise way to find a 3D model of a landmark.
+  wikidata?: string;
   // For building:parts, the outline they belong to: a cathedral's nave, towers and spires
-  // are selected and edited together, under the outline's name.
+  // are selected and edited together, under the outline's name (and Wikidata item).
   group?: string;
   groupName?: string;
+  groupWikidata?: string;
 }
 
 export interface Line {
@@ -163,7 +166,7 @@ export function parse(elements: OverpassElement[], ring: LngLat[]): OsmData {
       // Everything touching the selection: the 3D view and export cut it at the edge.
       for (const poly of polygons(el)) {
         if (!intersectsRing(poly.outer, ring, true)) continue;
-        (isPart ? parts : outlines).push({ ...poly, id: `${el.type}/${el.id}`, ...buildingHeight(t, isPart), ...roof(t), name: t.name });
+        (isPart ? parts : outlines).push({ ...poly, id: `${el.type}/${el.id}`, ...buildingHeight(t, isPart), ...roof(t), name: t.name, wikidata: /^Q\d+$/.test(t.wikidata ?? '') ? t.wikidata : undefined });
       }
       continue;
     }
@@ -258,6 +261,7 @@ export function parse(elements: OverpassElement[], ring: LngLat[]): OsmData {
     covered.add(owner);
     part.group = owner.id;
     part.groupName = owner.name;
+    part.groupWikidata = owner.wikidata;
   }
   groupOrphanParts(parts);
   fillUnderFloatingParts(parts);
@@ -286,9 +290,11 @@ function groupOrphanParts(parts: Building[]) {
   for (const group of members.values()) {
     if (group.length < 2) continue;
     const name = group.find((p) => p.name)?.name;
+    const wikidata = group.find((p) => p.wikidata)?.wikidata;
     for (const p of group) {
       p.group = group[0].id;
       p.groupName = name;
+      p.groupWikidata = wikidata;
     }
   }
 }

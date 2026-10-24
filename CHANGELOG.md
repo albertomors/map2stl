@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Replace a building with your own 3D model (STL, OBJ, GLB, or glTF with its data inside):
+  select it, then "Replace with a 3D model…". The model is fitted automatically: turned
+  upright, its outline lined up with the building's footprint (the long sides together),
+  scaled evenly to fit inside it, standing on the lowest ground under it. Size and Height
+  still apply; Turn 90° and Stand up fix a wrong guess; Remove brings the building back. It
+  prints in the Buildings part, merged and checked for thin details like the rest.
+- Find a 3D model of the selected landmark online: openly licensed STL models on Wikimedia
+  Commons, most precise first: the one its Wikidata item names as its 3D model (OSM's
+  `wikidata` tag), then files marked as depicting it, then a search by its name. Each shows
+  its license and author before use, and the export credits it (in a 3MF's metadata, and in
+  the status line to copy when sharing). Coverage is uneven: about 5,700 Wikidata items have
+  a model (castles, churches, monuments), many famous ones don't.
+
 ## [0.5.3] - 2026-10-24
 
 A print preview, streets, water and parks carved into the print as their own colors, and

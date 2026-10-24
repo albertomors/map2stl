@@ -7,6 +7,7 @@ import type { Edits } from './edits';
 import { buildPrintModel, findThinObjects, type PrintModel, type PrintOptions, type ThinObjects } from './export';
 import { to3MF, toSTL } from './export-files';
 import { loadManifold, mergeModel } from './merge';
+import { modelAssets, type ModelAsset } from './model-assets';
 import type { ViewScales } from './viewer/viewer';
 
 export interface PrintJob {
@@ -19,10 +20,12 @@ export interface PrintJob {
   nozzleMm: number;
   // File name without extension (downloads).
   name: string;
+  // The 3D models the edits use.
+  models: ModelAsset[];
 }
 
 export type PrintResult =
-  | { ok: true; model: PrintModel; thin: ThinObjects; file?: Blob; skipped?: number }
+  | { ok: true; model: PrintModel; thin: ThinObjects; file?: Blob; skipped?: number; credits?: string[] }
   | { ok: false; message: string };
 
 // Sent while it works: how far along (0 to 1) and what it's doing.
@@ -46,6 +49,7 @@ self.onmessage = async (e: MessageEvent<PrintJob>) => {
     (self as unknown as Worker).postMessage(p);
   };
   const next = (stage: keyof typeof share) => (start += share[stage]);
+  for (const m of job.models) modelAssets.set(m.id, m);
   try {
     report('build', 0, 'Starting');
     const wasm = await loadManifold();
@@ -64,10 +68,12 @@ self.onmessage = async (e: MessageEvent<PrintJob>) => {
     const merged = await mergeModel(model, job.kind === 'stl', (f) => report('merge', f, label));
     next('merge');
     report('write', 0, 'Writing the file');
-    const file = job.kind === 'stl' ? toSTL(merged.model) : to3MF(merged.model, job.name);
+    // Models found online came with a license asking for credit.
+    const credits = job.models.flatMap((m) => (m.source.kind === 'commons' ? [`3D model "${m.source.title}" by ${m.source.author}, ${m.source.license}, ${m.source.url}`] : []));
+    const file = job.kind === 'stl' ? toSTL(merged.model) : to3MF(merged.model, job.name, credits);
     // The unmerged model's size and counts are what the page reports; no need to send its
     // triangles back.
-    reply({ ok: true, model: { ...merged.model, parts: [] }, thin: { objects: new Map(), counts: thin.counts }, file, skipped: merged.skipped }, null);
+    reply({ ok: true, model: { ...merged.model, parts: [] }, thin: { objects: new Map(), counts: thin.counts }, file, skipped: merged.skipped, credits }, null);
   } catch (err) {
     console.error('Print build failed', err);
     reply({ ok: false, message: (err as Error).message }, null);

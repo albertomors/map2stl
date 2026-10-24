@@ -118,6 +118,21 @@ nom<!doctype html>
           <span>Height only</span><output id="object-height-value"></output>
           <input id="object-height" type="range" autocomplete="off" min="0.5" max="4" step="0.1" value="1" />
         </label>
+        <div id="object-model" class="model-box" hidden>
+          <button id="object-model-find">Find a 3D model online</button>
+          <ul id="object-model-results" class="model-results" hidden></ul>
+          <button id="object-model-upload">Replace with a 3D model…</button>
+          <input id="object-model-file" type="file" accept=".stl,.obj,.glb,.gltf" hidden />
+          <div id="object-model-current" hidden>
+            <p class="hint">3D model: <span id="object-model-name"></span></p>
+            <div class="actions">
+              <button id="object-model-turn" title="Turn the model a quarter turn">Turn 90°</button>
+              <button id="object-model-up" title="Try the next axis as up, if it lies on its side">Stand up</button>
+              <button id="object-model-remove" class="secondary">Remove</button>
+            </div>
+          </div>
+          <p id="object-model-status" class="hint" aria-live="polite"></p>
+        </div>
         <div class="actions">
           <button id="object-delete">Delete</button>
           <button id="object-reset" class="secondary">Reset</button>

@@ -37,6 +37,8 @@ import type { LngLat } from '../geo';
 import type { OsmData } from '../osm';
 import { GroundTexture } from './ground';
 import { buildBridges, buildBuildings, buildStructures, buildTrees, COLORS, TREE_HEIGHT_M, type PickableMesh, type Placement } from './objects';
+import { modelAssets } from '../model-assets';
+import { buildModels } from './models';
 import { prepareScene } from './scene';
 import { buildTerrain } from './terrain-mesh';
 
@@ -48,6 +50,11 @@ export interface ObjectPick {
   // Enlarge in all dimensions; stretch the height alone.
   canSize: boolean;
   canHeight: boolean;
+  // Buildings can be replaced by a 3D model; `model` names the one in use, `landmark` is
+  // what to search for one by.
+  canModel: boolean;
+  model?: string;
+  landmark?: { wikidata?: string; name?: string };
 }
 
 export interface ViewScales {
@@ -417,6 +424,7 @@ export class Viewer {
       });
     };
     solid(buildBuildings(edited.buildings, at), 'buildings');
+    solid(buildModels(osm.buildings, this.edits, at), 'buildings');
     solid(buildStructures({ ...osm, ...edited }, at), 'structures');
     solid(buildBridges(edited.roads, at, COLORS.road), 'roads', COLORS.road);
     solid(buildBridges(edited.railways, at, COLORS.rail), 'railways', COLORS.rail);
@@ -516,6 +524,7 @@ export class Viewer {
       if (mesh) inner.add(mesh);
     } else {
       add(buildBuildings(own.buildings, at));
+      add(buildModels(osm.buildings, this.edits, at, key));
       add(buildStructures({ ...osm, ...own }, at));
       add(buildBridges(own.roads, at, COLORS.road), COLORS.road);
       add(buildBridges(own.railways, at, COLORS.rail), COLORS.rail);
@@ -530,7 +539,7 @@ export class Viewer {
     this.liftPivot = pivot;
     this.liftLayer = key.startsWith('tree/')
       ? 'trees'
-      : own.buildings.length
+      : own.buildings.length || osm.buildings.some((b) => editKey(b) === key)
         ? 'buildings'
         : own.roads.length
           ? 'roads'
@@ -548,7 +557,8 @@ export class Viewer {
     const m = (v: number) => `${Math.round(v)} m`;
     const nice = (kind: string) => kind[0].toUpperCase() + kind.slice(1).replace(/_/g, ' ');
 
-    if (key.startsWith('tree/')) return { key, title: 'Tree', info: `${m(TREE_HEIGHT_M)} tall (typical)`, canSize: true, canHeight: true };
+    const no = { canModel: false };
+    if (key.startsWith('tree/')) return { key, title: 'Tree', info: `${m(TREE_HEIGHT_M)} tall (typical)`, canSize: true, canHeight: true, ...no };
 
     const parts = osm.buildings.filter((b) => editKey(b) === key);
     if (parts.length) {
@@ -556,20 +566,25 @@ export class Viewer {
       const from = { height: 'tagged', levels: 'from floors', estimate: 'estimated' }[tallest.heightFrom];
       const roof = tallest.roofShape && tallest.roofShape !== 'flat' ? `${tallest.roofShape} roof` : 'flat roof';
       const count = parts.length > 1 ? ` · ${parts.length} parts` : '';
-      return { key, title: parts[0].groupName ?? parts.find((b) => b.name)?.name ?? 'Unnamed building', info: `${m(tallest.height)} (${from}) · ${roof}${count}`, canSize: true, canHeight: true };
+      const title = parts[0].groupName ?? parts.find((b) => b.name)?.name ?? 'Unnamed building';
+      const choice = this.edits.get(key)?.model;
+      const model = choice && modelAssets.get(choice.asset)?.source.title;
+      const wikidata = parts[0].groupWikidata ?? parts.find((b) => b.wikidata)?.wikidata;
+      const name = parts[0].groupName ?? parts.find((b) => b.name)?.name;
+      return { key, title, info: `${m(tallest.height)} (${from}) · ${roof}${count}`, canSize: true, canHeight: true, canModel: true, model, landmark: { wikidata, name } };
     }
     const area = osm.structureAreas.find((s) => s.id === key);
     // A bridge deck spans between banks: resizing it would lift it off them.
-    if (area?.kind === 'bridge') return { key, title: 'Bridge deck', info: 'Deck outline', canSize: false, canHeight: false };
-    if (area) return { key, title: nice(area.kind), info: m(area.height), canSize: true, canHeight: true };
+    if (area?.kind === 'bridge') return { key, title: 'Bridge deck', info: 'Deck outline', canSize: false, canHeight: false, ...no };
+    if (area) return { key, title: nice(area.kind), info: m(area.height), canSize: true, canHeight: true, ...no };
     const wall = osm.structureLines.find((s) => s.id === key);
-    if (wall) return { key, title: nice(wall.kind), info: `${m(wall.height)} tall`, canSize: false, canHeight: true };
+    if (wall) return { key, title: nice(wall.kind), info: `${m(wall.height)} tall`, canSize: false, canHeight: true, ...no };
     const tower = osm.towers.find((t) => t.id === key);
-    if (tower) return { key, title: nice(tower.kind), info: `${m(tower.height)} tall`, canSize: true, canHeight: true };
+    if (tower) return { key, title: nice(tower.kind), info: `${m(tower.height)} tall`, canSize: true, canHeight: true, ...no };
     const bridge = [...osm.roads, ...osm.railways].find((l) => l.id === key);
     if (bridge) {
       const rail = osm.railways.includes(bridge);
-      return { key, title: rail ? 'Rail bridge' : 'Road bridge', info: `${nice(bridge.kind)} · ${m(bridge.width)} wide`, canSize: false, canHeight: false };
+      return { key, title: rail ? 'Rail bridge' : 'Road bridge', info: `${nice(bridge.kind)} · ${m(bridge.width)} wide`, canSize: false, canHeight: false, ...no };
     }
     return null;
   }

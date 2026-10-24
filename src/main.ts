@@ -10,6 +10,8 @@ import { setupNavigation } from './nav';
 import { DataPreview, LAYER_COLORS } from './preview';
 import { setupSearch } from './search';
 import { describe, loadSelection, saveSelection, type Selection, type ShapeKind } from './selection';
+import type { CommonsModel } from './commons';
+import { modelAssets, type ModelAsset, type ModelChoice } from './model-assets';
 import type { ObjectPick, Viewer, ViewScales } from './viewer/viewer';
 import type { Edits } from './edits';
 import type { ThinObjects } from './export';
@@ -126,6 +128,76 @@ for (const [id, field] of [['object-size', 'scale'], ['object-height', 'heightSc
   });
 }
 $('object-delete').addEventListener('click', () => deletePicked());
+// A 3D model in place of the selected building (fitted to it: see viewer/models.ts).
+$('object-model-upload').addEventListener('click', () => $<HTMLInputElement>('object-model-file').click());
+$('object-model-file').addEventListener('change', async () => {
+  const input = $<HTMLInputElement>('object-model-file');
+  const file = input.files?.[0];
+  input.value = '';
+  if (!file || !picked) return;
+  const key = picked.key;
+  const status = $('object-model-status');
+  status.textContent = `Reading ${file.name}…`;
+  try {
+    const { readModelFile } = await import('./model-files');
+    useModel(key, await readModelFile(file));
+    status.textContent = '';
+  } catch (err) {
+    status.textContent = `Couldn't use ${file.name}: ${(err as Error).message}`;
+  }
+});
+// Openly licensed models of the landmark on Wikimedia Commons (see commons.ts).
+let modelSearch: AbortController | null = null;
+$('object-model-find').addEventListener('click', async () => {
+  if (!picked) return;
+  const { key, landmark } = picked;
+  const status = $('object-model-status');
+  const list = $('object-model-results');
+  modelSearch?.abort();
+  const search = (modelSearch = new AbortController());
+  list.hidden = true;
+  status.textContent = 'Searching Wikimedia Commons…';
+  try {
+    const { findCommonsModels } = await import('./commons');
+    const found = await findCommonsModels(landmark ?? {}, search.signal);
+    if (search !== modelSearch || picked?.key !== key) return;
+    status.textContent = found.length
+      ? 'Openly licensed models on Wikimedia Commons. Check that it is this building before using one.'
+      : `No openly licensed 3D model of ${landmark?.name ?? 'this building'} on Wikimedia Commons. You can use your own file instead.`;
+    list.replaceChildren(
+      ...found.map((m) => {
+        const li = document.createElement('li');
+        const name = document.createElement('a');
+        name.href = m.pageUrl;
+        name.target = '_blank';
+        name.rel = 'noopener';
+        name.textContent = m.name;
+        const meta = document.createElement('span');
+        meta.className = 'meta';
+        const how = { wikidata: 'its Wikidata model', depicts: 'depicts it', name: 'name match' }[m.match];
+        meta.textContent = `${m.license} · ${m.author} · ${formatBytes(m.bytes)} · ${how}`;
+        const use = document.createElement('button');
+        use.textContent = 'Use';
+        use.addEventListener('click', () => useCommonsModel(key, m));
+        li.append(name, use, meta);
+        return li;
+      }),
+    );
+    list.hidden = !found.length;
+  } catch (err) {
+    if (search.signal.aborted) return;
+    status.textContent = `The search failed: ${(err as Error).message}`;
+  }
+});
+const AXES = ['y', 'z', 'x'] as const;
+$('object-model-turn').addEventListener('click', () => changeModel((m) => ({ ...m, turns: (m.turns + 1) % 4 })));
+$('object-model-up').addEventListener('click', () => changeModel((m) => ({ ...m, up: AXES[(AXES.indexOf(m.up) + 1) % AXES.length], turns: 0 })));
+$('object-model-remove').addEventListener('click', () => {
+  if (!picked) return;
+  const { model: _, ...rest } = edits.get(picked.key) ?? {};
+  edits.set(picked.key, rest);
+  refreshModel(picked.key);
+});
 $('object-reset').addEventListener('click', () => {
   if (!picked) return;
   edits.delete(picked.key);
@@ -491,6 +563,7 @@ function deletePicked() {
   showEditsSummary();
 }
 
+let shownModelKey: string | null = null;
 function showPick(pick: ObjectPick | null) {
   picked = pick;
   $('object-edit').hidden = !pick;
@@ -502,7 +575,54 @@ function showPick(pick: ObjectPick | null) {
   const e = edits.get(pick.key);
   $<HTMLInputElement>('object-size').value = String(e?.scale ?? 1);
   $<HTMLInputElement>('object-height').value = String(e?.heightScale ?? 1);
+  if (pick.key !== shownModelKey) {
+    // Another object: its own search, not the last one's.
+    shownModelKey = pick.key;
+    modelSearch?.abort();
+    $('object-model-results').hidden = true;
+    $('object-model-status').textContent = '';
+  }
+  $('object-model').hidden = !pick.canModel;
+  $('object-model-current').hidden = !pick.model;
+  $('object-model-name').textContent = pick.model ?? '';
+  $('object-model-upload').textContent = pick.model ? 'Use another 3D model…' : 'Replace with a 3D model…';
   showPickValues();
+}
+
+function useModel(key: string, asset: ModelAsset) {
+  modelAssets.set(asset.id, asset);
+  edits.set(key, { ...edits.get(key), model: { asset: asset.id, up: asset.up, turns: 0 } });
+  refreshModel(key);
+}
+
+async function useCommonsModel(key: string, m: CommonsModel) {
+  const status = $('object-model-status');
+  status.textContent = `Downloading ${m.name} (${formatBytes(m.bytes)})…`;
+  try {
+    const res = await fetch(m.url);
+    if (!res.ok) throw new Error(`Commons answered ${res.status}`);
+    const { readModel } = await import('./model-files');
+    const source = { kind: 'commons' as const, title: m.name, url: m.pageUrl, license: m.license, author: m.author };
+    useModel(key, await readModel(await res.arrayBuffer(), m.title, source));
+    $('object-model-results').hidden = true;
+    status.textContent = `${m.license} by ${m.author}: the export credits it.`;
+  } catch (err) {
+    status.textContent = `Couldn't use ${m.name}: ${(err as Error).message}`;
+  }
+}
+
+function changeModel(change: (m: ModelChoice) => ModelChoice) {
+  const e = picked && edits.get(picked.key);
+  if (!picked || !e?.model) return;
+  edits.set(picked.key, { ...e, model: change(e.model) });
+  refreshModel(picked.key);
+}
+
+// After a model change: rebuild, and show the selected building's card again.
+function refreshModel(key: string) {
+  viewer?.setEdits(edits);
+  viewer?.select(key);
+  showEditsSummary();
 }
 
 function showPickValues() {
@@ -513,11 +633,15 @@ function showPickValues() {
 function showEditsSummary() {
   let deleted = 0;
   let changed = 0;
+  let models = 0;
   for (const e of edits.values()) {
     if (e.deleted) deleted++;
-    else if ((e.scale ?? 1) !== 1 || (e.heightScale ?? 1) !== 1) changed++;
+    else {
+      if ((e.scale ?? 1) !== 1 || (e.heightScale ?? 1) !== 1) changed++;
+      if (e.model) models++;
+    }
   }
-  const parts = [deleted && `${deleted} deleted`, changed && `${changed} resized`].filter(Boolean);
+  const parts = [deleted && `${deleted} deleted`, changed && `${changed} resized`, models && `${models} with a 3D model`].filter(Boolean);
   $('edits-count').textContent = parts.length ? parts.join(', ') : 'No edits';
   $<HTMLButtonElement>('restore-deleted').disabled = !deleted;
   const defaults = scales().terrain === 1.5 && scales().heights === 1;
@@ -557,7 +681,8 @@ function runPrintJob(kind: PrintJob['kind'], data: AreaData, own?: (w: Worker) =
   };
   const nozzleMm = printNumber('print-nozzle', 'Nozzle', 0.01);
   const [lng, lat] = data.selection.center;
-  const job: PrintJob = { kind, data, edits, scales: scales(), visible: [...visibleLayers], options, nozzleMm, name: printName(lat, lng) };
+  const models = [...edits.values()].flatMap((e) => (e.model && modelAssets.has(e.model.asset) ? [modelAssets.get(e.model.asset)!] : []));
+  const job: PrintJob = { kind, data, edits, scales: scales(), visible: [...visibleLayers], options, nozzleMm, name: printName(lat, lng), models };
   const worker = new Worker(new URL('./print-worker.ts', import.meta.url), { type: 'module' });
   own?.(worker);
   const bar = printProgress.start(worker);
@@ -696,7 +821,8 @@ async function downloadModel() {
     const skipped = result.skipped ?? 0;
     const merged = skipped ? ` · ${skipped.toLocaleString()} ${skipped === 1 ? 'solid' : 'solids'} couldn't be merged and ${skipped === 1 ? 'is' : 'are'} included as ${skipped === 1 ? 'it is' : 'they are'}` : '';
     const [x, y, z] = result.model.sizeMm.map((v) => Math.round(v));
-    status.textContent = `${x} × ${y} × ${z} mm · ${result.model.triangleCount.toLocaleString()} triangles · ${formatBytes(file.size)}${merged}. Credit "© OpenStreetMap contributors" when you share it.`;
+    const credits = result.credits?.length ? ` and ${result.credits.join('; ')}` : '';
+    status.textContent = `${x} × ${y} × ${z} mm · ${result.model.triangleCount.toLocaleString()} triangles · ${formatBytes(file.size)}${merged}. Credit "© OpenStreetMap contributors"${credits} when you share it.`;
   } catch (err) {
     if (!(err instanceof SettingError)) console.error('Export failed', err);
     status.textContent = failure('The export', err);
