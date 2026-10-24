@@ -24,23 +24,66 @@ export interface AreaData {
 
 // The terrain with the sea floor in it: where the terrain is at sea level and the depths
 // say sea, the depth there (the tiles have almost none). With water shown it's flattened to
-// sea level again (scene.ts); with water off, it's the ground.
+// sea level again (scene.ts); with water off, it's the ground. The depths come in cells
+// about 115 m wide: interpolated, the floor shows their facets, and where the cells end
+// short of the coast it drops off a ledge; so the whole sea floor is smoothed over about a
+// cell, from sea points only (land doesn't drag the coast up, and stays as it was).
 function withSeaFloor(t: Terrain, b: Bathymetry): Terrain {
   const heights = Float32Array.from(t.heights);
-  let [min, max] = [Infinity, -Infinity];
+  const sea = new Uint8Array(heights.length);
   for (let row = 0; row < t.height; row++) {
     for (let col = 0; col < t.width; col++) {
       const i = row * t.width + col;
-      if (heights[i] <= 0) {
-        const [lng, lat] = pixelLngLat(t, col, row);
-        const depth = depthAt(b, lng, lat);
-        if (depth > 0) heights[i] = Math.min(heights[i], -depth);
-      }
-      min = Math.min(min, heights[i]);
-      max = Math.max(max, heights[i]);
+      if (heights[i] > 0) continue;
+      const [lng, lat] = pixelLngLat(t, col, row);
+      heights[i] = Math.min(heights[i], -depthAt(b, lng, lat));
+      sea[i] = 1;
     }
   }
+  // A depth cell, in terrain pixels.
+  const lat = (t.bbox[1] + t.bbox[3]) / 2;
+  const metersPerPx = (156_543.03 * Math.cos((lat * Math.PI) / 180)) / 2 ** t.zoom;
+  const cellPx = (b.dx * 111_320 * Math.cos((lat * Math.PI) / 180)) / metersPerPx;
+  smoothMasked(heights, sea, t.width, t.height, Math.max(1, Math.round(cellPx)));
+  let [min, max] = [Infinity, -Infinity];
+  for (const h of heights) {
+    min = Math.min(min, h);
+    max = Math.max(max, h);
+  }
   return { ...t, heights, min, max };
+}
+
+// Blurs `values` where `mask` is set, from masked values only (each point the average of
+// the masked points around it): three box passes each way, close to a Gaussian, fast
+// whatever the radius (running sums).
+function smoothMasked(values: Float32Array, mask: Uint8Array, w: number, h: number, radius: number) {
+  const sum = new Float64Array(values.length);
+  const weight = new Float64Array(values.length);
+  for (let i = 0; i < values.length; i++) {
+    weight[i] = mask[i];
+    sum[i] = mask[i] ? values[i] : 0;
+  }
+  const line = new Float64Array(Math.max(w, h));
+  const pass = (a: Float64Array, along: 'row' | 'col') => {
+    const [n, count] = along === 'row' ? [w, h] : [h, w];
+    for (let k = 0; k < count; k++) {
+      const at = (j: number) => (along === 'row' ? k * w + j : j * w + k);
+      let acc = 0;
+      for (let j = -radius; j <= radius; j++) acc += a[at(Math.min(n - 1, Math.max(0, j)))];
+      for (let j = 0; j < n; j++) {
+        line[j] = acc;
+        acc += a[at(Math.min(n - 1, j + radius + 1))] - a[at(Math.max(0, j - radius))];
+      }
+      for (let j = 0; j < n; j++) a[at(j)] = line[j];
+    }
+  };
+  for (let p = 0; p < 3; p++) {
+    for (const along of ['row', 'col'] as const) {
+      pass(sum, along);
+      pass(weight, along);
+    }
+  }
+  for (let i = 0; i < values.length; i++) if (mask[i] && weight[i] > 0) values[i] = sum[i] / weight[i];
 }
 
 // Progress of the detailed (Overpass) download, the only slow part.

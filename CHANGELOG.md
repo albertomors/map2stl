@@ -26,7 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The sea floor, from EMODnet Bathymetry (European seas, about 115 m, CC BY 4.0; the
   terrain tiles have almost none near coasts): switch the Water layer off and the sea
   becomes ground at its real depths, in the 3D view and in the print, the deepest point
-  the model's lowest with the base under it (the whole map stands taller). With Water on,
+  the model's lowest with the base under it (the whole map stands taller). The depths are
+  smoothed over about a cell, so the floor slopes gently from the coast, without the
+  data's facets or ledges where it stops short of the shore. With Water on,
   sea level is the lowest point, as before. Fetched only for areas with sea; the data
   panel shows how deep it goes, and an export showing the sea floor credits EMODnet.
 - National LiDAR terrain where a country publishes it: Norway first, Kartverket's height
