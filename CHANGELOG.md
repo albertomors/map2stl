@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-24
+
+Sketchfab's much bigger catalog of 3D models next to Wikimedia Commons, with smarter
+fitting and a few selection fixes.
+
 ### Added
 
 - Sketchfab in the 3D model search, next to Wikimedia Commons: a much bigger catalog (the
