@@ -19,7 +19,9 @@ export interface SceneSetup {
   groundHeight: (h: number) => number;
 }
 
-export function prepareScene(data: AreaData, scales: { terrain: number; heights: number }): SceneSetup {
+// `seaFloor`: water isn't shown, so the sea floor is (its real depths, where the area has them):
+// the deepest point is then the lowest, not sea level.
+export function prepareScene(data: AreaData, scales: { terrain: number; heights: number }, seaFloor = false): SceneSetup {
   const { terrain, selection, osm } = data;
   const ring = describe(selection).ring;
   const frame = new LocalFrame(selection.center);
@@ -32,7 +34,7 @@ export function prepareScene(data: AreaData, scales: { terrain: number; heights:
   };
   // Terrarium includes the sea floor: where there's sea, the water surface is the ground.
   const hasSea = osm.waterAreas.some((a) => a.kind === 'sea');
-  const clampSea = (h: number) => (hasSea ? Math.max(h, 0) : h);
+  const clampSea = (h: number) => (hasSea && !seaFloor ? Math.max(h, 0) : h);
   // Heights relative to the lowest point, so the model sits near y = 0 wherever it is.
   const ref = clampSea(terrain.min);
   return {

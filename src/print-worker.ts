@@ -7,6 +7,7 @@ import type { Edits } from './edits';
 import { buildPrintModel, findThinObjects, type PrintModel, type PrintOptions, type ThinObjects } from './export';
 import { to3MF, toSTL } from './export-files';
 import { loadManifold, mergeModel } from './merge';
+import { BATHYMETRY_CREDIT } from './bathymetry';
 import { modelAssets, type ModelAsset } from './model-assets';
 import type { ViewScales } from './viewer/viewer';
 
@@ -84,6 +85,9 @@ self.onmessage = async (e: MessageEvent<PrintJob>) => {
     report('write', 0, 'Writing the file');
     // Models found online came with a license asking for credit.
     const credits = job.models.flatMap((m) => (m.source.kind !== 'upload' ? [`3D model "${m.source.title}" by ${m.source.author}, ${m.source.license}, ${m.source.url}`] : []));
+    // Sea depths came with a license asking for credit too.
+    // The sea floor prints only with water off.
+    if (job.data.bathymetry && !job.visible.includes('water') && job.data.osm.waterAreas.some((a) => a.kind === 'sea')) credits.push(BATHYMETRY_CREDIT);
     const file = job.kind === 'stl' ? toSTL(merged.model) : to3MF(merged.model, job.name, credits);
     // The unmerged model's size and counts are what the page reports; no need to send its
     // triangles back.

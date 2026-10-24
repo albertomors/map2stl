@@ -112,6 +112,24 @@ $('download').addEventListener('click', () => downloadModel());
 let printPreview = false;
 $('preview-print').addEventListener('click', () => setPrintPreview(!printPreview));
 for (const id of ['print-size', 'print-base', 'print-min', 'print-nozzle']) $(id).addEventListener('change', () => updatePrintPreview());
+// Thinnest detail and nozzle step by 0.1 mm, and by 0.01 mm below 0.1 (0.1 up is 0.2, not
+// 0.11; 0.1 down is 0.09): their own arrows and keys, since a number field's step is fixed.
+for (const stepper of document.querySelectorAll<HTMLElement>('.stepper')) {
+  const input = stepper.querySelector('input')!;
+  const step = (dir: number) => {
+    const min = Number(input.min) || 0;
+    const v = Number(input.value) || min;
+    const next = fineStep(v, dir);
+    input.value = String(Math.max(min, next));
+    input.dispatchEvent(new Event('change'));
+  };
+  for (const b of stepper.querySelectorAll<HTMLButtonElement>('button')) b.addEventListener('click', () => step(Number(b.dataset.step)));
+  input.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+    e.preventDefault();
+    step(e.key === 'ArrowUp' ? 1 : -1);
+  });
+}
 
 // Object editing in the 3D view.
 for (const [id, field] of [['object-size', 'scale'], ['object-height', 'heightScale']] as const) {
@@ -300,8 +318,8 @@ $('object-reset').addEventListener('click', () => {
 $('restore-deleted').addEventListener('click', () => {
   // Back as they were before: size, height and 3D model kept through the delete.
   for (const [key, edit] of edits) {
-    if (!edit.deleted) continue;
-    const { deleted: _, ...rest } = edit;
+    if (!edit.deleted && !edit.noTrees) continue;
+    const { deleted: _, noTrees: __, ...rest } = edit;
     if (Object.keys(rest).length) edits.set(key, rest);
     else edits.delete(key);
   }
@@ -516,8 +534,11 @@ function showData(data: AreaData) {
   const t = data.terrain;
   const midLat = (t.bbox[1] + t.bbox[3]) / 2;
   const spacing = distance([t.bbox[0], midLat], [t.bbox[2], midLat]) / t.width;
+  // With sea depths, the deepest point there too, and their source.
+  const deepest = data.bathymetry ? data.bathymetry.heights.reduce((low, h) => (Number.isFinite(h) && h < low ? h : low), 0) : 0;
+  const sea = deepest < 0 ? ` Sea down to ${Math.round(-deepest)} m (EMODnet Bathymetry, CC BY 4.0).` : '';
   $('data-terrain').textContent =
-    `Terrain ${Math.round(t.min)}–${Math.round(t.max)} m above sea level, ${t.width}×${t.height} grid (≈${spacing.toFixed(0)} m).`;
+    `Terrain ${Math.round(t.min)}–${Math.round(t.max)} m above sea level, ${t.width}×${t.height} grid (≈${spacing.toFixed(0)} m).${sea}`;
   if (replacing) viewer?.show(data, visibleLayers, scales(), { keepCamera: true, edits });
   showExport();
   updatePrintPreview();
@@ -655,8 +676,8 @@ function showScales() {
 
 function deletePicked() {
   if (!picked) return;
-  // The other edits stay, for Restore deleted.
-  edits.set(picked.key, { ...edits.get(picked.key), deleted: true });
+  // The other edits stay, for Restore deleted. A wood loses its trees, not itself.
+  edits.set(picked.key, { ...edits.get(picked.key), ...(picked.forest ? { noTrees: true } : { deleted: true }) });
   viewer?.setEdits(edits);
   viewer?.select(null);
   showEditsSummary();
@@ -699,6 +720,7 @@ function showPick(pick: ObjectPick | null) {
       also.append(...(i ? [', ', link] : [link]));
     });
   }
+  $('object-delete').textContent = pick.forest ? 'Delete trees' : 'Delete';
   $('object-width-row').hidden = !pick.canWidth;
   $<HTMLInputElement>('object-width').value = String(e?.width ?? 1);
   $('object-ground-row').hidden = !pick.ground;
@@ -977,7 +999,7 @@ function showEditsSummary() {
   let changed = 0;
   let models = 0;
   for (const e of edits.values()) {
-    if (e.deleted) deleted++;
+    if (e.deleted || e.noTrees) deleted++;
     else {
       if ((e.scale ?? 1) !== 1 || (e.heightScale ?? 1) !== 1 || (e.width ?? 1) !== 1 || e.ground) changed++;
       if (e.model) models++;
@@ -1002,6 +1024,16 @@ function showSelectHint() {
 // Print settings have a minimum and no maximum; a value below the minimum is refused, not
 // clamped, so what's printed is always what the field says.
 class SettingError extends Error {}
+// One step up or down: by 0.1 from 0.1 up (to the next tenth), by 0.01 below.
+function fineStep(v: number, dir: number): number {
+  const EPS = 1e-9;
+  // Two decimals, so 0.7 + 0.1 shows as 0.8, not 0.7999999999999999.
+  const round = (x: number) => Math.round(x * 100) / 100;
+  if (dir > 0) return round(v < 0.1 - EPS ? v + 0.01 : Math.floor(v * 10 + EPS) / 10 + 0.1);
+  if (v > 0.1 + EPS) return round(Math.max(0.1, Math.ceil(v * 10 - EPS) / 10 - 0.1));
+  return round(v - 0.01);
+}
+
 function printNumber(id: string, label: string, min: number): number {
   const v = Number($<HTMLInputElement>(id).value);
   if (!Number.isFinite(v) || v < min) throw new SettingError(`${label} must be at least ${min} mm.`);
@@ -1021,7 +1053,7 @@ function runPrintJob(kind: PrintJob['kind'], data: AreaData, own?: (w: Worker) =
     baseMm: printNumber('print-base', 'Base thickness', 1),
     minFeatureMm: printNumber('print-min', 'Thinnest detail', 0.01),
   };
-  const nozzleMm = printNumber('print-nozzle', 'Nozzle', 0.01);
+  const nozzleMm = printNumber('print-nozzle', 'Nozzle', 0.1);
   const [lng, lat] = data.selection.center;
   const models = [...edits.values()].flatMap((e) => (e.model && modelAssets.has(e.model.asset) ? [modelAssets.get(e.model.asset)!] : []));
   const job: PrintJob = { kind, data, edits, scales: scales(), visible: [...visibleLayers], options, nozzleMm, name: printName(lat, lng), models, previewed };

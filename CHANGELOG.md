@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- The nozzle goes down to 0.1 mm (such nozzles exist), the thinnest detail to 0.01 mm; their
+  arrows step by 0.1 mm, and by 0.01 mm below 0.1 (0.1 up is 0.2, not 0.11).
+
+### Added
+
+- Relief shading in the 3D view: steep ground turns to rock (whatever's painted there:
+  wood, fell, grass) as mountainsides do from above, and hollows darken while ridges
+  lighten a little, bringing out gullies and crests. The sun is lower, for longer shadows.
+- Forests print as a texture of trees: OpenStreetMap maps a wood as an area, so its trees
+  are placed inside it on a jittered grid (the same every time), varied in size, clear of
+  roads and water, and spaced no closer than the print can resolve (at most 40,000). They
+  show in the 3D view and print in the Trees part; a click on one selects its wood, and a
+  wood printed as something else loses its trees. Delete on a wood ("Delete trees") takes
+  only its trees: the wood stays; Restore deleted brings them back.
+- The sea floor, from EMODnet Bathymetry (European seas, about 115 m, CC BY 4.0; the
+  terrain tiles have almost none near coasts): switch the Water layer off and the sea
+  becomes ground at its real depths, in the 3D view and in the print, the deepest point
+  the model's lowest with the base under it (the whole map stands taller). With Water on,
+  sea level is the lowest point, as before. Fetched only for areas with sea; the data
+  panel shows how deep it goes, and an export showing the sea floor credits EMODnet.
+
 ## [0.6.0] - 2026-10-24
 
 Landmarks and bridges as real 3D models, your own or openly licensed ones found on

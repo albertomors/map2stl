@@ -1,11 +1,13 @@
 // Everything the 3D model is built from, for one selection: OSM features and terrain.
 // The output of milestone 2 and the input of the 3D viewer.
 
+import { depthAt, fetchBathymetry, type Bathymetry } from './bathymetry';
+import { forestTrees, FOREST_SPACING_M } from './forest';
 import { centroid, distance, intersectsRing, pathLength, type LngLat } from './geo';
 import { buildQuery, parse, type OsmData } from './osm';
 import { overpass, type OverpassElement } from './overpass';
 import { describe, type Selection } from './selection';
-import { fetchTerrain, type Terrain } from './terrain';
+import { fetchTerrain, pixelLngLat, type Terrain } from './terrain';
 import { fetchTileData } from './vector-tiles';
 
 export interface AreaData {
@@ -15,6 +17,29 @@ export interface AreaData {
   // 'tiles': the quick version from the base map's vector tiles, while 'full' (Overpass:
   // roofs, colors, trees, walls…) is still on its way, or if it failed.
   detail: 'tiles' | 'full';
+  // Sea depths (EMODnet), when the area has sea and they're available.
+  bathymetry?: Bathymetry | null;
+}
+
+// The terrain with the sea floor in it: where the terrain is at sea level and the depths
+// say sea, the depth there (the tiles have almost none). With water shown it's flattened to
+// sea level again (scene.ts); with water off, it's the ground.
+function withSeaFloor(t: Terrain, b: Bathymetry): Terrain {
+  const heights = Float32Array.from(t.heights);
+  let [min, max] = [Infinity, -Infinity];
+  for (let row = 0; row < t.height; row++) {
+    for (let col = 0; col < t.width; col++) {
+      const i = row * t.width + col;
+      if (heights[i] <= 0) {
+        const [lng, lat] = pixelLngLat(t, col, row);
+        const depth = depthAt(b, lng, lat);
+        if (depth > 0) heights[i] = Math.min(heights[i], -depth);
+      }
+      min = Math.min(min, heights[i]);
+      max = Math.max(max, heights[i]);
+    }
+  }
+  return { ...t, heights, min, max };
 }
 
 // Progress of the detailed (Overpass) download, the only slow part.
@@ -92,7 +117,11 @@ export async function fetchAreaData(
   report({ osmDone: true, osmWaitS: undefined });
   const osm = parse(elements, ring);
   fullArrived = true;
-  return { selection, osm, terrain: await terrain, detail: 'full' };
+  // Sea depths, only for areas with sea; without them the sea prints at its usual depth.
+  const sea = osm.waterAreas.some((a) => a.kind === 'sea');
+  const bathymetry = sea ? await fetchBathymetry(bbox, signal).catch(() => null) : null;
+  const tiles = await terrain;
+  return { selection, osm, terrain: bathymetry ? withSeaFloor(tiles, bathymetry) : tiles, detail: 'full', bathymetry };
 }
 
 // Whether a chunk's box and the selection overlap. Edges count: the selection's corners lie
@@ -185,7 +214,13 @@ export function summarize({ osm, detail }: AreaData): LayerSummary[] {
     },
     { layer: 'green', label: 'Green areas', count: osm.green.length, detail: kinds(osm.green) },
     { layer: 'surfaces', label: 'Sand, rock, glacier', count: osm.surfaces.length, detail: kinds(osm.surfaces) },
-    { layer: 'trees', label: 'Trees', count: osm.trees.length, detail: '' },
+    (() => {
+      // Forests' trees count too: a wooded island has trees though OSM maps none one by one.
+      const forest = forestTrees(osm, FOREST_SPACING_M).length;
+      const single = osm.trees.length;
+      const detail = forest ? (single ? `${single.toLocaleString()} mapped, ${forest.toLocaleString()} in forests` : 'in forests') : '';
+      return { layer: 'trees' as const, label: 'Trees', count: single + forest, detail };
+    })(),
   ];
 }
 
