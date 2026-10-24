@@ -16,7 +16,7 @@ import { modelAssets, type ModelAsset, type ModelChoice, type ModelSource } from
 import type { ModelJob, ModelResult } from './model-worker';
 import type { ObjectPick, Viewer, ViewScales } from './viewer/viewer';
 import type { Edits, GroundKind } from './edits';
-import type { ThinObjects } from './export';
+import type { PrintModel, ThinObjects } from './export';
 import type { PrintJob, PrintProgress, PrintResult } from './print-worker';
 
 // Above this, OSM downloads in dense cities get slow and the print loses detail.
@@ -681,7 +681,6 @@ function showPick(pick: ObjectPick | null) {
     $('object-model-results').hidden = true;
     $('sketchfab-login').hidden = true;
     pendingSketchfab = null;
-    cancelModelLoad();
     $<HTMLInputElement>('model-search').value = '';
     $('model-search-form').hidden = true;
     $('object-model-status').textContent = '';
@@ -735,10 +734,23 @@ function readModelInWorker(data: ArrayBuffer, name: string, source: ModelSource,
   });
 }
 
+// The model on its object: shown at once if that's still selected, else just placed (the
+// download may have outlived the selection).
 function useModel(key: string, asset: ModelAsset) {
   modelAssets.set(asset.id, asset);
   edits.set(key, { ...edits.get(key), model: { asset: asset.id, up: viewer?.suggestModelUp(key, asset) ?? asset.up, turns: 0 } });
-  refreshModel(key);
+  if (picked?.key === key) refreshModel(key);
+  else {
+    viewer?.setEdits(edits);
+    showEditsSummary();
+  }
+}
+
+// A message about a model for an object: in its card if it's selected, else in the line at
+// the top right.
+function sayModel(key: string, text: string) {
+  if (picked?.key === key) $('object-model-status').textContent = text;
+  else modelTask.say(text);
 }
 
 async function showSketchfabForget() {
@@ -756,6 +768,7 @@ function cancelModelLoad() {
 async function useSketchfabModel(key: string, m: SketchfabModel, row: HTMLLIElement) {
   const { sketchfabToken, setSketchfabToken, downloadSketchfab, TokenRejected } = await import('./sketchfab');
   const status = $('object-model-status');
+  const target = picked?.title ?? 'the building';
   const token = sketchfabToken();
   if (!token) {
     pendingSketchfab = () => useSketchfabModel(key, m, row);
@@ -766,20 +779,22 @@ async function useSketchfabModel(key: string, m: SketchfabModel, row: HTMLLIElem
     return;
   }
   status.textContent = '';
-  const bar = modelProgress(row);
+  const bar = modelProgress(row, m.name, target);
   try {
     const file = await downloadSketchfab(m.uid, token, bar.bytes, bar.signal);
     bar.reading();
     const source = { kind: 'sketchfab' as const, title: m.name, url: m.pageUrl, license: m.license, author: m.author };
     useModel(key, await readModelInWorker(file.data, file.name, source, bar.signal));
-    $('object-model-results').hidden = true;
-    status.textContent = `${m.license} by ${m.author}: the export credits it.`;
+    if (picked?.key === key) $('object-model-results').hidden = true;
+    bar.done();
+    sayModel(key, `${m.name} is on ${target}. ${m.license} by ${m.author}: the export credits it.`);
     showSketchfabForget();
   } catch (err) {
     if (bar.signal.aborted) return;
     if (err instanceof TokenRejected) {
       // A wrong or revoked token: forget it and ask again.
       setSketchfabToken(null);
+      if (picked?.key !== key) return modelTask.say('Sketchfab didn\'t accept your token: select the building again to paste it.');
       pendingSketchfab = () => useSketchfabModel(key, m, row);
       $('sketchfab-login').hidden = false;
       $('sketchfab-login').scrollIntoView({ block: 'nearest' });
@@ -787,27 +802,28 @@ async function useSketchfabModel(key: string, m: SketchfabModel, row: HTMLLIElem
       showSketchfabForget();
       return;
     }
-    status.textContent = `Couldn't use ${m.name}: ${(err as Error).message}`;
+    sayModel(key, `Couldn't use ${m.name}: ${(err as Error).message}`);
   } finally {
     bar.end();
   }
 }
 
 async function useCommonsModel(key: string, m: CommonsModel, row: HTMLLIElement) {
-  const status = $('object-model-status');
-  status.textContent = '';
-  const bar = modelProgress(row);
+  const target = picked?.title ?? 'the building';
+  $('object-model-status').textContent = '';
+  const bar = modelProgress(row, m.name, target);
   try {
     const { fetchWithProgress } = await import('./sketchfab');
     const data = await fetchWithProgress(m.url, bar.bytes, bar.signal);
     bar.reading();
     const source = { kind: 'commons' as const, title: m.name, url: m.pageUrl, license: m.license, author: m.author };
     useModel(key, await readModelInWorker(data, m.title, source, bar.signal));
-    $('object-model-results').hidden = true;
-    status.textContent = `${m.license} by ${m.author}: the export credits it.`;
+    if (picked?.key === key) $('object-model-results').hidden = true;
+    bar.done();
+    sayModel(key, `${m.name} is on ${target}. ${m.license} by ${m.author}: the export credits it.`);
   } catch (err) {
     if (bar.signal.aborted) return;
-    status.textContent = `Couldn't use ${m.name}: ${(err as Error).message}`;
+    sayModel(key, `Couldn't use ${m.name}: ${(err as Error).message}`);
   } finally {
     bar.end();
   }
@@ -816,7 +832,7 @@ async function useCommonsModel(key: string, m: CommonsModel, row: HTMLLIElement)
 // A bar inside the clicked result while its model downloads (then reads, in the
 // background): right where the click was, even far down a scrolled list.
 let progressRows = 0;
-function modelProgress(row: HTMLLIElement) {
+function modelProgress(row: HTMLLIElement, name: string, target: string) {
   const id = `model-progress-${++progressRows}`;
   const bar = document.createElement('div');
   bar.className = 'progress';
@@ -830,21 +846,68 @@ function modelProgress(row: HTMLLIElement) {
   button.textContent = 'Cancel';
   setBar(id, '', null, '');
   bar.scrollIntoView({ block: 'nearest' });
+  modelTask.show(`Downloading ${name} for ${target}…`);
   return {
-    bytes: (bytes: number, total?: number) => setBar(id, total ? `${formatBytes(bytes)} of ${formatBytes(total)}` : formatBytes(bytes), total ? bytes / total : null, ''),
+    bytes: (bytes: number, total?: number) => {
+      const amount = total ? `${formatBytes(bytes)} of ${formatBytes(total)}` : formatBytes(bytes);
+      setBar(id, amount, total ? bytes / total : null, '');
+      modelTask.show(`Downloading ${name} for ${target}: ${amount}`);
+    },
     reading: () => {
       bar.querySelector('.progress-label')!.textContent = 'Reading';
       setBar(id, '', null, 'Big models are simplified to what a print can hold.');
+      modelTask.show(`Reading ${name} for ${target}…`);
     },
     signal: load.abort.signal,
+    // Placed: the line's message follows (sayModel), not the progress.
+    done: () => modelTask.hide(),
     // Done, failed or cancelled: the row as it was.
     end: () => {
       bar.remove();
       button.textContent = 'Use';
-      if (modelLoad === load) modelLoad = null;
+      if (modelLoad === load) {
+        modelLoad = null;
+        if (!modelTask.saying) modelTask.hide();
+      }
     },
   };
 }
+
+// The line at the top right about a model download: it goes on whatever is selected
+// meanwhile, and its Cancel works from anywhere.
+const modelTask = (() => {
+  const line = $('model-task');
+  const text = $('model-task-text');
+  const cancel = $('model-task-cancel');
+  let timer: number | undefined;
+  const api = {
+    saying: false,
+    show(t: string) {
+      clearTimeout(timer);
+      api.saying = false;
+      text.textContent = t;
+      cancel.hidden = false;
+      line.hidden = false;
+    },
+    // A message that fades after a while (no Cancel: nothing is running).
+    say(t: string) {
+      api.show(t);
+      api.saying = true;
+      cancel.hidden = true;
+      timer = window.setTimeout(api.hide, 8000);
+    },
+    hide() {
+      clearTimeout(timer);
+      api.saying = false;
+      line.hidden = true;
+    },
+  };
+  cancel.addEventListener('click', () => {
+    cancelModelLoad();
+    api.say('Download cancelled.');
+  });
+  return api;
+})();
 
 function changeModel(change: (m: ModelChoice) => ModelChoice) {
   const e = picked && edits.get(picked.key);
@@ -930,7 +993,7 @@ function showEditsSummary() {
 // Selecting waits for the detailed data (see Viewer.canSelect).
 function showSelectHint() {
   $('select-hint').textContent = printPreview
-    ? 'Editing is paused while the print preview is on.'
+    ? 'Editing is paused while you preview the export.'
     : viewer?.canSelect
       ? 'Click a building, tree, bridge, street, river or park to edit it.'
       : 'Selecting and editing become available when the detailed data arrives.';
@@ -952,7 +1015,7 @@ function failure(what: string, err: unknown): string {
 // The print is built in a worker (see print-worker.ts), so the page stays responsive. The
 // preview has its own, ended when a newer preview is asked for; a download gets a fresh one.
 let previewWorker: Worker | null = null;
-function runPrintJob(kind: PrintJob['kind'], data: AreaData, own?: (w: Worker) => void): Promise<{ result: Extract<PrintResult, { ok: true }>; nozzle: number; minFeatureMm: number }> {
+function runPrintJob(kind: PrintJob['kind'], data: AreaData, own?: (w: Worker) => void, previewed?: PrintJob['previewed']): Promise<{ result: Extract<PrintResult, { ok: true }>; nozzle: number; minFeatureMm: number }> {
   const options = {
     sizeMm: printNumber('print-size', 'Longest side', 1),
     baseMm: printNumber('print-base', 'Base thickness', 1),
@@ -961,7 +1024,7 @@ function runPrintJob(kind: PrintJob['kind'], data: AreaData, own?: (w: Worker) =
   const nozzleMm = printNumber('print-nozzle', 'Nozzle', 0.01);
   const [lng, lat] = data.selection.center;
   const models = [...edits.values()].flatMap((e) => (e.model && modelAssets.has(e.model.asset) ? [modelAssets.get(e.model.asset)!] : []));
-  const job: PrintJob = { kind, data, edits, scales: scales(), visible: [...visibleLayers], options, nozzleMm, name: printName(lat, lng), models };
+  const job: PrintJob = { kind, data, edits, scales: scales(), visible: [...visibleLayers], options, nozzleMm, name: printName(lat, lng), models, previewed };
   const worker = new Worker(new URL('./print-worker.ts', import.meta.url), { type: 'module' });
   own?.(worker);
   const bar = printProgress.start(worker);
@@ -1045,7 +1108,10 @@ function setPrintPreview(on: boolean) {
   printPreview = on && !!viewer;
   const button = $('preview-print');
   button.setAttribute('aria-pressed', String(printPreview));
-  button.textContent = printPreview ? 'Back to the 3D view' : 'Preview print';
+  button.textContent = printPreview ? 'Back to the 3D view' : 'Preview export';
+  // The file comes from the model previewed: only in the preview.
+  $('export-files').hidden = !printPreview;
+  previewed = null;
   if (!printPreview) {
     printProgress.cancel(previewWorker);
     previewWorker?.terminate();
@@ -1058,10 +1124,16 @@ function setPrintPreview(on: boolean) {
 }
 
 // Rebuilds the preview, if it's on: a build still running for older settings is ended.
+// The model the preview shows, kept for the download: the same settings, already built.
+let previewed: { model: PrintModel; thin: ThinObjects; nozzle: number; minFeatureMm: number } | null = null;
+
 async function updatePrintPreview() {
   if (!printPreview || !viewer || !areaData) return;
   printProgress.cancel(previewWorker);
   previewWorker?.terminate();
+  // Settings changed: the download waits for the new preview.
+  previewed = null;
+  $<HTMLButtonElement>('download').disabled = true;
   const status = $('export-status');
   status.textContent = 'Building the preview…';
   let mine: Worker | null = null;
@@ -1071,6 +1143,8 @@ async function updatePrintPreview() {
     previewWorker = null;
     viewer?.showPrint(result.model, result.thin, exportFormat === 'stl');
     showThinWarning(result.thin, nozzle, minFeatureMm);
+    previewed = { model: result.model, thin: result.thin, nozzle, minFeatureMm };
+    $<HTMLButtonElement>('download').disabled = false;
     const [x, y, z] = result.model.sizeMm.map((v) => Math.round(v));
     status.textContent = `${x} × ${y} × ${z} mm · ${result.model.triangleCount.toLocaleString()} triangles.`;
   } catch (err) {
@@ -1081,15 +1155,15 @@ async function updatePrintPreview() {
 }
 
 async function downloadModel() {
-  if (!areaData) return;
+  if (!areaData || !previewed) return;
   const button = $<HTMLButtonElement>('download');
   const status = $('export-status');
   button.disabled = true;
-  status.textContent = 'Building the model…';
+  status.textContent = 'Writing the file…';
   try {
     const format = exportFormat;
-    const { result, nozzle, minFeatureMm } = await runPrintJob(format, areaData);
-    showThinWarning(result.thin, nozzle, minFeatureMm);
+    // The model previewed: merged and written, not built again.
+    const { result } = await runPrintJob(format, areaData, undefined, { model: previewed.model, thin: previewed.thin.counts });
     const file = result.file!;
     const [lng, lat] = areaData.selection.center;
     const a = document.createElement('a');
@@ -1106,7 +1180,8 @@ async function downloadModel() {
     if (!(err instanceof SettingError)) console.error('Export failed', err);
     status.textContent = failure('The export', err);
   } finally {
-    button.disabled = false;
+    // Settings changed meanwhile: the new preview must finish first.
+    button.disabled = !previewed;
   }
 }
 

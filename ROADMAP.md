@@ -2,7 +2,12 @@
 
 Open work only: built items move to the README and CHANGELOG.
 
-## Improve objects and terrain
+## Milestone 0.7.x: real terrain, real objects, and the look
+
+LiDAR terrain, official 3D data and photogrammetry, aerial imagery, and the rest of the
+look, released as 0.7.x steps.
+
+### Improve objects and terrain
 
 Swapping the OSM approximation for something better. Google's photorealistic tiles can't be
 used (their terms forbid extracting them), and no open worldwide photogrammetry exists, so:
@@ -16,6 +21,18 @@ used (their terms forbid extracting them), and no open worldwide photogrammetry 
   a surface model, with buildings and tree canopy in its heights, so the ground would bump
   up under every city block. FABDEM (GLO-30 cleaned of them) is non-commercial only, and
   served as archives a browser can't read.
+- **Improve with official 3D data:** an "Improve" button on a building (and "Improve all"
+  for the selection) that swaps the OSM block for the official open 3D city model where one
+  exists: measured roof shapes and heights (LoD2), from the Netherlands' 3DBAG, Switzerland's
+  swissBUILDINGS3D, Japan's PLATEAU (about 200 cities), German states (North
+  Rhine-Westphalia, Bavaria, Berlin, Hamburg…), New York, Helsinki, Vienna, Zurich; and
+  open photogrammetry meshes where a city publishes one (Helsinki). They carry real
+  coordinates, so they go exactly in place, no fitting. Two readers cover most of them: 3D
+  Tiles (walked down to the tiles over the building) and CityJSON. Per source: find the
+  endpoint a browser can load (CORS), and the license; the panel shows the source and the
+  export credits it. Where nothing covers the building, the button says so. (Google's
+  Photorealistic 3D Tiles stay out: their terms forbid extracting, storing, offline use
+  and deriving models.)
 - **Sketchfab without a token:** an approved integration (Sketchfab requires it for
   downloads without each user logging in), with our own server: see "Faster, more reliable
   data". Until then, a "Log in with Sketchfab" button instead of pasting a token needs our
@@ -27,10 +44,10 @@ used (their terms forbid extracting them), and no open worldwide photogrammetry 
   hundreds of openly licensed photos (Wikimedia Commons) with COLMAP-style structure from
   motion. Real geometry, but heavy server compute: needs a backend.
 
-## Closer to the Google Earth look
+### Closer to the Google Earth look
 
-Compared on Store Ådnøy (Norway), the gap is mostly terrain detail, then surface texture,
-color and water:
+Compared on Store Ådnøy (Norway), the gap is mostly terrain detail (LiDAR, above), then
+surface texture, color and water:
 
 - **Slope-based color and shading** (cheap, big gain): rock gray on steep ground, green on
   gentle ground, darker hollows; hillshade or ambient occlusion and a lower sun. Rock and

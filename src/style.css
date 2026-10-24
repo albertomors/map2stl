@@ -625,6 +625,14 @@ body.mode-3d .map-only {
   padding: 4px 6px;
 }
 
+.model-task {
+  flex-basis: 100%;
+}
+
+.model-task[hidden] {
+  display: none;
+}
+
 .model-box {
   margin: 12px 0 4px;
 }
@@ -877,6 +885,10 @@ button.link:disabled {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-fg);
+}
+
+#export-files[hidden] {
+  display: none;
 }
 
 #preview-print {

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- A model download keeps going when you select something else: a line at the top right
+  shows its progress (with Cancel) wherever you are, and when it's done the model goes on
+  the building it was for, which stays as selected or not as it was.
+
+### Changed
+
+- "Preview print" is now "Preview export", and the file format and Download appear only in
+  the preview: the file is written from the model previewed, merged and saved without being
+  built a second time. While the preview rebuilds after a change, Download waits for it.
+
 ## [0.6.2] - 2026-10-24
 
 Streets, rivers and areas you can select and change, 3D models for bridges, and model

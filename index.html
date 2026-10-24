@@ -101,6 +101,10 @@ nom<!doctype html>
       <p id="edits-summary" class="overlay-hint view3d-only">
         <span id="select-hint"></span>
         <span id="edits-count"></span>
+        <span id="model-task" class="model-task" hidden>
+          <span id="model-task-text"></span>
+          <button id="model-task-cancel" class="link">Cancel</button>
+        </span>
         <span class="edit-actions">
           <button id="restore-deleted" class="link">Restore deleted</button>
           <button id="reset-all" class="link">Reset all</button>
@@ -184,19 +188,22 @@ nom<!doctype html>
         <label for="print-nozzle">Nozzle</label>
         <span class="field"><input id="print-nozzle" type="number" autocomplete="off" min="0.01" step="0.01" value="0.4" /> mm</span>
       </div>
-      <button id="preview-print" aria-pressed="false">Preview print</button>
+      <button id="preview-print" aria-pressed="false">Preview export</button>
       <p id="print-warning" class="warning" hidden></p>
       <div id="print-progress" class="progress" hidden>
         <div class="progress-head"><span class="progress-label"></span><span class="progress-text"></span></div>
         <div class="bar"><div></div></div>
         <p class="progress-note"></p>
       </div>
-      <div class="format" role="group" aria-label="File format">
-        <button id="format-stl" data-format="stl" aria-pressed="true">STL</button>
-        <button id="format-3mf" data-format="3mf" aria-pressed="false">3MF</button>
+      <!-- Only in the preview: the file is written from the model previewed. -->
+      <div id="export-files" hidden>
+        <div class="format" role="group" aria-label="File format">
+          <button id="format-stl" data-format="stl" aria-pressed="true">STL</button>
+          <button id="format-3mf" data-format="3mf" aria-pressed="false">3MF</button>
+        </div>
+        <p id="format-hint" class="hint"></p>
+        <button id="download" class="primary">Download STL</button>
       </div>
-      <p id="format-hint" class="hint"></p>
-      <button id="download" class="primary">Download STL</button>
       <p id="export-status" class="hint" aria-live="polite"></p>
     </section>
 

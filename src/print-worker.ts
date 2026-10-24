@@ -22,6 +22,8 @@ export interface PrintJob {
   name: string;
   // The 3D models the edits use.
   models: ModelAsset[];
+  // A download of the model the preview built: no need to build it again.
+  previewed?: { model: PrintModel; thin: ThinObjects['counts'] };
 }
 
 export type PrintResult =
@@ -38,11 +40,13 @@ export interface PrintProgress {
 const SHARES = {
   preview: { build: 0.85, thin: 0.15, merge: 0, write: 0 },
   file: { build: 0.25, thin: 0.05, merge: 0.5, write: 0.2 },
+  // From the previewed model: merging and writing only.
+  previewed: { build: 0, thin: 0, merge: 0.7, write: 0.3 },
 };
 
 self.onmessage = async (e: MessageEvent<PrintJob>) => {
   const job = e.data;
-  const share = SHARES[job.kind === 'preview' ? 'preview' : 'file'];
+  const share = SHARES[job.kind === 'preview' ? 'preview' : job.previewed ? 'previewed' : 'file'];
   let start = 0;
   const report = (stage: keyof typeof share, fraction: number, label: string) => {
     const p: PrintProgress = { progress: start + share[stage] * fraction, label };
@@ -53,11 +57,21 @@ self.onmessage = async (e: MessageEvent<PrintJob>) => {
   try {
     report('build', 0, 'Starting');
     const wasm = await loadManifold();
-    const model = buildPrintModel(wasm, job.data, job.edits, job.scales, new Set(job.visible), job.options, (f, label) => report('build', f, label));
-    next('build');
-    report('thin', 0, 'Checking thin details');
-    const thin = findThinObjects(model, job.nozzleMm);
-    next('thin');
+    let model: PrintModel;
+    let thin: ThinObjects;
+    if (job.previewed) {
+      // The preview's model, as previewed.
+      model = job.previewed.model;
+      thin = { objects: new Map(), counts: job.previewed.thin };
+      next('build');
+      next('thin');
+    } else {
+      model = buildPrintModel(wasm, job.data, job.edits, job.scales, new Set(job.visible), job.options, (f, label) => report('build', f, label));
+      next('build');
+      report('thin', 0, 'Checking thin details');
+      thin = findThinObjects(model, job.nozzleMm);
+      next('thin');
+    }
     if (job.kind === 'preview') {
       reply({ ok: true, model, thin }, model);
       return;
