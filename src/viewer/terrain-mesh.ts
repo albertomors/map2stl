@@ -30,7 +30,34 @@ export interface TerrainMesh {
 }
 
 // A point in grid pixel space with its terrain height (meters).
-type GP = { x: number; y: number; h: number };
+export type GP = { x: number; y: number; h: number };
+
+// The terrain grid as the tile is built from it: every `step`-th sample (the last row and
+// column clamped to the edge), each cell split into the triangles a-d-b and b-d-e (a top left,
+// e bottom right). Anything that lies on the terrain must follow these same triangles.
+export interface Grid {
+  step: number;
+  cols: number;
+  rows: number;
+  colX: (c: number) => number;
+  rowY: (r: number) => number;
+  // Terrain height (meters) at a grid corner.
+  height: (c: number, r: number) => number;
+}
+
+export function terrainGrid(t: Terrain): Grid {
+  const step = Math.ceil(Math.max(t.width, t.height) / MAX_GRID);
+  const colX = (c: number) => Math.min(c * step, t.width - 1);
+  const rowY = (r: number) => Math.min(r * step, t.height - 1);
+  return {
+    step,
+    cols: Math.ceil((t.width - 1) / step) + 1,
+    rows: Math.ceil((t.height - 1) / step) + 1,
+    colX,
+    rowY,
+    height: (c, r) => t.heights[rowY(r) * t.width + colX(c)],
+  };
+}
 
 // `ground(h)` turns a terrain height into the scene height (sea clamp, exaggeration).
 export function buildTerrain(
@@ -41,12 +68,7 @@ export function buildTerrain(
   ground: (h: number) => number,
   baseDepth: number,
 ): TerrainMesh {
-  const step = Math.ceil(Math.max(t.width, t.height) / MAX_GRID);
-  const cols = Math.ceil((t.width - 1) / step) + 1;
-  const rows = Math.ceil((t.height - 1) / step) + 1;
-  const colX = (c: number) => Math.min(c * step, t.width - 1);
-  const rowY = (r: number) => Math.min(r * step, t.height - 1);
-  const height = (c: number, r: number) => t.heights[rowY(r) * t.width + colX(c)];
+  const { step, cols, rows, colX, rowY, height } = terrainGrid(t);
 
   // Vertices are shared by position, so the open edges can be found by counting edge uses.
   const pos: number[] = [];

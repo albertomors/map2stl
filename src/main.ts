@@ -12,6 +12,8 @@ import { setupSearch } from './search';
 import { describe, loadSelection, saveSelection, type Selection, type ShapeKind } from './selection';
 import type { ObjectPick, Viewer, ViewScales } from './viewer/viewer';
 import type { Edits } from './edits';
+import type { ThinObjects } from './export';
+import type { PrintJob, PrintProgress, PrintResult } from './print-worker';
 
 // Above this, OSM downloads in dense cities get slow and the print loses detail.
 const LARGE_AREA_M2 = 10e6;
@@ -81,7 +83,7 @@ for (const id of ['terrain-scale', 'height-scale']) {
   });
   $(id).addEventListener('change', () => {
     clearTimeout(timer);
-    timer = window.setTimeout(() => viewer?.setScales(scales()), 0);
+    timer = window.setTimeout(() => (viewer?.setScales(scales()), updatePrintPreview()), 0);
   });
 }
 showScales();
@@ -89,17 +91,23 @@ showScales();
 // Export: what's in the 3D view (edits, multipliers, visible layers), in millimeters.
 let exportFormat: 'stl' | '3mf' = 'stl';
 const FORMAT_HINTS = {
-  stl: 'One solid, for any slicer.',
-  '3mf': 'One colored part per layer (terrain, buildings, structures, trees), for multi-color printers.',
+  stl: 'One watertight solid, for any slicer.',
+  '3mf': 'One colored part per layer (terrain, water, streets, squares, parks, sand, buildings, structures, trees), for multi-color printers.',
 };
 function showFormat() {
   for (const f of ['stl', '3mf'] as const) $(`format-${f}`).setAttribute('aria-pressed', String(f === exportFormat));
   $('format-hint').textContent = FORMAT_HINTS[exportFormat];
   $('download').textContent = `Download ${exportFormat.toUpperCase()}`;
+  // The preview shows what the file will print: one color for an STL, the parts' for a 3MF.
+  viewer?.setPrintMonochrome(exportFormat === 'stl');
 }
 for (const f of ['stl', '3mf'] as const) $(`format-${f}`).addEventListener('click', () => ((exportFormat = f), showFormat()));
 showFormat();
 $('download').addEventListener('click', () => downloadModel());
+// Print preview: the exported model in the 3D view, rebuilt when anything it depends on changes.
+let printPreview = false;
+$('preview-print').addEventListener('click', () => setPrintPreview(!printPreview));
+for (const id of ['print-size', 'print-base', 'print-min', 'print-nozzle']) $(id).addEventListener('change', () => updatePrintPreview());
 
 // Object editing in the 3D view.
 for (const [id, field] of [['object-size', 'scale'], ['object-height', 'heightScale']] as const) {
@@ -139,6 +147,7 @@ $('reset-all').addEventListener('click', () => {
   viewer?.select(null);
   viewer?.setEdits(edits);
   viewer?.setScales(scales());
+  updatePrintPreview();
   showEditsSummary();
 });
 window.addEventListener('keydown', (e) => {
@@ -312,6 +321,7 @@ function showData(data: AreaData) {
         else visibleLayers.delete(layer);
         preview?.setVisible(layer, box.checked);
         viewer?.setLayerVisible(layer, box.checked);
+        updatePrintPreview();
       });
       const swatch = document.createElement('span');
       swatch.className = 'swatch';
@@ -340,6 +350,7 @@ function showData(data: AreaData) {
     `Terrain ${Math.round(t.min)}–${Math.round(t.max)} m above sea level, ${t.width}×${t.height} grid (≈${spacing.toFixed(0)} m).`;
   if (replacing) viewer?.show(data, visibleLayers, scales(), { keepCamera: true, edits });
   showExport();
+  updatePrintPreview();
   showSelectHint();
 }
 
@@ -450,6 +461,7 @@ async function open3d() {
 }
 
 function close3d() {
+  setPrintPreview(false);
   viewer?.dispose();
   viewer = null;
   showExport();
@@ -514,43 +526,180 @@ function showEditsSummary() {
 
 // Selecting waits for the detailed data (see Viewer.canSelect).
 function showSelectHint() {
-  $('select-hint').textContent = viewer?.canSelect
-    ? 'Click a building, tree, bridge or structure to edit it.'
-    : 'Selecting and editing become available when the detailed data arrives.';
+  $('select-hint').textContent = printPreview
+    ? 'Editing is paused while the print preview is on.'
+    : viewer?.canSelect
+      ? 'Click a building, tree, bridge or structure to edit it.'
+      : 'Selecting and editing become available when the detailed data arrives.';
+}
+
+// Print settings have a minimum and no maximum; a value below the minimum is refused, not
+// clamped, so what's printed is always what the field says.
+class SettingError extends Error {}
+function printNumber(id: string, label: string, min: number): number {
+  const v = Number($<HTMLInputElement>(id).value);
+  if (!Number.isFinite(v) || v < min) throw new SettingError(`${label} must be at least ${min} mm.`);
+  return v;
+}
+
+function failure(what: string, err: unknown): string {
+  return err instanceof SettingError ? err.message : `${what} failed: ${(err as Error).message}`;
+}
+
+// The print is built in a worker (see print-worker.ts), so the page stays responsive. The
+// preview has its own, ended when a newer preview is asked for; a download gets a fresh one.
+let previewWorker: Worker | null = null;
+function runPrintJob(kind: PrintJob['kind'], data: AreaData, own?: (w: Worker) => void): Promise<{ result: Extract<PrintResult, { ok: true }>; nozzle: number; minFeatureMm: number }> {
+  const options = {
+    sizeMm: printNumber('print-size', 'Longest side', 1),
+    baseMm: printNumber('print-base', 'Base thickness', 1),
+    minFeatureMm: printNumber('print-min', 'Thinnest detail', 0.01),
+  };
+  const nozzleMm = printNumber('print-nozzle', 'Nozzle', 0.01);
+  const [lng, lat] = data.selection.center;
+  const job: PrintJob = { kind, data, edits, scales: scales(), visible: [...visibleLayers], options, nozzleMm, name: printName(lat, lng) };
+  const worker = new Worker(new URL('./print-worker.ts', import.meta.url), { type: 'module' });
+  own?.(worker);
+  const bar = printProgress.start(worker);
+  return new Promise((resolve, reject) => {
+    worker.onmessage = (e: MessageEvent<PrintResult | PrintProgress>) => {
+      if ('progress' in e.data) return bar.update(e.data);
+      worker.terminate();
+      bar.end();
+      if (e.data.ok) resolve({ result: e.data, nozzle: nozzleMm, minFeatureMm: options.minFeatureMm });
+      else reject(new Error(e.data.message));
+    };
+    worker.onerror = (e) => {
+      worker.terminate();
+      bar.end();
+      reject(new Error(e.message || 'the build stopped'));
+    };
+    worker.postMessage(job);
+  });
+}
+
+// The progress bar under the export buttons, for the print job that started last. It shows
+// only once a job has run a second: quick ones finish without it flashing up.
+const PROGRESS_AFTER_MS = 1000;
+const printProgress = (() => {
+  let current: Worker | null = null;
+  let timer: number | undefined;
+  let since = 0;
+  const row = $('print-progress');
+  const hide = () => {
+    clearTimeout(timer);
+    row.hidden = true;
+  };
+  return {
+    start(worker: Worker) {
+      hide();
+      current = worker;
+      since = Date.now();
+      setBar('print-progress', '', 0, '');
+      row.querySelector('.progress-label')!.textContent = 'Starting';
+      timer = window.setTimeout(() => current === worker && (row.hidden = false), PROGRESS_AFTER_MS);
+      return {
+        update: ({ progress, label }: PrintProgress) => {
+          if (current !== worker) return;
+          row.querySelector('.progress-label')!.textContent = label;
+          setBar('print-progress', `${Math.round(progress * 100)}% · ${formatDuration((Date.now() - since) / 1000)}`, progress, '');
+        },
+        end: () => {
+          if (current !== worker) return;
+          current = null;
+          hide();
+        },
+      };
+    },
+    // A job ended from outside (a newer preview, or the preview switched off).
+    cancel(worker: Worker | null) {
+      if (worker && current === worker) {
+        current = null;
+        hide();
+      }
+    },
+  };
+})();
+
+function printName(lat: number, lng: number): string {
+  return `map2stl-${lat.toFixed(4)}-${lng.toFixed(4)}`;
+}
+
+// What in the model is too thin for the nozzle, under the Preview button.
+function showThinWarning(thin: ThinObjects, nozzle: number, minFeatureMm: number) {
+  const warning = $('print-warning');
+  const total = thin.counts.reduce((n, [, c]) => n + c, 0);
+  const list = thin.counts.map(([name, c]) => `${c.toLocaleString()} ${name.toLowerCase()}`).join(', ');
+  const below = minFeatureMm < nozzle ? ` Thinnest detail is below the nozzle width: set it to at least ${nozzle} mm.` : '';
+  warning.textContent = total
+    ? `${total.toLocaleString()} ${total === 1 ? 'object is' : 'objects are'} narrower than the ${nozzle} mm nozzle (${list}), shown in red in the preview: they may print as blobs, or not at all. Make the model bigger, or enlarge or delete them.${below}`
+    : below.trim();
+  warning.hidden = !warning.textContent;
+}
+
+function setPrintPreview(on: boolean) {
+  printPreview = on && !!viewer;
+  const button = $('preview-print');
+  button.setAttribute('aria-pressed', String(printPreview));
+  button.textContent = printPreview ? 'Back to the 3D view' : 'Preview print';
+  if (!printPreview) {
+    printProgress.cancel(previewWorker);
+    previewWorker?.terminate();
+    previewWorker = null;
+    viewer?.showPrint(null);
+    $('export-status').textContent = '';
+  }
+  showSelectHint();
+  updatePrintPreview();
+}
+
+// Rebuilds the preview, if it's on: a build still running for older settings is ended.
+async function updatePrintPreview() {
+  if (!printPreview || !viewer || !areaData) return;
+  printProgress.cancel(previewWorker);
+  previewWorker?.terminate();
+  const status = $('export-status');
+  status.textContent = 'Building the preview…';
+  let mine: Worker | null = null;
+  try {
+    const { result, nozzle, minFeatureMm } = await runPrintJob('preview', areaData, (w) => (previewWorker = mine = w));
+    if (previewWorker !== mine || !printPreview) return;
+    previewWorker = null;
+    viewer?.showPrint(result.model, result.thin, exportFormat === 'stl');
+    showThinWarning(result.thin, nozzle, minFeatureMm);
+    const [x, y, z] = result.model.sizeMm.map((v) => Math.round(v));
+    status.textContent = `${x} × ${y} × ${z} mm · ${result.model.triangleCount.toLocaleString()} triangles.`;
+  } catch (err) {
+    if (mine && previewWorker !== mine) return;
+    if (!(err instanceof SettingError)) console.error('Preview failed', err);
+    status.textContent = failure('The preview', err);
+  }
 }
 
 async function downloadModel() {
   if (!areaData) return;
   const button = $<HTMLButtonElement>('download');
   const status = $('export-status');
-  const num = (id: string, fallback: number) => {
-    const v = Number($<HTMLInputElement>(id).value);
-    return Number.isFinite(v) && v > 0 ? v : fallback;
-  };
   button.disabled = true;
   status.textContent = 'Building the model…';
-  // Let the message paint before the main thread is busy for a moment.
-  await new Promise((r) => requestAnimationFrame(() => setTimeout(r, 0)));
   try {
-    const [{ buildPrintModel }, { toSTL, to3MF }] = await Promise.all([import('./export'), import('./export-files')]);
-    const model = buildPrintModel(areaData, edits, scales(), visibleLayers, {
-      sizeMm: num('print-size', 150),
-      baseMm: num('print-base', 3),
-      minFeatureMm: num('print-min', 0.8),
-    });
+    const format = exportFormat;
+    const { result, nozzle, minFeatureMm } = await runPrintJob(format, areaData);
+    showThinWarning(result.thin, nozzle, minFeatureMm);
+    const file = result.file!;
     const [lng, lat] = areaData.selection.center;
-    const name = `map2stl-${lat.toFixed(4)}-${lng.toFixed(4)}`;
-    const blob = exportFormat === 'stl' ? toSTL(model) : to3MF(model, name);
     const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `${name}.${exportFormat}`;
+    a.href = URL.createObjectURL(file);
+    a.download = `${printName(lat, lng)}.${format}`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
-    const [x, y, z] = model.sizeMm.map((v) => Math.round(v));
-    status.textContent = `${x} × ${y} × ${z} mm · ${model.triangleCount.toLocaleString()} triangles · ${formatBytes(blob.size)}. Credit "© OpenStreetMap contributors" when you share it.`;
+    const skipped = result.skipped ?? 0;
+    const merged = skipped ? ` · ${skipped.toLocaleString()} ${skipped === 1 ? 'solid' : 'solids'} couldn't be merged and ${skipped === 1 ? 'is' : 'are'} included as ${skipped === 1 ? 'it is' : 'they are'}` : '';
+    const [x, y, z] = result.model.sizeMm.map((v) => Math.round(v));
+    status.textContent = `${x} × ${y} × ${z} mm · ${result.model.triangleCount.toLocaleString()} triangles · ${formatBytes(file.size)}${merged}. Credit "© OpenStreetMap contributors" when you share it.`;
   } catch (err) {
-    console.error('Export failed', err);
-    status.textContent = `The export failed: ${(err as Error).message}`;
+    if (!(err instanceof SettingError)) console.error('Export failed', err);
+    status.textContent = failure('The export', err);
   } finally {
     button.disabled = false;
   }
@@ -560,4 +709,5 @@ async function downloadModel() {
 // tile data has no roofs, trees or walls and isn't worth printing.
 function showExport() {
   $('export').hidden = !(viewer && areaData?.detail === 'full');
+  if ($('export').hidden && printPreview) setPrintPreview(false);
 }

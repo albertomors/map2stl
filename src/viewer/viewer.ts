@@ -6,6 +6,7 @@
 import {
   Box3,
   BufferAttribute,
+  BufferGeometry,
   Color,
   DirectionalLight,
   DoubleSide,
@@ -14,6 +15,7 @@ import {
   InstancedMesh,
   Matrix4,
   Mesh,
+  MOUSE,
   MeshDepthMaterial,
   MeshLambertMaterial,
   RGBADepthPacking,
@@ -21,12 +23,14 @@ import {
   PerspectiveCamera,
   Raycaster,
   Scene,
+  TOUCH,
   Vector2,
   WebGLRenderer,
   type Object3D,
 } from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import type { AreaData, Layer } from '../area-data';
+import type { PrintModel, ThinObjects } from '../export';
 import { clipObjects, clipToSelection } from '../clip';
 import { applyEdits, editedTrees, editKey, type Edits, type ObjectEdit } from '../edits';
 import type { LngLat } from '../geo';
@@ -64,6 +68,10 @@ const TINT = new Color('#ffd5b8');
 const TINT_GLOW = new Color('#ff6b2c').multiplyScalar(0.12);
 // A press and release closer than this is a click (select), not an orbit.
 const CLICK_PX = 5;
+// Print preview: objects narrower than the nozzle.
+const THIN = new Color('#e5322d');
+// Print preview of a single-color file (STL): every part in one plain filament color.
+const MONO = new Color('#d9d3c9');
 
 // A mesh that can be clicked, with the object key under a hit.
 interface Pickable {
@@ -85,6 +93,10 @@ export class Viewer {
   private objects = new Group();
   // The selected object, lifted and tinted.
   private highlight = new Group();
+  // The print preview: the exported model in place of the scene, while it's on.
+  private print = new Group();
+  // One color for every part (an STL), or each part's own (a 3MF).
+  private printMono = false;
   private liftKey: string | null = null;
   // The lifted copy's scaling pivot (center of its base), and the edit it was built with.
   private liftPivot: Group | null = null;
@@ -130,10 +142,13 @@ export class Viewer {
     this.sun.castShadow = true;
     this.sun.shadow.mapSize.set(2048, 2048);
     this.sun.shadow.bias = -0.0005;
-    this.scene.add(this.sun, this.sun.target, this.terrain, this.objects, this.highlight);
+    this.scene.add(this.sun, this.sun.target, this.terrain, this.objects, this.highlight, this.print);
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
+    // The map's controls: drag pans, right-drag (or Ctrl+drag) orbits.
+    this.controls.mouseButtons = { LEFT: MOUSE.PAN, MIDDLE: MOUSE.DOLLY, RIGHT: MOUSE.ROTATE };
+    this.controls.touches = { ONE: TOUCH.PAN, TWO: TOUCH.DOLLY_ROTATE };
     // Never below the ground plane.
     this.controls.maxPolarAngle = Math.PI * 0.47;
 
@@ -160,7 +175,57 @@ export class Viewer {
   // Selecting needs the detailed data: tile buildings are split at tile seams and come
   // without parts, and their ids change when the detailed data replaces them.
   get canSelect(): boolean {
-    return this.data?.detail === 'full';
+    return this.data?.detail === 'full' && !this.print.children.length;
+  }
+
+  // The model exactly as it will print, one color per part (or one for all: `mono`), objects
+  // narrower than the nozzle in red; null goes back to the normal view.
+  showPrint(model: PrintModel | null, thin?: ThinObjects, mono = this.printMono) {
+    this.printMono = mono;
+    disposeChildren(this.print);
+    if (model) this.select(null);
+    for (const g of [this.terrain, this.objects, this.highlight]) g.visible = !model;
+    if (!model) return;
+    for (const part of model.parts) {
+      const geometry = new BufferGeometry();
+      geometry.setAttribute('position', new BufferAttribute(part.triangles, 3));
+      geometry.computeVertexNormals();
+      const flagged = thin?.objects.get(part);
+      // Which triangles are too thin, to keep them red whatever the colors.
+      const thinTris = flagged ? Uint8Array.from(part.objects, (o) => (flagged.has(o) ? 1 : 0)) : null;
+      if (thinTris) geometry.setAttribute('color', new BufferAttribute(new Float32Array(part.triangles.length), 3));
+      const mesh = new Mesh(geometry, new MeshLambertMaterial({ vertexColors: !!thinTris }));
+      mesh.userData = { color: part.color, thinTris };
+      this.paintPrint(mesh);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.matrixAutoUpdate = false;
+      mesh.matrix.copy(model.toScene);
+      this.print.add(mesh);
+    }
+  }
+
+  // Switches the print preview between one color for all parts and each part's own.
+  setPrintMonochrome(mono: boolean) {
+    this.printMono = mono;
+    for (const mesh of this.print.children) this.paintPrint(mesh as Mesh);
+  }
+
+  private paintPrint(mesh: Mesh) {
+    const { color, thinTris } = mesh.userData as { color: string; thinTris: Uint8Array | null };
+    const base = this.printMono ? MONO : new Color(color);
+    const material = mesh.material as MeshLambertMaterial;
+    if (!thinTris) {
+      material.color.copy(base);
+      return;
+    }
+    const attr = mesh.geometry.getAttribute('color') as BufferAttribute;
+    const colors = attr.array as Float32Array;
+    thinTris.forEach((thin, tri) => {
+      const c = thin ? THIN : base;
+      for (let v = 0; v < 3; v++) colors.set([c.r, c.g, c.b], tri * 9 + v * 3);
+    });
+    attr.needsUpdate = true;
   }
 
   // `keepCamera` when new data replaces what's shown (the full version after the quick one).
@@ -245,14 +310,14 @@ export class Viewer {
     if (visible) this.visible.add(layer);
     else this.visible.delete(layer);
     for (const o of this.layerObjects.get(layer) ?? []) o.visible = visible;
-    if (layer === this.liftLayer) this.highlight.visible = visible;
+    if (layer === this.liftLayer) this.highlight.visible = visible && !this.print.children.length;
     if (TEXTURE_LAYERS.includes(layer)) this.ground?.paint(this.visible);
   }
 
   dispose() {
     this.renderer.setAnimationLoop(null);
     this.resize.disconnect();
-    for (const g of [this.terrain, this.objects, this.highlight]) disposeChildren(g);
+    for (const g of [this.terrain, this.objects, this.highlight, this.print]) disposeChildren(g);
     this.ground?.dispose();
     this.stretchDepth?.dispose();
     this.controls.dispose();

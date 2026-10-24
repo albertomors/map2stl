@@ -94,14 +94,12 @@ nom<!doctype html>
     <!-- Top right, on the map and in the 3D view: how to move around, and in 3D the edits and
          the selected object. -->
     <div id="view3d-overlay" class="overlay-right">
-      <p class="overlay-hint nav-hint map-only">
+      <!-- The same controls on the map and in the 3D view. -->
+      <p class="overlay-hint nav-hint">
         Drag to pan · scroll to zoom · <b>right-drag</b> or <b>Ctrl+drag</b> to orbit and tilt
       </p>
-      <p class="overlay-hint view3d-only">
-        Left-drag to orbit · right-drag to pan · scroll to zoom<br />
-        <span id="select-hint"></span>
-      </p>
       <p id="edits-summary" class="overlay-hint view3d-only">
+        <span id="select-hint"></span>
         <span id="edits-count"></span>
         <span class="edit-actions">
           <button id="restore-deleted" class="link">Restore deleted</button>
@@ -132,11 +130,20 @@ nom<!doctype html>
       <h2>Export</h2>
       <div class="fields">
         <label for="print-size">Longest side</label>
-        <span class="field"><input id="print-size" type="number" autocomplete="off" min="30" max="500" step="5" value="150" /> mm</span>
+        <span class="field"><input id="print-size" type="number" autocomplete="off" min="1" step="1" value="150" /> mm</span>
         <label for="print-base">Base thickness</label>
-        <span class="field"><input id="print-base" type="number" autocomplete="off" min="0.5" max="20" step="0.5" value="3" /> mm</span>
+        <span class="field"><input id="print-base" type="number" autocomplete="off" min="1" step="0.5" value="3" /> mm</span>
         <label for="print-min">Thinnest detail</label>
-        <span class="field"><input id="print-min" type="number" autocomplete="off" min="0.2" max="3" step="0.1" value="0.8" /> mm</span>
+        <span class="field"><input id="print-min" type="number" autocomplete="off" min="0.01" step="0.01" value="0.4" /> mm</span>
+        <label for="print-nozzle">Nozzle</label>
+        <span class="field"><input id="print-nozzle" type="number" autocomplete="off" min="0.01" step="0.01" value="0.4" /> mm</span>
+      </div>
+      <button id="preview-print" aria-pressed="false">Preview print</button>
+      <p id="print-warning" class="warning" hidden></p>
+      <div id="print-progress" class="progress" hidden>
+        <div class="progress-head"><span class="progress-label"></span><span class="progress-text"></span></div>
+        <div class="bar"><div></div></div>
+        <p class="progress-note"></p>
       </div>
       <div class="format" role="group" aria-label="File format">
         <button id="format-stl" data-format="stl" aria-pressed="true">STL</button>

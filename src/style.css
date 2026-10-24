@@ -435,8 +435,13 @@ dd {
 
 /* Download progress */
 
-#data-progress[hidden] {
+#data-progress[hidden],
+#print-progress[hidden] {
   display: none;
+}
+
+#print-progress {
+  margin-top: 12px;
 }
 
 #data-progress {
@@ -578,6 +583,10 @@ body.mode-3d .map-only {
   gap: 4px 12px;
 }
 
+#select-hint {
+  flex-basis: 100%;
+}
+
 .edit-actions {
   display: flex;
   gap: 12px;
@@ -702,6 +711,16 @@ button.link:disabled {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-fg);
+}
+
+#preview-print {
+  width: 100%;
+  margin-top: 12px;
+}
+
+#preview-print[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 #format-hint {

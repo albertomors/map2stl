@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Print preview: a Preview print button in the Export card shows, in the 3D view, the model
+  exactly as it will be exported: the base thickness, the thinnest-detail widening (walls,
+  masts, trees, bridges) and one color per part, as in the 3MF. Changing the print settings,
+  multipliers or layers rebuilds it; editing objects is paused meanwhile.
+- Nozzle width in the Export card (0.4 mm by default), and a warning when objects come out
+  narrower than it at the chosen print size: they're shown in red in the preview, counted per
+  part, with what to do about it. The width is that of the whole object seen from above, so a
+  thin part flush against a wider one isn't flagged.
+- The print preview follows the chosen format: one plain color for an STL (what a single
+  filament prints), each part's own color for a 3MF. Switching repaints it at once.
+- Streets, water, squares, parks and sand in the print, carved into the ground like a
+  relief, in steps of the thinnest detail (the smallest height that prints): squares, parks
+  and sand flush with the ground, streets a step below, water two steps below, so a river
+  always lies lowest. Each follows the terrain's own triangles, so nothing cuts into a slope
+  or floats above it. In a 3MF each is its own part (Water, Streets, Squares, Parks, Sand
+  and rock), carved a step deeper and filled back, so a slicer can give it its own filament
+  or the terrain's. Each spot belongs to one kind (water first, then streets, squares,
+  sand, parks). Streets, railways and streams are widened to the thinnest detail if
+  narrower; footpaths, tracks and steps print only if their real width is enough, so a
+  city center doesn't turn into thick bands. Gaps and slivers far too thin to print are
+  tidied away.
+- Every export is merged into one watertight solid with manifold-3d (WebAssembly, about
+  200 kB, loaded on the first export): no hidden faces where objects overlap, as CAD tools,
+  mesh checkers and print services expect. A 3MF gets one solid per colored part. A solid
+  that can't be merged is included as it is, and the status line says so.
+
+### Changed
+
+- The 3D view uses the map's controls: drag pans, right-drag (or Ctrl+drag) orbits, scroll
+  zooms. One hint at the top right explains both; the "click to edit" hint moved to the
+  edits card below it.
+- Print settings have only a minimum (longest side and base 1 mm, thinnest detail and nozzle
+  0.01 mm) and no maximum; a value below it is refused with a message instead of silently
+  replaced. Thinnest detail now defaults to 0.4 mm, the nozzle width.
+- 3MF files list each point of a solid by its exact position: points a hair apart are no
+  longer fused, which folded the tiny triangles between them.
+- The print preview and downloads are built in a background worker: the page stays
+  responsive while a big area builds, and a change made meanwhile (say to the thinnest
+  detail) drops the stale build instead of queueing behind it. A job that runs over a
+  second shows a progress bar with the step it's on.
+
 ## [0.5.2] - 2026-10-22
 
 Gentler, chunked requests to the OSM servers, a better download estimate, and exports that

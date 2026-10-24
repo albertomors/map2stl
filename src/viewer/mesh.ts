@@ -56,6 +56,13 @@ const probe = new Color();
 export function tagColor(value: string | undefined, fallback: Color): Color {
   if (!value) return fallback;
   const css = value.trim().toLowerCase().replace(/[ _]/g, '');
+  // No CSS in a worker (the print is built in one): there, a name three.js doesn't know just
+  // leaves the fallback.
+  if (typeof CSS === 'undefined') {
+    const c = fallback.clone();
+    c.setStyle(css);
+    return c;
+  }
   if (!CSS.supports('color', css)) return fallback;
   probe.setStyle(css);
   return probe.clone();

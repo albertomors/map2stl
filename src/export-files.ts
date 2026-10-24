@@ -48,7 +48,10 @@ export function to3MF(model: PrintModel, title: string): Blob {
     const triangles: string[] = [];
     const t = part.triangles;
     const vertex = (k: number) => {
-      const key = `${part.solids[(k / 9) | 0]} ${t[k].toFixed(3)} ${t[k + 1].toFixed(3)} ${t[k + 2].toFixed(3)}`;
+      // Exact positions: the meshes are built with shared corners computed once, so equal means
+      // the same point. Rounding would fuse distinct points a hair apart and fold the tiny
+      // triangles between them.
+      const key = `${part.solids[(k / 9) | 0]} ${t[k]} ${t[k + 1]} ${t[k + 2]}`;
       let id = index.get(key);
       if (id === undefined) {
         id = vertices.length;

@@ -2,10 +2,12 @@
 // built as closed solids and converted to millimeters with Z up, base at Z = 0. Each layer is
 // one part, so a 3MF can give each its own color; slicers merge overlapping parts.
 
-import { ConeGeometry, type BufferGeometry } from 'three';
+import { BufferGeometry, ConeGeometry, Float32BufferAttribute, Matrix4 } from 'three';
 import type { AreaData, Layer } from './area-data';
 import { clipObjects } from './clip';
 import { applyEdits, editedTrees, type Edits } from './edits';
+import type { Wasm } from './merge';
+import { buildGroundSolids } from './print-ground';
 import { buildBridges, buildBuildings, buildStructures, COLORS, TREE_HEIGHT_M, treesGeometry, type PickableMesh } from './viewer/objects';
 import { prepareScene } from './viewer/scene';
 import { buildTerrain } from './viewer/terrain-mesh';
@@ -27,6 +29,8 @@ export interface PrintPart {
   // Which solid each triangle belongs to (a building, a tree…): solids that merely touch
   // must not share points in the file, or slicers see their shared edges as broken.
   solids: Uint32Array;
+  // Which object each triangle belongs to: a building of several parts is one object.
+  objects: Uint32Array;
 }
 
 export interface PrintModel {
@@ -34,17 +38,24 @@ export interface PrintModel {
   // Bounding box of the whole model.
   sizeMm: [number, number, number];
   triangleCount: number;
+  // Print millimeters back to the 3D view's scene, so the preview sits where the model was.
+  toScene: Matrix4;
 }
 
 // Objects standing on the ground reach this far into it, so no gap opens on slopes.
 const SINK_M = 1;
+const TERRAIN = 'Terrain';
 
+// `wasm`: manifold-3d, loaded (see loadManifold).
 export function buildPrintModel(
+  wasm: Wasm,
   data: AreaData,
   edits: Edits,
   scales: { terrain: number; heights: number },
   visible: Set<Layer>,
   options: PrintOptions,
+  // Hears how far along the build is (0 to 1) and what it's doing.
+  progress: (fraction: number, label: string) => void = () => {},
 ): PrintModel {
   const { ring, frame, bounds, placement, groundHeight } = prepareScene(data, scales);
   // The print keeps the shape the way it was drawn: its "up" (the map bearing when drawn)
@@ -61,15 +72,35 @@ export function buildPrintModel(
   const mmPerUnit = options.sizeMm / extent;
   const at = { ...placement, sink: SINK_M, minWidth: options.minFeatureMm / mmPerUnit };
 
-  const tile = buildTerrain(data.terrain, ring, frame, bounds, groundHeight, options.baseMm / mmPerUnit);
   const edited = clipObjects(applyEdits(data.osm, edits), ring);
   const show = (layer: Layer) => visible.has(layer);
+  // Streets, water, squares, parks and sand, carved into the terrain in steps of the thinnest
+  // detail; the terrain then comes carved from there instead.
+  const ground = buildGroundSolids(wasm, data.osm, data.terrain, ring, frame, groundHeight, show, at.minWidth, options.baseMm / mmPerUnit, (f, label) =>
+    progress(0.7 * f, label),
+  );
+  const tile = ground.terrain ? null : buildTerrain(data.terrain, ring, frame, bounds, groundHeight, options.baseMm / mmPerUnit);
+  const baseY = ground.terrain?.baseY ?? tile!.baseY;
+  const flat = (positions: number[]) => {
+    const g = new BufferGeometry();
+    g.setAttribute('position', new Float32BufferAttribute(positions, 3));
+    return g;
+  };
+  const solids = (s: { positions: number[]; owners: number[] }): Piece => (s.positions.length ? { geometry: flat(s.positions), owners: s.owners } : null);
 
-  // A geometry with, where it holds many solids, the solid of each triangle.
-  type Piece = { geometry: BufferGeometry; owners?: number[] } | null | undefined;
-  const pick = (r: PickableMesh | null): Piece => r && { geometry: r.geometry, owners: r.owners };
+  // A geometry with, where it holds many solids, the solid of each triangle, and with keys
+  // the object each solid belongs to.
+  type Piece = { geometry: BufferGeometry; owners?: number[]; keys?: string[] } | null | undefined;
+  const pick = (r: PickableMesh | null): Piece => r && { geometry: r.geometry, owners: r.owners, keys: r.keys };
+  progress(0.7, 'Adding buildings and trees');
   const groups: { name: string; color: string; pieces: Piece[] }[] = [
-    { name: 'Terrain', color: '#c9bba5', pieces: [{ geometry: tile.top }, { geometry: tile.sides }] },
+    { name: TERRAIN, color: '#c9bba5', pieces: tile ? [{ geometry: tile.top }, { geometry: tile.sides }] : [{ geometry: flat(ground.terrain!.positions) }] },
+    { name: 'Water', color: '#3b8fe0', pieces: [solids(ground.water)] },
+    { name: 'Streets', color: '#' + COLORS.road.getHexString(), pieces: [solids(ground.streets)] },
+    // Each its own part, so a slicer can give it its own filament or the terrain's.
+    { name: 'Squares', color: '#c9c6c1', pieces: [solids(ground.squares)] },
+    { name: 'Parks', color: '#5fae4c', pieces: [solids(ground.parks)] },
+    { name: 'Sand and rock', color: '#e8d6a4', pieces: [solids(ground.sand)] },
     { name: 'Buildings', color: '#' + COLORS.wall.getHexString(), pieces: [show('buildings') ? pick(buildBuildings(edited.buildings, at)) : null] },
     {
       name: 'Bridges and structures',
@@ -96,9 +127,18 @@ export function buildPrintModel(
   const min = [Infinity, Infinity, Infinity];
   const max = [-Infinity, -Infinity, -Infinity];
   let nextSolid = 0;
+  // Objects by key, or by solid where there's no key.
+  const objectIds = new Map<string | number, number>();
+  const objectOf = (k: string | number) => {
+    let id = objectIds.get(k);
+    if (id === undefined) objectIds.set(k, (id = objectIds.size));
+    return id;
+  };
+  progress(0.9, 'Putting it together');
   for (const group of groups) {
     const chunks: Float32Array[] = [];
     const solidChunks: Uint32Array[] = [];
+    const objectChunks: Uint32Array[] = [];
     let groupSolid: number | undefined;
     for (const piece of group.pieces) {
       if (!piece) continue;
@@ -110,7 +150,7 @@ export function buildPrintModel(
         const [px, py] = plan(pos.getX(i), pos.getZ(i));
         const X = (px - cx) * mmPerUnit;
         const Y = (py - cy) * mmPerUnit;
-        const Z = (pos.getY(i) - tile.baseY) * mmPerUnit;
+        const Z = (pos.getY(i) - baseY) * mmPerUnit;
         out.set([X, Y, Z], i * 3);
         for (const [k, v] of [X, Y, Z].entries()) {
           min[k] = Math.min(min[k], v);
@@ -122,16 +162,19 @@ export function buildPrintModel(
       // terrain tile's top and sides close each other).
       const tris = pos.count / 3;
       const solids = new Uint32Array(tris);
+      const objects = new Uint32Array(tris);
       if (!piece.owners) groupSolid ??= nextSolid++;
       const base = piece.owners ? nextSolid : groupSolid!;
       let top = 0;
       for (let t = 0; t < tris; t++) {
         const o = piece.owners ? Math.max(0, piece.owners[t]) : 0;
         solids[t] = base + o;
+        objects[t] = objectOf(piece.keys ? piece.keys[o] : solids[t]);
         top = Math.max(top, o);
       }
       if (piece.owners) nextSolid = base + top + 1;
       solidChunks.push(solids);
+      objectChunks.push(objects);
       if (flat !== g) flat.dispose();
       g.dispose();
     }
@@ -143,19 +186,91 @@ export function buildPrintModel(
       triangles.set(c, offset);
       offset += c.length;
     }
-    const solids = new Uint32Array(total / 9);
-    let so = 0;
-    for (const c of solidChunks) {
-      solids.set(c, so);
-      so += c.length;
-    }
-    parts.push({ name: group.name, color: group.color, triangles, solids });
+    const join = (list: Uint32Array[]) => {
+      const out = new Uint32Array(total / 9);
+      let at = 0;
+      for (const c of list) {
+        out.set(c, at);
+        at += c.length;
+      }
+      return out;
+    };
+    parts.push({ name: group.name, color: group.color, triangles, solids: join(solidChunks), objects: join(objectChunks) });
   }
+  // The inverse of the conversion above: plan() is its own inverse, Z up becomes y up.
+  const k = 1 / mmPerUnit;
+  const [tx, tz] = [cos * cx + sin * cy, sin * cx - cos * cy];
+  const toScene = new Matrix4().set(cos * k, sin * k, 0, tx, 0, 0, k, baseY, sin * k, -cos * k, 0, tz, 0, 0, 0, 1);
   return {
     parts,
     sizeMm: [max[0] - min[0], max[1] - min[1], max[2] - min[2]],
     triangleCount: parts.reduce((n, p) => n + p.triangles.length / 9, 0),
+    toScene,
   };
+}
+
+export interface ThinObjects {
+  // Per part, the objects narrower than the nozzle.
+  objects: Map<PrintPart, Set<number>>;
+  // Part name → how many.
+  counts: [string, number][];
+}
+
+// Objects (not the terrain) narrower than the nozzle: they print as blobs, or not at all. The
+// width is the narrowest side of the whole object's outline seen from above (its convex hull):
+// a small kiosk or a thin mast is caught; a thin wing of an L-shaped building, or a thin part
+// flush against a wider one (which prints fine, merged), isn't.
+export function findThinObjects(model: PrintModel, nozzleMm: number): ThinObjects {
+  const objects = new Map<PrintPart, Set<number>>();
+  const counts: [string, number][] = [];
+  for (const part of model.parts) {
+    if (part.name === TERRAIN) continue;
+    const points = new Map<number, number[]>();
+    const t = part.triangles;
+    for (let tri = 0; tri < part.objects.length; tri++) {
+      let list = points.get(part.objects[tri]);
+      if (!list) points.set(part.objects[tri], (list = []));
+      for (let v = 0; v < 3; v++) list.push(t[tri * 9 + v * 3], t[tri * 9 + v * 3 + 1]);
+    }
+    const thin = new Set<number>();
+    for (const [object, xy] of points) if (narrowestWidth(xy) < nozzleMm) thin.add(object);
+    if (thin.size) {
+      objects.set(part, thin);
+      counts.push([part.name, thin.size]);
+    }
+  }
+  return { objects, counts };
+}
+
+// Narrowest width of a point set (x, y pairs): over the convex hull's edges, the farthest
+// point from each edge's line; the smallest of those.
+function narrowestWidth(xy: number[]): number {
+  const pts: [number, number][] = [];
+  for (let i = 0; i < xy.length; i += 2) pts.push([xy[i], xy[i + 1]]);
+  pts.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cross = (o: [number, number], a: [number, number], b: [number, number]) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  // Andrew's monotone chain.
+  const hull: [number, number][] = [];
+  for (const pass of [pts, [...pts].reverse()]) {
+    const start = hull.length;
+    for (const p of pass) {
+      while (hull.length >= start + 2 && cross(hull[hull.length - 2], hull[hull.length - 1], p) <= 0) hull.pop();
+      hull.push(p);
+    }
+    hull.pop();
+  }
+  if (hull.length < 3) return 0;
+  let best = Infinity;
+  for (let i = 0; i < hull.length; i++) {
+    const a = hull[i];
+    const b = hull[(i + 1) % hull.length];
+    const len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    if (!len) continue;
+    let far = 0;
+    for (const p of hull) far = Math.max(far, Math.abs(cross(a, b, p)) / len);
+    best = Math.min(best, far);
+  }
+  return best;
 }
 
 // Trees come as one merged geometry: consecutive runs of `perTree` triangles.
