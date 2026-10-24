@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-10-24
+
+Streets, rivers and areas you can select and change, 3D models for bridges, and model
+downloads you can cancel.
+
 ### Added
 
 - Streets, railways, rivers and paths, and areas (water, parks, squares, sand), are
