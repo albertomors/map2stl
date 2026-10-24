@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-10-24
+
+Preview the export before downloading it, and model downloads that keep going while you
+work on something else.
+
 ### Added
 
 - A model download keeps going when you select something else: a line at the top right
