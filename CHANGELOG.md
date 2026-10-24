@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-24
+
+Landmarks as real 3D models: your own file, or an openly licensed one found on Wikimedia
+Commons, fitted to the building automatically.
+
 ### Added
 
 - Replace a building with your own 3D model (STL, OBJ, GLB, or glTF with its data inside):
