@@ -82,6 +82,15 @@ for (const id of ['terrain-scale', 'height-scale']) {
   // Instant stretch while dragging; one real rebuild when the slider is let go.
   $(id).addEventListener('input', () => {
     showScales();
+// An aerial photo on the ground instead of the painted map, on screen (imagery.ts).
+$('aerial').addEventListener('change', async () => {
+  const on = $<HTMLInputElement>('aerial').checked;
+  const credit = $('aerial-credit');
+  credit.textContent = on ? 'Loading the aerial photo…' : '';
+  const source = await viewer?.setImagery(on);
+  if ($<HTMLInputElement>('aerial').checked !== on) return;
+  credit.textContent = on ? (source ? source.credit : 'No aerial photo could be loaded here.') : '';
+});
     showEditsSummary();
     viewer?.previewScales(scales());
   });
@@ -91,6 +100,15 @@ for (const id of ['terrain-scale', 'height-scale']) {
   });
 }
 showScales();
+// An aerial photo on the ground instead of the painted map, on screen (imagery.ts).
+$('aerial').addEventListener('change', async () => {
+  const on = $<HTMLInputElement>('aerial').checked;
+  const credit = $('aerial-credit');
+  credit.textContent = on ? 'Loading the aerial photo…' : '';
+  const source = await viewer?.setImagery(on);
+  if ($<HTMLInputElement>('aerial').checked !== on) return;
+  credit.textContent = on ? (source ? source.credit : 'No aerial photo could be loaded here.') : '';
+});
 
 // Export: what's in the 3D view (edits, multipliers, visible layers), in millimeters.
 let exportFormat: 'stl' | '3mf' = 'stl';
@@ -314,6 +332,15 @@ $('reset-all').addEventListener('click', () => {
   $<HTMLInputElement>('terrain-scale').value = '1.5';
   $<HTMLInputElement>('height-scale').value = '1';
   showScales();
+// An aerial photo on the ground instead of the painted map, on screen (imagery.ts).
+$('aerial').addEventListener('change', async () => {
+  const on = $<HTMLInputElement>('aerial').checked;
+  const credit = $('aerial-credit');
+  credit.textContent = on ? 'Loading the aerial photo…' : '';
+  const source = await viewer?.setImagery(on);
+  if ($<HTMLInputElement>('aerial').checked !== on) return;
+  credit.textContent = on ? (source ? source.credit : 'No aerial photo could be loaded here.') : '';
+});
   viewer?.select(null);
   viewer?.setEdits(edits);
   viewer?.setScales(scales());
@@ -516,8 +543,12 @@ function showData(data: AreaData) {
   const t = data.terrain;
   const midLat = (t.bbox[1] + t.bbox[3]) / 2;
   const spacing = distance([t.bbox[0], midLat], [t.bbox[2], midLat]) / t.width;
-  $('data-terrain').textContent =
-    `Terrain ${Math.round(t.min)}–${Math.round(t.max)} m above sea level, ${t.width}×${t.height} grid (≈${spacing.toFixed(0)} m).`;
+  // With sea depths, the deepest point there too, and their source.
+  const deepest = data.bathymetry ? data.bathymetry.heights.reduce((low, h) => (Number.isFinite(h) && h < low ? h : low), 0) : 0;
+  const sea = deepest < 0 ? ` Sea down to ${Math.round(-deepest)} m (EMODnet Bathymetry, CC BY 4.0).` : '';
+  // Which heights: national LiDAR where there is some, else the worldwide tiles.
+  const from = t.source ? `${t.source.name}, ≈${t.source.resolutionM.toFixed(1)} m` : `AWS Terrain Tiles, ≈${spacing.toFixed(0)} m`;
+  $('data-terrain').textContent = `Terrain ${Math.round(t.min)}–${Math.round(t.max)} m above sea level, ${t.width}×${t.height} grid (${from}).${sea}`;
   if (replacing) viewer?.show(data, visibleLayers, scales(), { keepCamera: true, edits });
   showExport();
   updatePrintPreview();
@@ -616,6 +647,8 @@ async function open3d() {
     $('viewer').hidden = false;
     viewer = new Viewer($('viewer'), showPick);
     viewer.show(areaData, visibleLayers, scales(), { edits });
+    // Still ticked from last time: the photo again.
+    if ($<HTMLInputElement>('aerial').checked) $('aerial').dispatchEvent(new Event('change'));
     showExport();
     showSelectHint();
     showEditsSummary();

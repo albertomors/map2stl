@@ -4,6 +4,7 @@
 
 import { CanvasTexture, SRGBColorSpace } from 'three';
 import type { Layer } from '../area-data';
+import type { ImageryTile } from '../imagery';
 import type { LngLat } from '../geo';
 import type { LocalFrame } from '../local';
 import type { Line, OsmData, Polygon } from '../osm';
@@ -53,11 +54,37 @@ export class GroundTexture {
     this.osm = osm;
   }
 
+  // An aerial photo as the ground (imagery.ts), instead of the painted map; null: the map.
+  private imagery: ImageryTile[] | null = null;
+  setImagery(tiles: ImageryTile[] | null) {
+    this.imagery = tiles;
+  }
+
+  // What the texture covers, for asking the photo's tiles: [west, south, east, north], and
+  // meters per pixel.
+  get coverage(): { bbox: [number, number, number, number]; metersPerPixel: number } {
+    const { minX, maxX, minZ, maxZ } = this.bounds;
+    const [w, n] = this.frame.toLngLat([minX, minZ]);
+    const [e, s] = this.frame.toLngLat([maxX, maxZ]);
+    return { bbox: [w, s, e, n], metersPerPixel: 1 / this.scale };
+  }
+
   // `selected`: the id of a street, river or area to draw on top, highlighted.
   paint(visible: Set<Layer>, selected?: string | null) {
     const { ctx, osm } = this;
     ctx.fillStyle = LAND;
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+    if (this.imagery) {
+      // The photo is the ground: no painted layers, only the selection on top.
+      for (const t of this.imagery) {
+        const [x0, y0] = this.px([t.bbox[0], t.bbox[3]]);
+        const [x1, y1] = this.px([t.bbox[2], t.bbox[1]]);
+        ctx.drawImage(t.image, x0, y0, x1 - x0, y1 - y0);
+      }
+      this.highlight(selected);
+      this.texture.needsUpdate = true;
+      return;
+    }
     if (visible.has('green')) this.fill(osm.green, GROUND_COLORS.green!);
     if (visible.has('surfaces')) this.fill(osm.surfaces, GROUND_COLORS.surfaces!);
     if (visible.has('paved')) {
@@ -70,16 +97,20 @@ export class GroundTexture {
     }
     if (visible.has('roads')) this.stroke(osm.roads.filter((l) => !l.bridge), GROUND_COLORS.roads!);
     if (visible.has('railways')) this.stroke(osm.railways.filter((l) => !l.bridge), GROUND_COLORS.railways!);
-    if (selected) {
-      const is = (x: { id: string }) => x.id === selected;
-      this.fill([...osm.waterAreas, ...osm.green, ...osm.surfaces, ...osm.pavedAreas].filter(is), SELECTED);
-      this.stroke([...osm.roads, ...osm.railways, ...osm.waterways, ...osm.pavedLines].filter((l) => is(l) && !l.bridge), SELECTED);
-    }
+    this.highlight(selected);
     this.texture.needsUpdate = true;
   }
 
   dispose() {
     this.texture.dispose();
+  }
+
+  private highlight(selected: string | null | undefined) {
+    if (!selected) return;
+    const { osm } = this;
+    const is = (x: { id: string }) => x.id === selected;
+    this.fill([...osm.waterAreas, ...osm.green, ...osm.surfaces, ...osm.pavedAreas].filter(is), SELECTED);
+    this.stroke([...osm.roads, ...osm.railways, ...osm.waterways, ...osm.pavedLines].filter((l) => is(l) && !l.bridge), SELECTED);
   }
 
   private px(p: LngLat): [number, number] {

@@ -35,11 +35,14 @@ import { clipObjects, clipToSelection } from '../clip';
 import { applyEdits, editedTrees, editKey, type Edits, type GroundKind, type ObjectEdit } from '../edits';
 import { centroid, pointInRing, ringArea, type LngLat } from '../geo';
 import type { Area, Building, Line, OsmData } from '../osm';
+import { FOREST_SPACING_M, forestTrees, isForestTree } from '../forest';
+import { imagerySource, loadImagery, type ImagerySource } from '../imagery';
 import { GroundTexture } from './ground';
 import { groundAt } from './ground-pick';
 import { buildBridges, buildBuildings, buildStructures, buildTrees, COLORS, TREE_HEIGHT_M, type PickableMesh, type Placement } from './objects';
 import { modelAssets, type Axis, type ModelAsset } from '../model-assets';
 import { buildModels, fittedHeight, footprints } from './models';
+import { addRelief, reliefMaterial } from './relief';
 import { prepareScene } from './scene';
 import { buildTerrain } from './terrain-mesh';
 
@@ -112,6 +115,11 @@ export class Viewer {
   private highlight = new Group();
   // The print preview: the exported model in place of the scene, while it's on.
   private print = new Group();
+  // Aerial photo on the ground instead of the painted map (imagery.ts), and the relief's rock
+  // (off over a photo).
+  private imageryOn = false;
+  private imageryAbort: AbortController | null = null;
+  private rockMix = { value: 1 };
   // One color for every part (an STL), or each part's own (a 3MF).
   private printMono = false;
   private liftKey: string | null = null;
@@ -287,6 +295,30 @@ export class Viewer {
     return footprints(osm, 'buildings', key).get(key) ?? footprints(osm, 'bridges', key).get(key);
   }
 
+  // The aerial photo on the ground, or the painted map back. Resolves with the source shown
+  // (for its credit), or null.
+  async setImagery(on: boolean): Promise<ImagerySource | null> {
+    this.imageryOn = on;
+    this.imageryAbort?.abort();
+    if (!this.ground) return null;
+    if (!on) {
+      this.ground.setImagery(null);
+      this.rockMix.value = 1;
+      this.paintGround();
+      return null;
+    }
+    const ground = this.ground;
+    const { bbox, metersPerPixel } = ground.coverage;
+    const source = imagerySource(bbox);
+    const abort = (this.imageryAbort = new AbortController());
+    const tiles = await loadImagery(source, bbox, metersPerPixel, abort.signal);
+    if (abort.signal.aborted || !this.imageryOn || this.ground !== ground) return null;
+    ground.setImagery(tiles);
+    this.rockMix.value = 0;
+    this.paintGround();
+    return source;
+  }
+
   // Switches the print preview between one color for all parts and each part's own.
   setPrintMonochrome(mono: boolean) {
     this.printMono = mono;
@@ -436,9 +468,13 @@ export class Viewer {
     if (!this.ground) {
       this.ground = new GroundTexture(applyEdits(osm, this.edits), frame, bounds, this.renderer.capabilities.maxTextureSize);
       this.paintGround();
+      // New data, new ground: the photo again, if it's on.
+      if (this.imageryOn) void this.setImagery(true);
     }
     const tile = buildTerrain(terrain, ring, frame, bounds, groundHeight, BASE_DEPTH_M);
-    const top = new Mesh(tile.top, new MeshLambertMaterial({ map: this.ground.texture }));
+    // Rock on steep ground, darker hollows (relief.ts), over the painted map.
+    addRelief(tile.top);
+    const top = new Mesh(tile.top, reliefMaterial(new MeshLambertMaterial({ map: this.ground.texture }), this.rockMix));
     top.receiveShadow = true;
     const sides = new Mesh(tile.sides, new MeshLambertMaterial({ color: '#b9ab96', side: DoubleSide }));
     this.terrain.add(top, sides);
@@ -455,7 +491,8 @@ export class Viewer {
     // Push shadow lookups out by about two shadow-map pixels: less and walls shade themselves
     // in stripes ("shadow acne"), much more and shadows detach from the buildings.
     this.sun.shadow.normalBias = 2 * ((2.4 * radius) / this.sun.shadow.mapSize.x);
-    this.sun.position.set(-radius * 1.2, radius * 2, radius * 1.4);
+    // Low enough (about 30° up) for long shadows that bring out the relief.
+    this.sun.position.set(-radius * 1.2, radius * 1.1, radius * 1.4);
     this.sun.target.position.set(0, 0, 0);
 
     if (frameCamera) {
@@ -520,14 +557,21 @@ export class Viewer {
     solid(buildBridges(edited.roads, at, COLORS.road), 'roads', COLORS.road);
     solid(buildBridges(edited.railways, at, COLORS.rail), 'railways', COLORS.rail);
 
-    const trees = editedTrees(osm.trees, this.edits, TREE_HEIGHT_M);
+    // OSM's single trees, and forests' trees (forest.ts), from the edited woods: a wood
+    // deleted or printed as something else loses its trees.
+    const forest = forestTrees(applyEdits(this.clipped ?? osm, this.edits), FOREST_SPACING_M);
+    const trees = [...editedTrees(osm.trees, this.edits, TREE_HEIGHT_M), ...forest];
     const treeMesh = buildTrees(trees, at);
     this.trees = treeMesh ? { mesh: treeMesh, built: (treeMesh.instanceMatrix.array as Float32Array).slice() } : null;
     if (treeMesh) {
       this.add('trees', treeMesh);
       this.pickables.push({
         object: treeMesh,
-        keyAt: (_face, instance) => (instance === undefined ? undefined : trees[instance]?.key),
+        // A forest's tree isn't an object of its own: the click goes to its wood, on the ground.
+        keyAt: (_face, instance) => {
+          const key = instance === undefined ? undefined : trees[instance]?.key;
+          return key && !isForestTree(key) ? key : undefined;
+        },
         hide: (key) => {
           const i = trees.findIndex((t) => t.key === key);
           if (i < 0) return null;

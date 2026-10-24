@@ -8,6 +8,14 @@ const TILE_SIZE = 256;
 const MAX_ZOOM = 14;
 const MAX_TILES = 16;
 
+export interface TerrainSource {
+  name: string;
+  // Meters between heights, as fetched.
+  resolutionM: number;
+  // For the export, when the license asks for it.
+  credit?: string;
+}
+
 export interface Terrain {
   // Grid size; heights[row * width + col], row 0 at the north edge.
   width: number;
@@ -18,6 +26,8 @@ export interface Terrain {
   min: number;
   max: number;
   zoom: number;
+  // Where the heights come from (absent: AWS Terrain Tiles).
+  source?: TerrainSource;
 }
 
 export async function fetchTerrain(
@@ -131,20 +141,20 @@ async function loadTile(z: number, x: number, y: number, signal: AbortSignal): P
 }
 
 // Web Mercator world pixel coordinates at `zoom`.
-function worldX(lng: number, zoom: number): number {
+export function worldX(lng: number, zoom: number): number {
   return ((lng + 180) / 360) * TILE_SIZE * 2 ** zoom;
 }
 
-function worldY(lat: number, zoom: number): number {
+export function worldY(lat: number, zoom: number): number {
   const r = (lat * Math.PI) / 180;
   return ((1 - Math.log(Math.tan(r) + 1 / Math.cos(r)) / Math.PI) / 2) * TILE_SIZE * 2 ** zoom;
 }
 
-function lngOf(x: number, zoom: number): number {
+export function lngOf(x: number, zoom: number): number {
   return (x / (TILE_SIZE * 2 ** zoom)) * 360 - 180;
 }
 
-function latOf(y: number, zoom: number): number {
+export function latOf(y: number, zoom: number): number {
   const m = Math.PI * (1 - (2 * y) / (TILE_SIZE * 2 ** zoom));
   return (Math.atan(Math.sinh(m)) * 180) / Math.PI;
 }

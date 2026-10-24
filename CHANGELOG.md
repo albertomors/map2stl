@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Relief shading in the 3D view: steep ground turns to rock (whatever's painted there:
+  wood, fell, grass) as mountainsides do from above, and hollows darken while ridges
+  lighten a little, bringing out gullies and crests. The sun is lower, for longer shadows.
+- Forests print as a texture of trees: OpenStreetMap maps a wood as an area, so its trees
+  are placed inside it on a jittered grid (the same every time), varied in size, clear of
+  roads and water, and spaced no closer than the print can resolve (at most 40,000). They
+  show in the 3D view and print in the Trees part; a click on one selects its wood, and a
+  wood deleted or printed as something else loses its trees.
+- The sea prints deeper where it really is: sea depths from EMODnet Bathymetry (European
+  seas, about 115 m, CC BY 4.0; the terrain tiles have almost none near coasts) shelve the
+  sea off from the shore, up to three more steps, compressed so it shows at any scale (all
+  three from 200 m down). Fetched only for areas with sea; the data panel shows how deep it
+  goes, and the export credits it. Elsewhere the sea prints flat, as before.
+- National LiDAR terrain where a country publishes it: Norway first, Kartverket's height
+  model (about 1 m, CC BY 4.0), asked for at the detail the print can use (about 1–2.5 m
+  depending on the area's size) and fitted into the same grid as the worldwide tiles, which
+  fill anything it doesn't cover. Ridges, gullies and rock faces come out sharp instead of
+  rounded. The data panel names the terrain's source and spacing, and the export credits it.
+
 ## [0.6.0] - 2026-10-24
 
 Landmarks and bridges as real 3D models, your own or openly licensed ones found on

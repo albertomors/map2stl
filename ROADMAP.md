@@ -49,13 +49,12 @@ used (their terms forbid extracting them), and no open worldwide photogrammetry 
 Compared on Store Ådnøy (Norway), the gap is mostly terrain detail (LiDAR, above), then
 surface texture, color and water:
 
-- **Slope-based color and shading** (cheap, big gain): rock gray on steep ground, green on
-  gentle ground, darker hollows; hillshade or ambient occlusion and a lower sun. Rock and
-  vegetation could also be their own 3MF parts.
-- **Forest as texture:** a slightly raised, rough canopy layer, or scattered trees, inside
-  OSM's wood areas (or from LiDAR: surface model minus ground model gives tree heights).
-- **Shallow sea:** the terrain data has the sea floor (flattened at sea level today): a
-  stepped coastal shelf printed as depth.
+- **Rock and vegetation as 3MF parts:** the relief shading's rock (steep ground) printed in
+  its own filament.
+- **Forest heights from LiDAR:** the surface model minus the ground model gives each
+  forest's real canopy height, instead of placed trees.
+- **Sea depths beyond Europe:** EMODnet covers European seas; GEBCO (worldwide, about
+  450 m) or national charts elsewhere.
 - **Aerial imagery on screen** (optional): Sentinel-2 cloudless mosaics (10 m) are open; the
   best national aerial photos often aren't open for commercial use. Screen only, unless
   full-color printers become a target.

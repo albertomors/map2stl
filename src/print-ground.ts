@@ -17,8 +17,9 @@ import type { LocalFrame } from './local';
 import type { Wasm } from './merge';
 import type { Line, OsmData, Polygon } from './osm';
 import { lngLatPixel, pixelLngLat, type Terrain } from './terrain';
+import { depthAt, type Bathymetry } from './bathymetry';
 import { carvedTerrain, drapeContext, drapedSolids, type Poly, type Solids } from './viewer/drape';
-import { terrainGrid, type Grid } from './viewer/terrain-mesh';
+import { terrainGrid, type GP, type Grid } from './viewer/terrain-mesh';
 
 export interface GroundSolids {
   water: Solids;
@@ -33,6 +34,12 @@ export interface GroundSolids {
 // How deep each kind lies below the ground, in steps (its top), and how deep it's carved
 // (its fill's bottom edge sits there, overlapping the terrain a step more).
 const DEPTH = { flush: 0, streets: 1, water: 2 };
+// The sea gets deeper with the sea floor (EMODnet's depths, or the terrain tiles' where they
+// have any): up to this many more steps, compressed (all of them from 200 m down, a third
+// by 10 m), so the coast shelves off visibly at any print scale.
+const SEA_SHELF_STEPS = 3;
+const SEA_FULL_DEPTH_M = 200;
+const SEA_SCALE_DEPTH_M = 5;
 // Paths, tracks and steps print only at their real width, if that's wide enough: widened,
 // a footpath network covers a city center in thick bands. Streets of any kind are widened
 // when they're too narrow, so the street network stays connected.
@@ -67,6 +74,8 @@ export function buildGroundSolids(
   // Thinnest detail, in scene units: the step height and the narrowest line.
   stepUnits: number,
   baseDepth: number,
+  // Sea depths, if the area has them (bathymetry.ts).
+  bathymetry: Bathymetry | null | undefined,
   // Hears how far along it is (0 to 1) and what it's doing.
   progress: (fraction: number, label: string) => void = () => {},
 ): GroundSolids {
@@ -140,7 +149,15 @@ export function buildGroundSolids(
   const squares = fill(shapes.squares, DEPTH.flush);
   const sandSolids = fill(shapes.sand, DEPTH.flush);
   const parkSolids = fill(shapes.parks, DEPTH.flush);
-  const waterSolids = fill(shapes.water, DEPTH.water);
+  // Water deeper where the sea floor is (below sea level; lakes and rivers have no depth data).
+  const sea = osm.waterAreas.some((a) => a.kind === 'sea');
+  const shelf = (p: GP) => {
+    if (!sea) return 0;
+    const [lng, lat] = pixelLngLat(t, p.x, p.y);
+    const depth = Math.max(0, -p.h, bathymetry ? depthAt(bathymetry, lng, lat) : 0);
+    return SEA_SHELF_STEPS * step * Math.min(1, Math.log1p(depth / SEA_SCALE_DEPTH_M) / Math.log1p(SEA_FULL_DEPTH_M / SEA_SCALE_DEPTH_M));
+  };
+  const waterSolids = drapedSolids(ctx, shapes.water, (p) => -DEPTH.water * step - shelf(p), (p) => -(DEPTH.water + 2) * step - shelf(p));
   progress(0.7, 'Carving the terrain');
   // Carved a step below each fill's top: the fill takes that step back.
   const terrain = land
@@ -148,7 +165,7 @@ export function buildGroundSolids(
         ctx,
         [
           { polys: tiles(land), depth: 0 },
-          { polys: shapes.water, depth: (DEPTH.water + 1) * step },
+          { polys: shapes.water, depth: (p: GP) => (DEPTH.water + 1) * step + shelf(p) },
           { polys: shapes.streets, depth: (DEPTH.streets + 1) * step },
           { polys: shapes.squares, depth: (DEPTH.flush + 1) * step },
           { polys: shapes.sand, depth: (DEPTH.flush + 1) * step },

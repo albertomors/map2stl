@@ -21,6 +21,11 @@ export interface Poly {
   holes: Pair[][];
 }
 
+// An offset from the terrain (scene units): the same everywhere, or per point (the sea's
+// depth varies with the sea floor's).
+export type Offset = number | ((p: GP) => number);
+const offsetAt = (o: Offset, p: GP) => (typeof o === 'number' ? o : o(p));
+
 // Context shared by every shape on one tile: the grid, and grid point → scene position.
 export interface DrapeContext {
   grid: Grid;
@@ -28,7 +33,7 @@ export interface DrapeContext {
   // corner heights are from it, summed) is cut as a whole, not along its diagonal too.
   flatness: number;
   // Scene [x, y, z] of a grid point, `offset` scene units above (or below) the terrain.
-  scene: (p: GP, offset: number) => [number, number, number];
+  scene: (p: GP, offset: Offset) => [number, number, number];
 }
 
 export function drapeContext(t: Terrain, grid: Grid, frame: LocalFrame, ground: (h: number) => number, flatness: number): DrapeContext {
@@ -37,7 +42,7 @@ export function drapeContext(t: Terrain, grid: Grid, frame: LocalFrame, ground: 
     flatness,
     scene: (p, offset) => {
       const [x, z] = frame.toLocal(pixelLngLat(t, p.x, p.y));
-      return [x, ground(p.h) + offset, z];
+      return [x, ground(p.h) + offsetAt(offset, p), z];
     },
   };
 }
@@ -229,7 +234,7 @@ export interface Solids {
 // Closed solids, one per connected piece: the surface `top` above the terrain, a copy
 // `bottom` above it (negative: inside the ground), and walls between them along the outline.
 // `count` is how many solids; their owners start at `firstOwner`.
-export function drapedSolids(ctx: DrapeContext, polys: Poly[], top: number, bottom: number, firstOwner = 0): Solids & { count: number } {
+export function drapedSolids(ctx: DrapeContext, polys: Poly[], top: Offset, bottom: Offset, firstOwner = 0): Solids & { count: number } {
   const positions: number[] = [];
   const owners: number[] = [];
   const s = new Surface(drapeFaces(ctx, polys));
@@ -256,12 +261,12 @@ export function drapedSolids(ctx: DrapeContext, polys: Poly[], top: number, bott
 // (0 for the plain ground), steep walls where regions of different depths meet, and the side
 // walls and flat base under all of it, as one closed solid. The regions must together cover
 // the selection without overlapping.
-export function carvedTerrain(ctx: DrapeContext, regions: { polys: Poly[]; depth: number }[], baseDepth: number): { positions: number[]; baseY: number } {
+export function carvedTerrain(ctx: DrapeContext, regions: { polys: Poly[]; depth: Offset }[], baseDepth: number): { positions: number[]; baseY: number } {
   const positions: number[] = [];
   const tri = (a: number[], b: number[], c: number[]) => positions.push(...a, ...b, ...c);
   const welder = new Welder();
   const levels = regions.map(({ polys, depth }) => ({ surface: new Surface(drapeFaces(ctx, polys), welder), depth }));
-  const at = levels.map(({ surface, depth }) => surface.points.map((p) => ctx.scene(p, -depth)));
+  const at = levels.map(({ surface, depth }) => surface.points.map((p) => ctx.scene(p, typeof depth === 'number' ? -depth : (q) => -depth(q))));
   levels.forEach(({ surface }, l) => surface.faces.forEach(([a, b, c]) => tri(at[l][a], at[l][b], at[l][c])));
 
   // Every open edge of every region, by its two points' grid positions.
@@ -307,8 +312,10 @@ export function carvedTerrain(ctx: DrapeContext, regions: { polys: Poly[]; depth
       rim.push(e);
       continue;
     }
-    const [hi, lo] = [levels[e.level].depth, levels[other.level].depth];
-    if (hi >= lo) continue;
+    // The wall hangs from the higher side (depths can vary point by point: compare heights).
+    const mine = at[e.level][e.p][1] + at[e.level][e.q][1];
+    const theirs = at[other.level][other.p][1] + at[other.level][other.q][1];
+    if (mine <= theirs) continue;
     // The other edge runs q→p.
     wall(kp, kq, at[e.level][e.p], at[e.level][e.q], at[other.level][other.q], at[other.level][other.p]);
   }

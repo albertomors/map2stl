@@ -7,6 +7,8 @@ import type { AreaData, Layer } from './area-data';
 import { clipObjects } from './clip';
 import { applyEdits, editedTrees, type Edits } from './edits';
 import type { Wasm } from './merge';
+import { FOREST_SPACING_M, forestTrees } from './forest';
+import { pointInRing } from './geo';
 import { buildGroundSolids } from './print-ground';
 import { buildModels } from './viewer/models';
 import { buildBridges, buildBuildings, buildStructures, COLORS, TREE_HEIGHT_M, treesGeometry, type PickableMesh } from './viewer/objects';
@@ -78,7 +80,7 @@ export function buildPrintModel(
   // Streets, water, squares, parks and sand, carved into the terrain in steps of the thinnest
   // detail; the terrain then comes carved from there instead.
   // Edited: deleted streets and areas gone, widened ones wider, retyped areas moved.
-  const ground = buildGroundSolids(wasm, applyEdits(data.osm, edits), data.terrain, ring, frame, groundHeight, show, at.minWidth, options.baseMm / mmPerUnit, (f, label) =>
+  const ground = buildGroundSolids(wasm, applyEdits(data.osm, edits), data.terrain, ring, frame, groundHeight, show, at.minWidth, options.baseMm / mmPerUnit, data.bathymetry, (f, label) =>
     progress(0.7 * f, label),
   );
   const tile = ground.terrain ? null : buildTerrain(data.terrain, ring, frame, bounds, groundHeight, options.baseMm / mmPerUnit);
@@ -121,7 +123,10 @@ export function buildPrintModel(
       ],
     },
     (() => {
-      const g = show('trees') ? treesGeometry(editedTrees(data.osm.trees, edits, TREE_HEIGHT_M), at) : null;
+      // Forests' trees too, spaced no closer than the print can tell apart, inside the selection.
+      const spacing = Math.max(FOREST_SPACING_M, 3 * at.minWidth);
+      const forest = forestTrees(applyEdits(data.osm, edits), spacing).filter((t) => pointInRing(t.at, ring));
+      const g = show('trees') ? treesGeometry([...editedTrees(data.osm.trees, edits, TREE_HEIGHT_M), ...forest], at) : null;
       // Each tree is a cone of the same number of triangles, one after another.
       const perTree = new ConeGeometry(1, 1, 7).toNonIndexed().getAttribute('position').count / 3;
       return { name: 'Trees', color: '#' + COLORS.tree.getHexString(), pieces: [g && { geometry: g, owners: treeOwners(g, perTree) }] };

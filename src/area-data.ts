@@ -1,10 +1,13 @@
 // Everything the 3D model is built from, for one selection: OSM features and terrain.
 // The output of milestone 2 and the input of the 3D viewer.
 
+import { fetchBathymetry, type Bathymetry } from './bathymetry';
+import { forestTrees, FOREST_SPACING_M } from './forest';
 import { centroid, distance, intersectsRing, pathLength, type LngLat } from './geo';
 import { buildQuery, parse, type OsmData } from './osm';
 import { overpass, type OverpassElement } from './overpass';
 import { describe, type Selection } from './selection';
+import { fetchLidarTerrain } from './lidar';
 import { fetchTerrain, type Terrain } from './terrain';
 import { fetchTileData } from './vector-tiles';
 
@@ -15,6 +18,8 @@ export interface AreaData {
   // 'tiles': the quick version from the base map's vector tiles, while 'full' (Overpass:
   // roofs, colors, trees, walls…) is still on its way, or if it failed.
   detail: 'tiles' | 'full';
+  // Sea depths (EMODnet), when the area has sea and they're available.
+  bathymetry?: Bathymetry | null;
 }
 
 // Progress of the detailed (Overpass) download, the only slow part.
@@ -58,6 +63,9 @@ export async function fetchAreaData(
   const report = (change: Partial<FetchProgress>) => onProgress(Object.assign(progress, change));
 
   const terrain = fetchTerrain(bbox, signal, () => {});
+  // LiDAR where a country publishes it (lidar.ts), in the background: the quick version uses
+  // the tiles, the detailed one the sharper heights.
+  const sharper = terrain.then(async (tiles) => (await fetchLidarTerrain(tiles, signal)) ?? tiles);
   // The quick data also tells how dense each part of the area is, to plan the chunks.
   const quick = await fetchTileData(bbox, ring, signal).catch((err) => {
     if (signal.aborted) throw err;
@@ -92,7 +100,10 @@ export async function fetchAreaData(
   report({ osmDone: true, osmWaitS: undefined });
   const osm = parse(elements, ring);
   fullArrived = true;
-  return { selection, osm, terrain: await terrain, detail: 'full' };
+  // Sea depths, only for areas with sea; without them the sea prints at its usual depth.
+  const sea = osm.waterAreas.some((a) => a.kind === 'sea');
+  const bathymetry = sea ? await fetchBathymetry(bbox, signal).catch(() => null) : null;
+  return { selection, osm, terrain: await sharper, detail: 'full', bathymetry };
 }
 
 // Whether a chunk's box and the selection overlap. Edges count: the selection's corners lie
@@ -185,7 +196,13 @@ export function summarize({ osm, detail }: AreaData): LayerSummary[] {
     },
     { layer: 'green', label: 'Green areas', count: osm.green.length, detail: kinds(osm.green) },
     { layer: 'surfaces', label: 'Sand, rock, glacier', count: osm.surfaces.length, detail: kinds(osm.surfaces) },
-    { layer: 'trees', label: 'Trees', count: osm.trees.length, detail: '' },
+    (() => {
+      // Forests' trees count too: a wooded island has trees though OSM maps none one by one.
+      const forest = forestTrees(osm, FOREST_SPACING_M).length;
+      const single = osm.trees.length;
+      const detail = forest ? (single ? `${single.toLocaleString()} mapped, ${forest.toLocaleString()} in forests` : 'in forests') : '';
+      return { layer: 'trees' as const, label: 'Trees', count: single + forest, detail };
+    })(),
   ];
 }
 
