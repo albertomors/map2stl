@@ -57,18 +57,16 @@ export function addRelief(g: BufferGeometry) {
   g.setAttribute('shade', new BufferAttribute(shade, 1));
 }
 
-// The terrain material, mixing rock into the painted map and applying the shade. `rock`
-// scales the rock (0 over an aerial photo, which shows the real rock already).
-export function reliefMaterial(material: MeshLambertMaterial, rock: { value: number }): MeshLambertMaterial {
+// The terrain material, mixing rock into the painted map and applying the shade.
+export function reliefMaterial(material: MeshLambertMaterial): MeshLambertMaterial {
   material.onBeforeCompile = (shader) => {
     shader.uniforms.rockColor = { value: ROCK };
-    shader.uniforms.rockMix = rock;
     shader.vertexShader =
       'attribute float rock;\nattribute float shade;\nvarying float vRock;\nvarying float vShade;\n' +
       shader.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvRock = rock;\nvShade = shade;');
     shader.fragmentShader =
-      'uniform vec3 rockColor;\nuniform float rockMix;\nvarying float vRock;\nvarying float vShade;\n' +
-      shader.fragmentShader.replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb = mix(diffuseColor.rgb, rockColor, vRock * rockMix) * vShade;');
+      'uniform vec3 rockColor;\nvarying float vRock;\nvarying float vShade;\n' +
+      shader.fragmentShader.replace('#include <map_fragment>', '#include <map_fragment>\ndiffuseColor.rgb = mix(diffuseColor.rgb, rockColor, vRock) * vShade;');
   };
   return material;
 }

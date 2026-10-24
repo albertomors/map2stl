@@ -606,18 +606,6 @@ body.mode-3d .map-only {
   flex-basis: 100%;
 }
 
-.check-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 14px;
-}
-
-.check-row input {
-  margin: 0;
-  accent-color: var(--accent);
-}
-
 .select-row {
   display: flex;
   justify-content: space-between;

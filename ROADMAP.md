@@ -4,8 +4,8 @@ Open work only: built items move to the README and CHANGELOG.
 
 ## Milestone 0.7.x: real terrain, real objects, and the look
 
-LiDAR terrain, official 3D data and photogrammetry, aerial imagery, and the rest of the
-look, released as 0.7.x steps.
+LiDAR terrain, official 3D data and photogrammetry, and the rest of the look, released as
+0.7.x steps.
 
 ### Improve objects and terrain
 
@@ -55,9 +55,43 @@ surface texture, color and water:
   forest's real canopy height, instead of placed trees.
 - **Sea depths beyond Europe:** EMODnet covers European seas; GEBCO (worldwide, about
   450 m) or national charts elsewhere.
-- **Aerial imagery on screen** (optional): Sentinel-2 cloudless mosaics (10 m) are open; the
-  best national aerial photos often aren't open for commercial use. Screen only, unless
-  full-color printers become a target.
+
+## Export for other 3D software
+
+Besides STL and 3MF for printing, the model to reuse elsewhere (Blender, Unity, Unreal,
+Sketchfab, Cesium, the web), exported from the 3D view's scene as it looks on screen:
+smooth terrain, colors, trees; not the print geometry (base, thickened details).
+
+- **GLB** (binary glTF): the main one. One file with geometry, materials and textures,
+  read by almost every 3D tool (three.js's `GLTFExporter`).
+- **OBJ + MTL** (optional): for older tools; plain geometry and material colors.
+- **USDZ** (optional): view in AR on an iPhone or iPad (three.js's `USDZExporter`).
+- Not FBX (closed format, no browser exporter; the tools that use it import glTF) or
+  COLLADA (superseded by glTF).
+
+## Bug reports with the full context
+
+A "?" button, always visible, opening a "Found a bug? Report it" window: a free-text box
+for the user to describe the bug in words, and a Send button. Everything needed to
+reproduce the same conditions is gathered automatically:
+
+- **The selection:** shape kind and its original coordinates (center, sizes, rotation, or
+  the polygon's points).
+- **The view the user is in:** map, 3D view or export preview, and for each what matters
+  there: the map's center and zoom; the camera, the layers on and off, the height
+  multipliers, the edits (deleted, restored, moved, landmark models);
+  the export settings (longest side, base, thinnest detail, nozzle, format) and the
+  preview's status line.
+- **The scene:** the data summary (counts per layer, terrain range and source, sea depths),
+  the data sources and their versions, the selected object if any.
+- **The app:** version, browser, screen, WebGL renderer, and recent errors from the
+  console.
+
+Send packs the message and the context (JSON, plus a screenshot of the view) into a zip
+for the maintainer's email. A browser can't send an email with an attachment by itself
+(mailto can't attach files), so it needs either a small server endpoint (or a form/email
+service) that receives the zip and forwards it, or, until then, a fallback: download the
+zip and open a mailto with the message, for the user to attach it.
 
 ## Faster, more reliable data
 

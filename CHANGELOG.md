@@ -36,10 +36,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   depending on the area's size) and fitted into the same grid as the worldwide tiles, which
   fill anything it doesn't cover. Ridges, gullies and rock faces come out sharp instead of
   rounded. The data panel names the terrain's source and spacing, and the export credits it.
-- Aerial photo on the ground in the 3D view (on screen only), in place of the painted map:
-  the sharpest open source for the area, national orthophotos where a country publishes
-  them openly (Netherlands, Switzerland, France, Spain: 10–25 cm) and Sentinel-2 cloudless
-  (10 m, CC BY-NC-SA: NonCommercial) elsewhere, credited under the checkbox.
 
 ## [0.6.0] - 2026-10-24
 

@@ -36,7 +36,6 @@ import { applyEdits, editedTrees, editKey, type Edits, type GroundKind, type Obj
 import { centroid, pointInRing, ringArea, type LngLat } from '../geo';
 import type { Area, Building, Line, OsmData } from '../osm';
 import { FOREST, FOREST_SPACING_M, forestTrees, isForestTree } from '../forest';
-import { imagerySource, loadImagery, type ImagerySource } from '../imagery';
 import { GroundTexture } from './ground';
 import { groundAt } from './ground-pick';
 import { buildBridges, buildBuildings, buildStructures, buildTrees, COLORS, TREE_HEIGHT_M, type PickableMesh, type Placement } from './objects';
@@ -117,11 +116,6 @@ export class Viewer {
   private highlight = new Group();
   // The print preview: the exported model in place of the scene, while it's on.
   private print = new Group();
-  // Aerial photo on the ground instead of the painted map (imagery.ts), and the relief's rock
-  // (off over a photo).
-  private imageryOn = false;
-  private imageryAbort: AbortController | null = null;
-  private rockMix = { value: 1 };
   // One color for every part (an STL), or each part's own (a 3MF).
   private printMono = false;
   private liftKey: string | null = null;
@@ -297,30 +291,6 @@ export class Viewer {
     return footprints(osm, 'buildings', key).get(key) ?? footprints(osm, 'bridges', key).get(key);
   }
 
-  // The aerial photo on the ground, or the painted map back. Resolves with the source shown
-  // (for its credit), or null.
-  async setImagery(on: boolean): Promise<ImagerySource | null> {
-    this.imageryOn = on;
-    this.imageryAbort?.abort();
-    if (!this.ground) return null;
-    if (!on) {
-      this.ground.setImagery(null);
-      this.rockMix.value = 1;
-      this.paintGround();
-      return null;
-    }
-    const ground = this.ground;
-    const { bbox, metersPerPixel } = ground.coverage;
-    const source = imagerySource(bbox);
-    const abort = (this.imageryAbort = new AbortController());
-    const tiles = await loadImagery(source, bbox, metersPerPixel, abort.signal);
-    if (abort.signal.aborted || !this.imageryOn || this.ground !== ground) return null;
-    ground.setImagery(tiles);
-    this.rockMix.value = 0;
-    this.paintGround();
-    return source;
-  }
-
   // Switches the print preview between one color for all parts and each part's own.
   setPrintMonochrome(mono: boolean) {
     this.printMono = mono;
@@ -473,13 +443,11 @@ export class Viewer {
     if (!this.ground) {
       this.ground = new GroundTexture(applyEdits(osm, this.edits), frame, bounds, this.renderer.capabilities.maxTextureSize);
       this.paintGround();
-      // New data, new ground: the photo again, if it's on.
-      if (this.imageryOn) void this.setImagery(true);
     }
     const tile = buildTerrain(terrain, ring, frame, bounds, groundHeight, BASE_DEPTH_M);
     // Rock on steep ground, darker hollows (relief.ts), over the painted map.
     addRelief(tile.top);
-    const top = new Mesh(tile.top, reliefMaterial(new MeshLambertMaterial({ map: this.ground.texture }), this.rockMix));
+    const top = new Mesh(tile.top, reliefMaterial(new MeshLambertMaterial({ map: this.ground.texture })));
     top.receiveShadow = true;
     const sides = new Mesh(tile.sides, new MeshLambertMaterial({ color: '#b9ab96', side: DoubleSide }));
     this.terrain.add(top, sides);
