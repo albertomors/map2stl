@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.3] - 2026-10-24
+
+A print preview, streets, water and parks carved into the print as their own colors, and
+every export merged into one watertight solid, built in the background.
+
 ### Added
 
 - Print preview: a Preview print button in the Export card shows, in the 3D view, the model
@@ -49,6 +54,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   responsive while a big area builds, and a change made meanwhile (say to the thinnest
   detail) drops the stale build instead of queueing behind it. A job that runs over a
   second shows a progress bar with the step it's on.
+
+### Known issues
+
+- Where two kinds of ground touch only at a corner, or a street just grazes the edge of the
+  selection, the terrain isn't quite closed at that spot (a few in a square kilometer).
+  manifold-3d then won't merge it: it goes into the file as it is, and the status line says
+  so. Slicers print it fine.
 
 ## [0.5.2] - 2026-10-22
 
