@@ -558,6 +558,12 @@ body.mode-3d .map-only {
   margin-bottom: 12px;
 }
 
+/* Rows a selected object doesn't have (a wall's size, a street's height) are hidden. */
+.slider[hidden],
+.select-row[hidden] {
+  display: none;
+}
+
 .slider {
   display: grid;
   grid-template-columns: 1fr auto;
@@ -598,6 +604,25 @@ body.mode-3d .map-only {
 
 #select-hint {
   flex-basis: 100%;
+}
+
+.select-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  font-size: 14px;
+}
+
+.select-row select {
+  font: inherit;
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 6px;
 }
 
 .model-box {

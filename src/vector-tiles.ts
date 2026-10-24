@@ -152,7 +152,7 @@ function line(path: LngLat[], kind: string, width: number, bridge = false): Line
 }
 
 function area(poly: Polygon, kind: string): Area {
-  return { ...poly, kind };
+  return { ...poly, id: nextId('area'), kind };
 }
 
 function clipToTile(p: Polygon, [w, s, e, n]: number[], boundsRing: LngLat[]): Polygon[] {

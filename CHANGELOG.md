@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Streets, railways, rivers and paths, and areas (water, parks, squares, sand), are
+  selectable in the 3D view like buildings: click them on the ground, they light up in
+  orange. Streets, railways and rivers get a Width slider (×0.25 to ×4); areas a "Prints as"
+  choice (water, park, square, sand), to print a car park as a plain square or a fountain
+  as water; all can be deleted. The print follows, and Reset, Restore deleted and Reset all
+  cover them too. The panel names them as OpenStreetMap does ("Lungarno degli Acciaioli").
+- Bridges take 3D models too, from a file or found online, like buildings: a bridge deck
+  fits its outline, a road or rail bridge its line at its width; it stands on the river
+  bed. With no height in OpenStreetMap to check against, the model is stood up so it comes
+  out lowest (a bridge is long and low).
+- "Also here": where OpenStreetMap has buildings drawn over each other (the Arena di
+  Verona's detailed 2024 remapping covers the named outline), the card lists the others,
+  named first, one click to select. An unnamed building drawn over a named landmark is
+  searched for 3D models by the landmark's name.
+- Cancel a model download: while it loads, its Use button reads Cancel. Using another model
+  (or selecting another object) cancels the one in progress.
+
+### Fixed
+
+- Rows a selected object doesn't have (a wall's Size, a bridge's Height) are hidden: they
+  showed for every object.
+
 ## [0.6.1] - 2026-10-24
 
 Sketchfab's much bigger catalog of 3D models next to Wikimedia Commons, with smarter

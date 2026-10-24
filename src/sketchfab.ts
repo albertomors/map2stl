@@ -85,20 +85,25 @@ export class TokenRejected extends Error {}
 
 // The model file (a GLB, or a zip with a glTF and its files), with a name telling which.
 // `onBytes` hears the bytes received so far, and the total when the server says it.
-export async function downloadSketchfab(uid: string, token: string, onBytes: (bytes: number, total?: number) => void): Promise<{ data: ArrayBuffer; name: string }> {
-  const res = await fetch(`${API}/models/${uid}/download`, { headers: { Authorization: `Token ${token}` } });
+export async function downloadSketchfab(
+  uid: string,
+  token: string,
+  onBytes: (bytes: number, total?: number) => void,
+  signal?: AbortSignal,
+): Promise<{ data: ArrayBuffer; name: string }> {
+  const res = await fetch(`${API}/models/${uid}/download`, { headers: { Authorization: `Token ${token}` }, signal });
   if (res.status === 401 || res.status === 403) throw new TokenRejected('Sketchfab didn\'t accept the token');
   if (!res.ok) throw new Error(`Sketchfab answered ${res.status}`);
   const links: Record<string, { url: string } | undefined> = await res.json();
   const [format, link] = links.glb ? ['glb', links.glb] : links.gltf ? ['zip', links.gltf] : [null, undefined];
   if (!link) throw new Error('no GLB or glTF download for this model');
-  return { data: await fetchWithProgress(link.url, onBytes), name: `${uid}.${format}` };
+  return { data: await fetchWithProgress(link.url, onBytes, signal), name: `${uid}.${format}` };
 }
 
 // A file's bytes, reporting progress. The total comes from the download itself: the size
 // Sketchfab lists for a model isn't what's sent.
-export async function fetchWithProgress(url: string, onBytes: (bytes: number, total?: number) => void): Promise<ArrayBuffer> {
-  const file = await fetch(url);
+export async function fetchWithProgress(url: string, onBytes: (bytes: number, total?: number) => void, signal?: AbortSignal): Promise<ArrayBuffer> {
+  const file = await fetch(url, { signal });
   if (!file.ok || !file.body) throw new Error(`the download failed (${file.status})`);
   const length = Number(file.headers.get('content-length')) || undefined;
   const reader = file.body.getReader();

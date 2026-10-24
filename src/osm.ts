@@ -38,6 +38,9 @@ export interface Line {
   id: string;
   path: LngLat[];
   kind: string;
+  name?: string;
+  // Its Wikidata item, for finding a 3D model of a bridge.
+  wikidata?: string;
   // Meters.
   width: number;
   // Raised above what's under it: bridges must not print flat on the river.
@@ -48,7 +51,12 @@ export interface Line {
 }
 
 export interface Area extends Polygon {
+  // OSM element ("way/123", "relation/45"; every polygon of a multipolygon shares it), or a
+  // tile-data counter: edits and selection key on it.
+  id: string;
   kind: string;
+  name?: string;
+  wikidata?: string;
 }
 
 // Piers, walls, towers…: built things that aren't buildings.
@@ -166,7 +174,7 @@ export function parse(elements: OverpassElement[], ring: LngLat[]): OsmData {
       // Everything touching the selection: the 3D view and export cut it at the edge.
       for (const poly of polygons(el)) {
         if (!intersectsRing(poly.outer, ring, true)) continue;
-        (isPart ? parts : outlines).push({ ...poly, id: `${el.type}/${el.id}`, ...buildingHeight(t, isPart), ...roof(t), name: t.name, wikidata: /^Q\d+$/.test(t.wikidata ?? '') ? t.wikidata : undefined });
+        (isPart ? parts : outlines).push({ ...poly, id: `${el.type}/${el.id}`, ...buildingHeight(t, isPart), ...roof(t), name: t.name, wikidata: wikidataOf(t) });
       }
       continue;
     }
@@ -200,7 +208,7 @@ export function parse(elements: OverpassElement[], ring: LngLat[]): OsmData {
     } else if (t.man_made === 'bridge') {
       // The deck outline; the roads on it carry bridge=yes too.
       for (const poly of polygons(el)) {
-        if (intersectsRing(poly.outer, ring, true)) data.structureAreas.push({ ...poly, id: `${el.type}/${el.id}`, kind: 'bridge', height: 1 });
+        if (intersectsRing(poly.outer, ring, true)) data.structureAreas.push({ ...poly, id: `${el.type}/${el.id}`, kind: 'bridge', height: 1, name: t.name, wikidata: wikidataOf(t) });
       }
     } else if (t.man_made && new RegExp(`^(${PIER})$`).test(t.man_made)) {
       const height = parseLength(t.height) ?? 1;
@@ -268,7 +276,7 @@ export function parse(elements: OverpassElement[], ring: LngLat[]): OsmData {
   data.buildings = [...outlines.filter((o) => !covered.has(o)), ...parts];
 
   for (const sea of seaPolygons(coast, bbox(ring))) {
-    if (intersectsRing(sea.outer, ring, true)) data.waterAreas.push({ ...sea, kind: 'sea' });
+    if (intersectsRing(sea.outer, ring, true)) data.waterAreas.push({ ...sea, id: 'sea', kind: 'sea' });
   }
   return data;
 }
@@ -408,7 +416,12 @@ export function parseLength(v: string | undefined): number | undefined {
 
 function addLine(out: Line[], el: OverpassElement, kind: string, width: number, ring: LngLat[], bridge = false) {
   const path = coords(el.geometry);
-  if (path.length > 1 && intersectsRing(path, ring)) out.push({ id: `${el.type}/${el.id}`, path, kind, width, ...(bridge ? { bridge } : {}) });
+  if (path.length > 1 && intersectsRing(path, ring)) out.push({ id: `${el.type}/${el.id}`, path, kind, name: el.tags?.name, wikidata: wikidataOf(el.tags ?? {}), width, ...(bridge ? { bridge } : {}) });
+}
+
+// A valid Wikidata item id from the tags, or nothing.
+function wikidataOf(t: Record<string, string>): string | undefined {
+  return /^Q\d+$/.test(t.wikidata ?? '') ? t.wikidata : undefined;
 }
 
 function addStructureLine(out: StructureLine[], el: OverpassElement, kind: string, width: number, height: number, ring: LngLat[]) {
@@ -418,7 +431,7 @@ function addStructureLine(out: StructureLine[], el: OverpassElement, kind: strin
 
 function addAreas(out: Area[], el: OverpassElement, kind: string, ring: LngLat[]) {
   for (const poly of polygons(el)) {
-    if (intersectsRing(poly.outer, ring, true)) out.push({ ...poly, kind });
+    if (intersectsRing(poly.outer, ring, true)) out.push({ ...poly, id: `${el.type}/${el.id}`, kind, name: el.tags?.name });
   }
 }
 

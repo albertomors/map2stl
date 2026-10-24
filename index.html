@@ -110,6 +110,7 @@ nom<!doctype html>
         <h2>Selected</h2>
         <p id="object-title" class="object-title"></p>
         <p id="object-info" class="hint"></p>
+        <p id="object-also" class="hint" hidden></p>
         <label class="slider" id="object-size-row">
           <span>Size (all dimensions)</span><output id="object-size-value"></output>
           <input id="object-size" type="range" autocomplete="off" min="0.25" max="4" step="0.05" value="1" />
@@ -117,6 +118,19 @@ nom<!doctype html>
         <label class="slider" id="object-height-row">
           <span>Height only</span><output id="object-height-value"></output>
           <input id="object-height" type="range" autocomplete="off" min="0.5" max="4" step="0.1" value="1" />
+        </label>
+        <label class="slider" id="object-width-row" hidden>
+          <span>Width</span><output id="object-width-value"></output>
+          <input id="object-width" type="range" autocomplete="off" min="0.25" max="4" step="0.05" value="1" />
+        </label>
+        <label class="select-row" id="object-ground-row" hidden>
+          <span>Prints as</span>
+          <select id="object-ground" autocomplete="off">
+            <option value="water">Water</option>
+            <option value="green">Park, grass, wood</option>
+            <option value="paved">Square, paved</option>
+            <option value="surfaces">Sand, rock</option>
+          </select>
         </label>
         <div id="object-model" class="model-box" hidden>
           <button id="object-model-find">Find a 3D model online</button>

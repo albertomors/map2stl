@@ -32,13 +32,14 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import type { AreaData, Layer } from '../area-data';
 import type { PrintModel, ThinObjects } from '../export';
 import { clipObjects, clipToSelection } from '../clip';
-import { applyEdits, editedTrees, editKey, type Edits, type ObjectEdit } from '../edits';
-import type { LngLat } from '../geo';
-import type { Building, OsmData } from '../osm';
+import { applyEdits, editedTrees, editKey, type Edits, type GroundKind, type ObjectEdit } from '../edits';
+import { centroid, pointInRing, ringArea, type LngLat } from '../geo';
+import type { Area, Building, Line, OsmData } from '../osm';
 import { GroundTexture } from './ground';
+import { groundAt } from './ground-pick';
 import { buildBridges, buildBuildings, buildStructures, buildTrees, COLORS, TREE_HEIGHT_M, type PickableMesh, type Placement } from './objects';
 import { modelAssets, type Axis, type ModelAsset } from '../model-assets';
-import { buildModels, fittedHeight } from './models';
+import { buildModels, fittedHeight, footprints } from './models';
 import { prepareScene } from './scene';
 import { buildTerrain } from './terrain-mesh';
 
@@ -57,7 +58,13 @@ export interface ObjectPick {
   landmark?: { wikidata?: string; name?: string };
   // The model's height fitted to the footprint, against the building's (meters), and
   // whether OSM's height is real (tagged or from floors) rather than estimated.
-  modelFit?: { height: number; building: number; known: boolean };
+  modelFit?: { height: number; building?: number; known: boolean };
+  // Streets, railways, rivers, paths: their width can change. Areas: what they print as.
+  canWidth?: boolean;
+  ground?: GroundKind;
+  // Other buildings in the same place (OSM sometimes has one drawn over another): picking
+  // gets the one on top, these are the others, to select by name.
+  alsoHere?: { key: string; title: string }[];
 }
 
 export interface ViewScales {
@@ -219,18 +226,65 @@ export class Viewer {
   // another makes it come out much closer to the building's known height (a model lying on
   // its side comes out as tall as the building is wide).
   suggestModelUp(key: string, asset: ModelAsset): Axis {
-    const parts = this.data?.osm.buildings.filter((b) => editKey(b) === key) ?? [];
+    const foot = this.footprintOf(key);
     const frame = this.placement?.frame;
-    const tallest = parts.reduce<Building | null>((a, b) => (!a || b.height > a.height ? b : a), null);
-    if (!frame || !tallest || tallest.heightFrom === 'estimate') return asset.up;
-    // How far off (as a ratio, 1 = exact) each axis comes out.
+    if (!frame || !foot) return asset.up;
+    const height = (up: Axis) => fittedHeight(asset, { asset: asset.id, up, turns: 0 }, foot.points, frame) ?? Infinity;
+    // How far off each axis comes out (lower is better): against the known height, or, for a
+    // bridge (long and low, with no height in OSM), just its height: the lowest lies right.
+    const target = foot.known ? foot.height : undefined;
+    const bridge = !this.data?.osm.buildings.some((b) => editKey(b) === key);
+    if (!target && !bridge) return asset.up;
     const off = (up: Axis) => {
-      const h = fittedHeight(asset, { asset: asset.id, up, turns: 0 }, parts, frame);
-      return h ? Math.max(h / tallest.height, tallest.height / h) : Infinity;
+      const h = height(up);
+      return target ? Math.max(h / target, target / h) : h;
     };
     const best = (['x', 'y', 'z'] as const).reduce((a, b) => (off(b) < off(a) ? b : a), asset.up);
     // Only when clearly better: the file's own convention usually holds.
     return off(best) * 1.3 < off(asset.up) ? best : asset.up;
+  }
+
+  // Other buildings sharing this one's place: either holds the other's middle.
+  private buildingsOverlapping(key: string, parts: Building[]): { key: string; title: string; name?: string; wikidata?: string }[] {
+    const osm = this.data?.osm;
+    if (!osm) return [];
+    const mid = (b: Building) => centroid(b.outer);
+    const box = (rings: LngLat[][]) => {
+      const pts = rings.flat();
+      return [Math.min(...pts.map((p) => p[0])), Math.min(...pts.map((p) => p[1])), Math.max(...pts.map((p) => p[0])), Math.max(...pts.map((p) => p[1]))];
+    };
+    const [w, s, e, n] = box(parts.map((b) => b.outer));
+    const found = new Map<string, { title: string; name?: string; wikidata?: string }>();
+    for (const b of osm.buildings) {
+      const other = editKey(b);
+      if (other === key || found.has(other)) continue;
+      const [bw, bs, be, bn] = box([b.outer]);
+      if (be < w || bw > e || bn < s || bs > n) continue;
+      const overlaps = parts.some((p) => pointInRing(mid(p), b.outer) || pointInRing(mid(b), p.outer));
+      const name = b.groupName ?? b.name;
+      if (overlaps) found.set(other, { title: name ?? 'Unnamed building', name, wikidata: b.groupWikidata ?? b.wikidata });
+    }
+    // Named ones first: the landmark the rest are drawn over.
+    return [...found].map(([k, o]) => ({ key: k, ...o })).sort((a, b) => Number(!a.name) - Number(!b.name));
+  }
+
+  // The 3D model standing in for this object, if any, and how tall it comes out fitted
+  // (against the object's height in OSM, where that's known).
+  private modelInfo(key: string): Pick<ObjectPick, 'model' | 'modelFit'> {
+    const choice = this.edits.get(key)?.model;
+    const asset = choice && modelAssets.get(choice.asset);
+    const frame = this.placement?.frame;
+    const foot = this.footprintOf(key);
+    if (!asset || !choice || !frame || !foot) return {};
+    const height = fittedHeight(asset, choice, foot.points, frame);
+    return { model: asset.source.title, modelFit: height ? { height, building: foot.height, known: !!foot.known } : undefined };
+  }
+
+  // The footprint a model of this object fits: a building's, or a bridge's.
+  private footprintOf(key: string) {
+    const osm = this.data?.osm;
+    if (!osm) return undefined;
+    return footprints(osm, 'buildings', key).get(key) ?? footprints(osm, 'bridges', key).get(key);
   }
 
   // Switches the print preview between one color for all parts and each part's own.
@@ -302,6 +356,11 @@ export class Viewer {
   setEdits(edits: Edits, { selectedOnly = false } = {}) {
     this.edits = edits;
     if (!this.data || !this.placement) return;
+    // Streets and areas are painted on the ground: repaint it with the edits.
+    if (this.ground && this.clipped) {
+      this.ground.setData(applyEdits(this.clipped, edits));
+      this.paintGround();
+    }
     if (selectedOnly && this.selected) {
       this.objectsStale = true;
       this.drawHighlight();
@@ -331,7 +390,13 @@ export class Viewer {
     } else {
       this.drawHighlight();
     }
+    this.paintGround();
     this.onPick(key ? this.describeObject(key) : null);
+  }
+
+  // The ground, with the selected street or area (if that's what's selected) highlighted.
+  private paintGround() {
+    this.ground?.paint(this.visible, this.selected);
   }
 
   setLayerVisible(layer: Layer, visible: boolean) {
@@ -339,7 +404,7 @@ export class Viewer {
     else this.visible.delete(layer);
     for (const o of this.layerObjects.get(layer) ?? []) o.visible = visible;
     if (layer === this.liftLayer) this.highlight.visible = visible && !this.print.children.length;
-    if (TEXTURE_LAYERS.includes(layer)) this.ground?.paint(this.visible);
+    if (TEXTURE_LAYERS.includes(layer)) this.paintGround();
   }
 
   dispose() {
@@ -369,8 +434,8 @@ export class Viewer {
     const osm = (this.clipped ??= clipToSelection(data.osm, ring));
 
     if (!this.ground) {
-      this.ground = new GroundTexture(osm, frame, bounds, this.renderer.capabilities.maxTextureSize);
-      this.ground.paint(this.visible);
+      this.ground = new GroundTexture(applyEdits(osm, this.edits), frame, bounds, this.renderer.capabilities.maxTextureSize);
+      this.paintGround();
     }
     const tile = buildTerrain(terrain, ring, frame, bounds, groundHeight, BASE_DEPTH_M);
     const top = new Mesh(tile.top, new MeshLambertMaterial({ map: this.ground.texture }));
@@ -449,7 +514,8 @@ export class Viewer {
       });
     };
     solid(buildBuildings(edited.buildings, at), 'buildings');
-    solid(buildModels(osm.buildings, this.edits, at), 'buildings');
+    solid(buildModels(osm, this.edits, at, 'buildings'), 'buildings');
+    solid(buildModels(osm, this.edits, at, 'bridges'), 'structures');
     solid(buildStructures({ ...osm, ...edited }, at), 'structures');
     solid(buildBridges(edited.roads, at, COLORS.road), 'roads', COLORS.road);
     solid(buildBridges(edited.railways, at, COLORS.rail), 'railways', COLORS.rail);
@@ -490,7 +556,16 @@ export class Viewer {
     const visible = this.pickables.filter((p) => p.object.visible);
     const hit = ray.intersectObjects(visible.map((p) => p.object), false)[0];
     const pickable = hit && visible.find((p) => p.object === hit.object);
-    this.select(pickable?.keyAt(hit.faceIndex ?? undefined, hit.instanceId) ?? null);
+    const key = pickable?.keyAt(hit.faceIndex ?? undefined, hit.instanceId);
+    if (key) return this.select(key);
+    // No object: the street, river or area painted on the ground there, if any.
+    const top = this.terrain.children[0];
+    const ground = top && ray.intersectObject(top, false)[0];
+    if (ground && this.clipped && this.placement) {
+      const at = this.placement.frame.toLngLat([ground.point.x, ground.point.z]);
+      return this.select(groundAt(applyEdits(this.clipped, this.edits), this.visible, at, this.placement.frame));
+    }
+    this.select(null);
   }
 
   // The selected object vanishes from its merged mesh and is drawn again on its own, tinted
@@ -549,7 +624,8 @@ export class Viewer {
       if (mesh) inner.add(mesh);
     } else {
       add(buildBuildings(own.buildings, at));
-      add(buildModels(osm.buildings, this.edits, at, key));
+      add(buildModels(osm, this.edits, at, 'buildings', key));
+      add(buildModels(osm, this.edits, at, 'bridges', key));
       add(buildStructures({ ...osm, ...own }, at));
       add(buildBridges(own.roads, at, COLORS.road), COLORS.road);
       add(buildBridges(own.railways, at, COLORS.rail), COLORS.rail);
@@ -592,28 +668,73 @@ export class Viewer {
       const roof = tallest.roofShape && tallest.roofShape !== 'flat' ? `${tallest.roofShape} roof` : 'flat roof';
       const count = parts.length > 1 ? ` · ${parts.length} parts` : '';
       const title = parts[0].groupName ?? parts.find((b) => b.name)?.name ?? 'Unnamed building';
-      const choice = this.edits.get(key)?.model;
-      const asset = choice && modelAssets.get(choice.asset);
-      const model = asset?.source.title;
-      const frame = this.placement?.frame;
-      const fitted = asset && choice && frame ? fittedHeight(asset, choice, parts, frame) : null;
-      const modelFit = fitted ? { height: fitted, building: tallest.height, known: tallest.heightFrom !== 'estimate' } : undefined;
+      const { model, modelFit } = this.modelInfo(key);
       const wikidata = parts[0].groupWikidata ?? parts.find((b) => b.wikidata)?.wikidata;
       const name = parts[0].groupName ?? parts.find((b) => b.name)?.name;
-      return { key, title, info: `${m(tallest.height)} (${from}) · ${roof}${count}`, canSize: true, canHeight: true, canModel: true, model, landmark: { wikidata, name }, modelFit };
+      const overlapping = this.buildingsOverlapping(key, parts);
+      const alsoHere = overlapping.map(({ key: k, title: t }) => ({ key: k, title: t }));
+      // Unnamed, but drawn over a named landmark (a detailed remapping of it): search by that.
+      const named = !name && !wikidata ? overlapping.find((o) => o.name || o.wikidata) : undefined;
+      const landmark = named ? { wikidata: named.wikidata, name: named.name } : { wikidata, name };
+      return { key, title, info: `${m(tallest.height)} (${from}) · ${roof}${count}`, canSize: true, canHeight: true, canModel: true, model, landmark, modelFit, alsoHere };
     }
     const area = osm.structureAreas.find((s) => s.id === key);
     // A bridge deck spans between banks: resizing it would lift it off them.
-    if (area?.kind === 'bridge') return { key, title: 'Bridge deck', info: 'Deck outline', canSize: false, canHeight: false, ...no };
+    // A bridge can be replaced by a 3D model (then sized like one).
+    if (area?.kind === 'bridge') {
+      const info = this.modelInfo(key);
+      const landmark = { name: area.name, wikidata: area.wikidata };
+      return { key, title: area.name ?? 'Bridge deck', info: 'Deck outline', canSize: !!info.model, canHeight: !!info.model, canModel: true, landmark, ...info };
+    }
     if (area) return { key, title: nice(area.kind), info: m(area.height), canSize: true, canHeight: true, ...no };
     const wall = osm.structureLines.find((s) => s.id === key);
     if (wall) return { key, title: nice(wall.kind), info: `${m(wall.height)} tall`, canSize: false, canHeight: true, ...no };
     const tower = osm.towers.find((t) => t.id === key);
     if (tower) return { key, title: nice(tower.kind), info: `${m(tower.height)} tall`, canSize: true, canHeight: true, ...no };
-    const bridge = [...osm.roads, ...osm.railways].find((l) => l.id === key);
+    const ground = this.describeGround(key);
+    if (ground) return ground;
+    const bridge = [...osm.roads, ...osm.railways].find((l) => l.id === key && l.bridge);
     if (bridge) {
       const rail = osm.railways.includes(bridge);
-      return { key, title: rail ? 'Rail bridge' : 'Road bridge', info: `${nice(bridge.kind)} · ${m(bridge.width)} wide`, canSize: false, canHeight: false, ...no };
+      const info = this.modelInfo(key);
+      const landmark = { name: bridge.name, wikidata: bridge.wikidata };
+      const title = bridge.name ?? (rail ? 'Rail bridge' : 'Road bridge');
+      return { key, title, info: `${nice(bridge.kind)} · ${m(bridge.width)} wide`, canSize: !!info.model, canHeight: !!info.model, canModel: true, landmark, ...info };
+    }
+    return null;
+  }
+
+  // A street, railway, river or path (its width can change), or an area (what it prints as
+  // can change): their edit applied, as the ground shows them.
+  private describeGround(key: string): ObjectPick | null {
+    const osm = this.data?.osm;
+    if (!osm) return null;
+    const nice = (kind: string) => kind[0].toUpperCase() + kind.slice(1).replace(/_/g, ' ');
+    const e = this.edits.get(key);
+    const lines: [string, Line[]][] = [
+      ['Street', osm.roads],
+      ['Railway', osm.railways],
+      ['Waterway', osm.waterways],
+      ['Path', osm.pavedLines],
+    ];
+    for (const [what, list] of lines) {
+      const l = list.find((x) => x.id === key && !x.bridge);
+      if (!l) continue;
+      const width = l.width * (e?.width ?? 1);
+      return { key, title: l.name ?? `${what}: ${nice(l.kind)}`, info: `${nice(l.kind)} · ${Math.round(width * 10) / 10} m wide`, canSize: false, canHeight: false, canModel: false, canWidth: true };
+    }
+    const areas: [GroundKind, Area[]][] = [
+      ['water', osm.waterAreas],
+      ['green', osm.green],
+      ['paved', osm.pavedAreas],
+      ['surfaces', osm.surfaces],
+    ];
+    for (const [kind, list] of areas) {
+      const parts = list.filter((a) => a.id === key);
+      if (!parts.length) continue;
+      const m2 = parts.reduce((n, a) => n + ringArea(a.outer) - a.holes.reduce((h, r) => h + ringArea(r), 0), 0);
+      const size = m2 > 1e4 ? `${(m2 / 1e4).toFixed(1)} ha` : `${Math.round(m2)} m²`;
+      return { key, title: parts[0].name ?? nice(parts[0].kind), info: `${nice(parts[0].kind)} · ${size}`, canSize: false, canHeight: false, canModel: false, ground: e?.ground ?? kind };
     }
     return null;
   }

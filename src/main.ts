@@ -15,7 +15,7 @@ import type { SketchfabModel } from './sketchfab';
 import { modelAssets, type ModelAsset, type ModelChoice, type ModelSource } from './model-assets';
 import type { ModelJob, ModelResult } from './model-worker';
 import type { ObjectPick, Viewer, ViewScales } from './viewer/viewer';
-import type { Edits } from './edits';
+import type { Edits, GroundKind } from './edits';
 import type { ThinObjects } from './export';
 import type { PrintJob, PrintProgress, PrintResult } from './print-worker';
 
@@ -131,6 +131,20 @@ for (const [id, field] of [['object-size', 'scale'], ['object-height', 'heightSc
   });
 }
 $('object-delete').addEventListener('click', () => deletePicked());
+// Streets, railways, rivers: wider or narrower (shown on release: the ground is repainted).
+$('object-width').addEventListener('input', () => {
+  if (!picked) return;
+  edits.set(picked.key, { ...edits.get(picked.key), width: Number($<HTMLInputElement>('object-width').value) });
+  showPickValues();
+  showEditsSummary();
+});
+$('object-width').addEventListener('change', () => picked && refreshModel(picked.key));
+// Areas: print as another kind (a car park as plain square, a fountain as water…).
+$('object-ground').addEventListener('change', () => {
+  if (!picked) return;
+  edits.set(picked.key, { ...edits.get(picked.key), ground: $<HTMLSelectElement>('object-ground').value as GroundKind });
+  refreshModel(picked.key);
+});
 // A 3D model in place of the selected building (fitted to it: see viewer/models.ts).
 $('object-model-upload').addEventListener('click', () => $<HTMLInputElement>('object-model-file').click());
 $('object-model-file').addEventListener('change', async () => {
@@ -230,7 +244,12 @@ function resultRow(
   name.textContent = r.name;
   const button = document.createElement('button');
   button.textContent = 'Use';
-  button.addEventListener('click', () => use(li));
+  // While this row's model loads, the button cancels it.
+  button.addEventListener('click', () => {
+    if (modelLoad?.row !== li) return use(li);
+    cancelModelLoad();
+    $('object-model-status').textContent = 'Cancelled.';
+  });
   const meta = document.createElement('span');
   meta.className = 'meta';
   const source = document.createElement('span');
@@ -662,10 +681,29 @@ function showPick(pick: ObjectPick | null) {
     $('object-model-results').hidden = true;
     $('sketchfab-login').hidden = true;
     pendingSketchfab = null;
+    cancelModelLoad();
     $<HTMLInputElement>('model-search').value = '';
     $('model-search-form').hidden = true;
     $('object-model-status').textContent = '';
   }
+  // Buildings drawn over each other in OSM: the others here, one click away.
+  const also = $('object-also');
+  also.replaceChildren();
+  also.hidden = !pick.alsoHere?.length;
+  if (pick.alsoHere?.length) {
+    also.append('Also here: ');
+    pick.alsoHere.forEach((o, i) => {
+      const link = document.createElement('button');
+      link.className = 'link';
+      link.textContent = o.title;
+      link.addEventListener('click', () => viewer?.select(o.key));
+      also.append(...(i ? [', ', link] : [link]));
+    });
+  }
+  $('object-width-row').hidden = !pick.canWidth;
+  $<HTMLInputElement>('object-width').value = String(e?.width ?? 1);
+  $('object-ground-row').hidden = !pick.ground;
+  if (pick.ground) $<HTMLSelectElement>('object-ground').value = pick.ground;
   $('object-model').hidden = !pick.canModel;
   $('object-model-current').hidden = !pick.model;
   $('object-model-name').textContent = pick.model ?? '';
@@ -675,9 +713,14 @@ function showPick(pick: ObjectPick | null) {
 }
 
 // Model files are read in a worker (model-worker.ts): a big scan takes seconds.
-function readModelInWorker(data: ArrayBuffer, name: string, source: ModelSource): Promise<ModelAsset> {
+function readModelInWorker(data: ArrayBuffer, name: string, source: ModelSource, signal?: AbortSignal): Promise<ModelAsset> {
   const worker = new Worker(new URL('./model-worker.ts', import.meta.url), { type: 'module' });
   return new Promise((resolve, reject) => {
+    // Cancelled: the worker stops where it is.
+    signal?.addEventListener('abort', () => {
+      worker.terminate();
+      reject(signal.reason);
+    });
     worker.onmessage = (e: MessageEvent<ModelResult>) => {
       worker.terminate();
       if (e.data.ok) resolve(e.data.asset);
@@ -703,6 +746,13 @@ async function showSketchfabForget() {
   $('sketchfab-forget').hidden = !sketchfabToken();
 }
 
+// The model download in progress (one at a time: using another cancels it).
+let modelLoad: { row: HTMLLIElement; abort: AbortController } | null = null;
+function cancelModelLoad() {
+  modelLoad?.abort.abort();
+  modelLoad = null;
+}
+
 async function useSketchfabModel(key: string, m: SketchfabModel, row: HTMLLIElement) {
   const { sketchfabToken, setSketchfabToken, downloadSketchfab, TokenRejected } = await import('./sketchfab');
   const status = $('object-model-status');
@@ -718,14 +768,15 @@ async function useSketchfabModel(key: string, m: SketchfabModel, row: HTMLLIElem
   status.textContent = '';
   const bar = modelProgress(row);
   try {
-    const file = await downloadSketchfab(m.uid, token, bar.bytes);
+    const file = await downloadSketchfab(m.uid, token, bar.bytes, bar.signal);
     bar.reading();
     const source = { kind: 'sketchfab' as const, title: m.name, url: m.pageUrl, license: m.license, author: m.author };
-    useModel(key, await readModelInWorker(file.data, file.name, source));
+    useModel(key, await readModelInWorker(file.data, file.name, source, bar.signal));
     $('object-model-results').hidden = true;
     status.textContent = `${m.license} by ${m.author}: the export credits it.`;
     showSketchfabForget();
   } catch (err) {
+    if (bar.signal.aborted) return;
     if (err instanceof TokenRejected) {
       // A wrong or revoked token: forget it and ask again.
       setSketchfabToken(null);
@@ -748,13 +799,14 @@ async function useCommonsModel(key: string, m: CommonsModel, row: HTMLLIElement)
   const bar = modelProgress(row);
   try {
     const { fetchWithProgress } = await import('./sketchfab');
-    const data = await fetchWithProgress(m.url, bar.bytes);
+    const data = await fetchWithProgress(m.url, bar.bytes, bar.signal);
     bar.reading();
     const source = { kind: 'commons' as const, title: m.name, url: m.pageUrl, license: m.license, author: m.author };
-    useModel(key, await readModelInWorker(data, m.title, source));
+    useModel(key, await readModelInWorker(data, m.title, source, bar.signal));
     $('object-model-results').hidden = true;
     status.textContent = `${m.license} by ${m.author}: the export credits it.`;
   } catch (err) {
+    if (bar.signal.aborted) return;
     status.textContent = `Couldn't use ${m.name}: ${(err as Error).message}`;
   } finally {
     bar.end();
@@ -771,8 +823,11 @@ function modelProgress(row: HTMLLIElement) {
   bar.id = id;
   bar.innerHTML = '<div class="progress-head"><span class="progress-label">Downloading</span><span class="progress-text"></span></div><div class="bar"><div></div></div><p class="progress-note"></p>';
   row.append(bar);
+  // One download at a time: this one replaces any other.
+  cancelModelLoad();
+  const load = (modelLoad = { row, abort: new AbortController() });
   const button = row.querySelector('button')!;
-  button.disabled = true;
+  button.textContent = 'Cancel';
   setBar(id, '', null, '');
   bar.scrollIntoView({ block: 'nearest' });
   return {
@@ -781,9 +836,12 @@ function modelProgress(row: HTMLLIElement) {
       bar.querySelector('.progress-label')!.textContent = 'Reading';
       setBar(id, '', null, 'Big models are simplified to what a print can hold.');
     },
+    signal: load.abort.signal,
+    // Done, failed or cancelled: the row as it was.
     end: () => {
       bar.remove();
-      button.disabled = false;
+      button.textContent = 'Use';
+      if (modelLoad === load) modelLoad = null;
     },
   };
 }
@@ -815,33 +873,40 @@ function showModelFit(pick: ObjectPick) {
   // As it stands now: fitted, then Size and Height.
   const e = edits.get(pick.key);
   const height = f.height * (e?.scale ?? 1) * (e?.heightScale ?? 1);
-  const off = Math.max(height / f.building, f.building / height) > FIT_TOLERANCE;
+  // Bridges and the like have no height in OSM to compare with.
+  if (!f.building) {
+    line.append(`${m(height)} tall.`);
+    return;
+  }
+  const building = f.building;
+  const off = Math.max(height / building, building / height) > FIT_TOLERANCE;
   if (f.known && off) {
     line.classList.add('warning');
     const why =
-      height < f.building
+      height < building
         ? 'its outline seen from above is wider than the building: a base or a square around it, a lean, or a whole scene'
         : 'it may show only part of the building, or something else';
-    line.append(`It's ${m(height)} tall, but this building is ${m(f.building)}: ${why}. `);
+    line.append(`It's ${m(height)} tall, but this building is ${m(building)}: ${why}. `);
     // One click to the building's height (Size scales it evenly, so the footprint follows).
     const fix = document.createElement('button');
     fix.className = 'link';
-    fix.textContent = `Make it ${m(f.building)} tall`;
+    fix.textContent = `Make it ${m(building)} tall`;
     fix.addEventListener('click', () => {
       const now = edits.get(pick.key);
       if (!now) return;
-      edits.set(pick.key, { ...now, scale: Math.round((f.building / f.height) * 100) / 100, heightScale: 1 });
+      edits.set(pick.key, { ...now, scale: Math.round((building / f.height) * 100) / 100, heightScale: 1 });
       refreshModel(pick.key);
     });
     line.append(fix, ', or try another model.');
   } else {
-    line.append(`${m(height)} tall (OpenStreetMap ${f.known ? 'says' : 'estimates'} ${m(f.building)}).`);
+    line.append(`${m(height)} tall (OpenStreetMap ${f.known ? 'says' : 'estimates'} ${m(building)}).`);
   }
 }
 
 function showPickValues() {
   $('object-size-value').textContent = `×${Number($<HTMLInputElement>('object-size').value).toFixed(1)}`;
   $('object-height-value').textContent = `×${Number($<HTMLInputElement>('object-height').value).toFixed(1)}`;
+  $('object-width-value').textContent = `×${Number($<HTMLInputElement>('object-width').value).toFixed(2)}`;
 }
 
 function showEditsSummary() {
@@ -851,11 +916,11 @@ function showEditsSummary() {
   for (const e of edits.values()) {
     if (e.deleted) deleted++;
     else {
-      if ((e.scale ?? 1) !== 1 || (e.heightScale ?? 1) !== 1) changed++;
+      if ((e.scale ?? 1) !== 1 || (e.heightScale ?? 1) !== 1 || (e.width ?? 1) !== 1 || e.ground) changed++;
       if (e.model) models++;
     }
   }
-  const parts = [deleted && `${deleted} deleted`, changed && `${changed} resized`, models && `${models} with a 3D model`].filter(Boolean);
+  const parts = [deleted && `${deleted} deleted`, changed && `${changed} changed`, models && `${models} with a 3D model`].filter(Boolean);
   $('edits-count').textContent = parts.length ? parts.join(', ') : 'No edits';
   $<HTMLButtonElement>('restore-deleted').disabled = !deleted;
   const defaults = scales().terrain === 1.5 && scales().heights === 1;
@@ -867,7 +932,7 @@ function showSelectHint() {
   $('select-hint').textContent = printPreview
     ? 'Editing is paused while the print preview is on.'
     : viewer?.canSelect
-      ? 'Click a building, tree, bridge or structure to edit it.'
+      ? 'Click a building, tree, bridge, street, river or park to edit it.'
       : 'Selecting and editing become available when the detailed data arrives.';
 }
 

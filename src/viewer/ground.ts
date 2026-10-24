@@ -20,6 +20,8 @@ export const GROUND_COLORS: Partial<Record<Layer, string>> = {
 };
 // Thin paths still show as at least this many pixels.
 const MIN_LINE_PX = 1.5;
+// The selected street or area, on top: the same light orange as a selected building.
+const SELECTED = '#ff9a5c';
 
 export class GroundTexture {
   readonly texture: CanvasTexture;
@@ -28,6 +30,7 @@ export class GroundTexture {
   private scale: number;
 
   constructor(
+    // The data painted: replaced when ground edits change it (see setData).
     private osm: OsmData,
     private frame: LocalFrame,
     private bounds: Bounds,
@@ -46,7 +49,12 @@ export class GroundTexture {
     this.texture.anisotropy = 8;
   }
 
-  paint(visible: Set<Layer>) {
+  setData(osm: OsmData) {
+    this.osm = osm;
+  }
+
+  // `selected`: the id of a street, river or area to draw on top, highlighted.
+  paint(visible: Set<Layer>, selected?: string | null) {
     const { ctx, osm } = this;
     ctx.fillStyle = LAND;
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
@@ -62,6 +70,11 @@ export class GroundTexture {
     }
     if (visible.has('roads')) this.stroke(osm.roads.filter((l) => !l.bridge), GROUND_COLORS.roads!);
     if (visible.has('railways')) this.stroke(osm.railways.filter((l) => !l.bridge), GROUND_COLORS.railways!);
+    if (selected) {
+      const is = (x: { id: string }) => x.id === selected;
+      this.fill([...osm.waterAreas, ...osm.green, ...osm.surfaces, ...osm.pavedAreas].filter(is), SELECTED);
+      this.stroke([...osm.roads, ...osm.railways, ...osm.waterways, ...osm.pavedLines].filter((l) => is(l) && !l.bridge), SELECTED);
+    }
     this.texture.needsUpdate = true;
   }
 

@@ -77,7 +77,8 @@ export function buildPrintModel(
   const show = (layer: Layer) => visible.has(layer);
   // Streets, water, squares, parks and sand, carved into the terrain in steps of the thinnest
   // detail; the terrain then comes carved from there instead.
-  const ground = buildGroundSolids(wasm, data.osm, data.terrain, ring, frame, groundHeight, show, at.minWidth, options.baseMm / mmPerUnit, (f, label) =>
+  // Edited: deleted streets and areas gone, widened ones wider, retyped areas moved.
+  const ground = buildGroundSolids(wasm, applyEdits(data.osm, edits), data.terrain, ring, frame, groundHeight, show, at.minWidth, options.baseMm / mmPerUnit, (f, label) =>
     progress(0.7 * f, label),
   );
   const tile = ground.terrain ? null : buildTerrain(data.terrain, ring, frame, bounds, groundHeight, options.baseMm / mmPerUnit);
@@ -106,13 +107,15 @@ export function buildPrintModel(
       name: 'Buildings',
       color: '#' + COLORS.wall.getHexString(),
       // Buildings replaced by 3D models are models here too.
-      pieces: show('buildings') ? [pick(buildBuildings(edited.buildings, at)), pick(buildModels(data.osm.buildings, edits, at))] : [],
+      pieces: show('buildings') ? [pick(buildBuildings(edited.buildings, at)), pick(buildModels(data.osm, edits, at, 'buildings'))] : [],
     },
     {
       name: 'Bridges and structures',
       color: '#' + COLORS.structure.getHexString(),
       pieces: [
         show('structures') ? pick(buildStructures({ ...data.osm, ...edited }, at)) : null,
+        // Bridges replaced by 3D models.
+        show('structures') ? pick(buildModels(data.osm, edits, at, 'bridges')) : null,
         show('roads') ? pick(buildBridges(edited.roads, at, COLORS.road)) : null,
         show('railways') ? pick(buildBridges(edited.railways, at, COLORS.rail)) : null,
       ],

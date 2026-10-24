@@ -1,38 +1,78 @@
-// 3D models standing in for buildings: a landmark's real shape instead of the OSM
-// approximation, from the user's own file or an openly licensed one found online. Each is
-// fitted to its building automatically: turned upright, its outline seen from above lined up
-// with the building's footprint (the long sides together), scaled evenly to fit inside it,
-// and standing on the lowest ground under it. The building's usual Size and Height edits
-// still apply on top, and Turn and Up edits fix a wrong guess.
+// 3D models standing in for buildings and bridges: a landmark's real shape instead of the
+// OSM approximation, from the user's own file or an openly licensed one found online. Each
+// is fitted to its object automatically: turned upright, its outline seen from above lined
+// up with the object's footprint (the long sides together), scaled evenly to fit inside it,
+// and standing on the lowest ground under it (for a bridge, the river bed). The usual Size
+// and Height edits still apply on top, and Turn and Up edits fix a wrong guess.
 
 import { Color } from 'three';
 import { editKey, type Edits } from '../edits';
 import { modelAssets, type Axis, type ModelAsset, type ModelChoice } from '../model-assets';
+import type { LngLat } from '../geo';
 import type { LocalFrame } from '../local';
-import type { Building } from '../osm';
+import type { OsmData } from '../osm';
 import { COLORS, type PickableMesh, type Placement } from './objects';
 import { MeshBuilder, type Vec3 } from './mesh';
 import { orientedBox } from './roofs';
 
 type P = [number, number];
 
-// The models replacing buildings, one solid per building, keyed like the buildings so they
-// can be picked and edited the same way. `buildings` are the unedited ones: their footprints
-// are what the models fit.
-export function buildModels(buildings: Building[], edits: Edits, at: Placement, only?: string): PickableMesh | null {
+// What a model can stand in for, and its footprint: points on the map it must fit in.
+export type ModelTarget = 'buildings' | 'bridges';
+
+// The footprint of each object a model can replace, by its edit key: a building's parts
+// (its tallest height known or not), a bridge deck's outline, a road or rail bridge's line
+// widened to its width.
+export function footprints(osm: OsmData, which: ModelTarget, only?: string): Map<string, { points: LngLat[]; height?: number; known?: boolean }> {
+  const out = new Map<string, { points: LngLat[]; height?: number; known?: boolean }>();
+  const add = (key: string, points: LngLat[], height?: number, known?: boolean) => {
+    if (only !== undefined && key !== only) return;
+    const f = out.get(key);
+    if (!f) out.set(key, { points: [...points], height, known });
+    else {
+      f.points.push(...points);
+      if (height !== undefined && height > (f.height ?? 0)) Object.assign(f, { height, known });
+    }
+  };
+  if (which === 'buildings') {
+    for (const b of osm.buildings) add(editKey(b), b.outer, b.height, b.heightFrom !== 'estimate');
+  } else {
+    for (const a of osm.structureAreas) if (a.kind === 'bridge') add(a.id, a.outer);
+    for (const l of [...osm.roads, ...osm.railways]) if (l.bridge) add(l.id, widenedLine(l.path, l.width));
+  }
+  return out;
+}
+
+// A line's outline at its width: each point pushed out to both sides (the fit takes the
+// hull, so this is enough).
+function widenedLine(path: LngLat[], width: number): LngLat[] {
+  const out: LngLat[] = [];
+  // Degrees per meter, near enough over a bridge's length.
+  const lat = path[0]?.[1] ?? 0;
+  const kLat = 1 / 111320;
+  const kLng = kLat / Math.cos((lat * Math.PI) / 180);
+  for (let i = 0; i < path.length; i++) {
+    const [a, b] = [path[Math.max(0, i - 1)], path[Math.min(path.length - 1, i + 1)]];
+    const dx = (b[0] - a[0]) / kLng;
+    const dy = (b[1] - a[1]) / kLat;
+    const len = Math.hypot(dx, dy) || 1;
+    const [nx, ny] = [(-dy / len) * (width / 2), (dx / len) * (width / 2)];
+    out.push([path[i][0] + nx * kLng, path[i][1] + ny * kLat], [path[i][0] - nx * kLng, path[i][1] - ny * kLat]);
+  }
+  return out;
+}
+
+// The models replacing objects of one kind, one solid per object, keyed like the objects so
+// they can be picked and edited the same way. `osm` is the unedited data: its footprints are
+// what the models fit.
+export function buildModels(osm: OsmData, edits: Edits, at: Placement, which: ModelTarget, only?: string): PickableMesh | null {
   const m = new MeshBuilder();
   const keys: string[] = [];
-  const parts = new Map<string, Building[]>();
-  for (const b of buildings) {
-    const key = editKey(b);
-    if (only !== undefined && key !== only) continue;
-    const choice = edits.get(key)?.model;
-    if (!choice || edits.get(key)?.deleted || !modelAssets.has(choice.asset)) continue;
-    parts.set(key, [...(parts.get(key) ?? []), b]);
-  }
-  for (const [key, bs] of parts) {
-    const edit = edits.get(key)!;
-    const placed = placeModel(modelAssets.get(edit.model!.asset)!, edit.model!, bs, at, edit.scale ?? 1, edit.heightScale ?? 1);
+  for (const [key, foot] of footprints(osm, which, only)) {
+    const edit = edits.get(key);
+    const asset = edit?.model && modelAssets.get(edit.model.asset);
+    if (!asset || edit.deleted) continue;
+    const placed = placeModel(asset, edit.model!, foot.points, at, edit.scale ?? 1, edit.heightScale ?? 1);
     if (!placed) continue;
     m.owner = keys.push(key) - 1;
     m.ground = placed.ground;
@@ -46,17 +86,17 @@ export function buildModels(buildings: Building[], edits: Edits, at: Placement, 
 
 const MODEL_COLOR = new Color(COLORS.wall);
 
-// The model's triangles in the scene, fitted to the building's parts, and the ground it
-// stands on (scene height).
-function placeModel(asset: ModelAsset, choice: ModelChoice, parts: Building[], at: Placement, size: number, height: number) {
-  const f = fit(asset, choice, parts, at.frame);
+// The model's triangles in the scene, fitted to the footprint, and the ground it stands on
+// (scene height).
+function placeModel(asset: ModelAsset, choice: ModelChoice, points: LngLat[], at: Placement, size: number, height: number) {
+  const f = fit(asset, choice, points, at.frame);
   if (!f) return null;
   const { t, model, target, minY } = f;
   const s = f.scale * size;
   const turn = Math.atan2(target.longAxis[1], target.longAxis[0]) - Math.atan2(model.longAxis[1], model.longAxis[0]) + (choice.turns * Math.PI) / 2;
   const [cos, sin] = [Math.cos(turn), Math.sin(turn)];
   // Standing on the lowest ground under the building, like the building would.
-  const ground = Math.min(...parts.flatMap((b) => b.outer.map((p) => at.elevation(p)))) * at.terrainScale;
+  const ground = points.reduce((low, p) => Math.min(low, at.elevation(p)), Infinity) * at.terrainScale;
   const bottom = ground - (at.sink ?? 0);
   const vertical = s * at.heightScale * height;
   const out = new Float32Array(t.length);
@@ -73,14 +113,14 @@ function placeModel(asset: ModelAsset, choice: ModelChoice, parts: Building[], a
 // How tall the model comes out (meters) once fitted to the building's footprint, before any
 // Size or Height edit: far off the building's known height, the model likely shows more
 // than the building (a whole square scanned around it) or only part of it.
-export function fittedHeight(asset: ModelAsset, choice: ModelChoice, parts: Building[], frame: LocalFrame): number | null {
-  const f = fit(asset, choice, parts, frame);
+export function fittedHeight(asset: ModelAsset, choice: ModelChoice, points: LngLat[], frame: LocalFrame): number | null {
+  const f = fit(asset, choice, points, frame);
   return f && (f.maxY - f.minY) * f.scale;
 }
 
 // The model upright, its outline's fitted rectangle and the footprint's, and the even scale
 // that puts the one inside the other.
-function fit(asset: ModelAsset, choice: ModelChoice, parts: Building[], frame: LocalFrame) {
+function fit(asset: ModelAsset, choice: ModelChoice, points: LngLat[], frame: LocalFrame) {
   const t = upright(asset.triangles, choice.up);
   if (!t.length) return null;
   // The model's outline seen from above, and how tall it is.
@@ -94,8 +134,8 @@ function fit(asset: ModelAsset, choice: ModelChoice, parts: Building[], frame: L
     if ((i / 3) % stride === 0) plan.push([t[i], t[i + 2]]);
   }
   const model = orientedBox(hull(plan));
-  // The footprint: every part's outline, in local meters.
-  const target = orientedBox(hull(parts.flatMap((b) => b.outer.map((p) => frame.toLocal(p)))));
+  // The footprint, in local meters.
+  const target = orientedBox(hull(points.map((p) => frame.toLocal(p))));
   if (!model.halfL || !target.halfL) return null;
   const scale = Math.min(target.halfL / model.halfL, target.halfW / (model.halfW || model.halfL));
   return { t, model, target, minY, maxY, scale };
