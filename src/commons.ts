@@ -40,6 +40,13 @@ export async function findCommonsModels(landmark: { wikidata?: string; name?: st
 
 const order = (m: CommonsModel['match']) => ['wikidata', 'depicts', 'name'].indexOf(m);
 
+// The item's English name: OSM names are local ("Torre di Pisa"), and model sites are
+// searched mostly in English ("Leaning Tower of Pisa" finds three times as many).
+export async function wikidataEnglishName(item: string, signal: AbortSignal): Promise<string | undefined> {
+  const json = await get(WIKIDATA_API, { action: 'wbgetentities', ids: item, props: 'labels', languages: 'en' }, signal);
+  return json.entities?.[item]?.labels?.en?.value;
+}
+
 // The item's "3D model" statements (P4896), as Commons file titles.
 async function wikidataModels(item: string, signal: AbortSignal): Promise<string[]> {
   const json = await get(WIKIDATA_API, { action: 'wbgetclaims', entity: item, property: 'P4896' }, signal);

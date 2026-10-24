@@ -69,7 +69,7 @@ self.onmessage = async (e: MessageEvent<PrintJob>) => {
     next('merge');
     report('write', 0, 'Writing the file');
     // Models found online came with a license asking for credit.
-    const credits = job.models.flatMap((m) => (m.source.kind === 'commons' ? [`3D model "${m.source.title}" by ${m.source.author}, ${m.source.license}, ${m.source.url}`] : []));
+    const credits = job.models.flatMap((m) => (m.source.kind !== 'upload' ? [`3D model "${m.source.title}" by ${m.source.author}, ${m.source.license}, ${m.source.url}`] : []));
     const file = job.kind === 'stl' ? toSTL(merged.model) : to3MF(merged.model, job.name, credits);
     // The unmerged model's size and counts are what the page reports; no need to send its
     // triangles back.

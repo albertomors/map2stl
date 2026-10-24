@@ -112,7 +112,7 @@ nom<!doctype html>
         <p id="object-info" class="hint"></p>
         <label class="slider" id="object-size-row">
           <span>Size (all dimensions)</span><output id="object-size-value"></output>
-          <input id="object-size" type="range" autocomplete="off" min="1" max="4" step="0.1" value="1" />
+          <input id="object-size" type="range" autocomplete="off" min="0.25" max="4" step="0.05" value="1" />
         </label>
         <label class="slider" id="object-height-row">
           <span>Height only</span><output id="object-height-value"></output>
@@ -120,11 +120,28 @@ nom<!doctype html>
         </label>
         <div id="object-model" class="model-box" hidden>
           <button id="object-model-find">Find a 3D model online</button>
+          <form id="model-search-form" class="model-search" role="search" hidden>
+            <input id="model-search" type="search" autocomplete="off" placeholder="Or search by name…" aria-label="Search 3D models by name" />
+            <button>Search</button>
+          </form>
           <ul id="object-model-results" class="model-results" hidden></ul>
+          <div id="sketchfab-login" class="sketchfab-login" hidden>
+            <p class="hint">
+              Sketchfab lets logged-in users download. Paste your API token from
+              <a href="https://sketchfab.com/settings/password" target="_blank" rel="noopener">your Sketchfab settings</a>
+              (Password &amp; API; a free account works). It stays in this browser.
+            </p>
+            <span class="token-row">
+              <input id="sketchfab-token" type="password" autocomplete="off" placeholder="API token" aria-label="Sketchfab API token" />
+              <button id="sketchfab-token-save">Save and download</button>
+            </span>
+          </div>
+          <button id="sketchfab-forget" class="link" hidden>Forget my Sketchfab token</button>
           <button id="object-model-upload">Replace with a 3D model…</button>
           <input id="object-model-file" type="file" accept=".stl,.obj,.glb,.gltf" hidden />
           <div id="object-model-current" hidden>
             <p class="hint">3D model: <span id="object-model-name"></span></p>
+            <p id="object-model-fit" class="hint"></p>
             <div class="actions">
               <button id="object-model-turn" title="Turn the model a quarter turn">Turn 90°</button>
               <button id="object-model-up" title="Try the next axis as up, if it lies on its side">Stand up</button>

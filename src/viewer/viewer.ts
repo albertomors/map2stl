@@ -34,11 +34,11 @@ import type { PrintModel, ThinObjects } from '../export';
 import { clipObjects, clipToSelection } from '../clip';
 import { applyEdits, editedTrees, editKey, type Edits, type ObjectEdit } from '../edits';
 import type { LngLat } from '../geo';
-import type { OsmData } from '../osm';
+import type { Building, OsmData } from '../osm';
 import { GroundTexture } from './ground';
 import { buildBridges, buildBuildings, buildStructures, buildTrees, COLORS, TREE_HEIGHT_M, type PickableMesh, type Placement } from './objects';
-import { modelAssets } from '../model-assets';
-import { buildModels } from './models';
+import { modelAssets, type Axis, type ModelAsset } from '../model-assets';
+import { buildModels, fittedHeight } from './models';
 import { prepareScene } from './scene';
 import { buildTerrain } from './terrain-mesh';
 
@@ -55,6 +55,9 @@ export interface ObjectPick {
   canModel: boolean;
   model?: string;
   landmark?: { wikidata?: string; name?: string };
+  // The model's height fitted to the footprint, against the building's (meters), and
+  // whether OSM's height is real (tagged or from floors) rather than estimated.
+  modelFit?: { height: number; building: number; known: boolean };
 }
 
 export interface ViewScales {
@@ -210,6 +213,24 @@ export class Viewer {
       mesh.matrix.copy(model.toScene);
       this.print.add(mesh);
     }
+  }
+
+  // Which way is up for a new model of this building: the file's own up axis, unless
+  // another makes it come out much closer to the building's known height (a model lying on
+  // its side comes out as tall as the building is wide).
+  suggestModelUp(key: string, asset: ModelAsset): Axis {
+    const parts = this.data?.osm.buildings.filter((b) => editKey(b) === key) ?? [];
+    const frame = this.placement?.frame;
+    const tallest = parts.reduce<Building | null>((a, b) => (!a || b.height > a.height ? b : a), null);
+    if (!frame || !tallest || tallest.heightFrom === 'estimate') return asset.up;
+    // How far off (as a ratio, 1 = exact) each axis comes out.
+    const off = (up: Axis) => {
+      const h = fittedHeight(asset, { asset: asset.id, up, turns: 0 }, parts, frame);
+      return h ? Math.max(h / tallest.height, tallest.height / h) : Infinity;
+    };
+    const best = (['x', 'y', 'z'] as const).reduce((a, b) => (off(b) < off(a) ? b : a), asset.up);
+    // Only when clearly better: the file's own convention usually holds.
+    return off(best) * 1.3 < off(asset.up) ? best : asset.up;
   }
 
   // Switches the print preview between one color for all parts and each part's own.
@@ -416,9 +437,13 @@ export class Viewer {
           });
           if (!saved.length) return null;
           pos.needsUpdate = true;
+          // Picking caches the mesh's bounds: computed now, with the object collapsed, they'd
+          // miss it forever after (a model alone in its mesh would never be clickable again).
+          mesh.geometry.boundingSphere = mesh.geometry.boundingBox = null;
           return () => {
             for (const [at, values] of saved) array.set(values, at);
             pos.needsUpdate = true;
+            mesh.geometry.boundingSphere = mesh.geometry.boundingBox = null;
           };
         },
       });
@@ -568,10 +593,14 @@ export class Viewer {
       const count = parts.length > 1 ? ` · ${parts.length} parts` : '';
       const title = parts[0].groupName ?? parts.find((b) => b.name)?.name ?? 'Unnamed building';
       const choice = this.edits.get(key)?.model;
-      const model = choice && modelAssets.get(choice.asset)?.source.title;
+      const asset = choice && modelAssets.get(choice.asset);
+      const model = asset?.source.title;
+      const frame = this.placement?.frame;
+      const fitted = asset && choice && frame ? fittedHeight(asset, choice, parts, frame) : null;
+      const modelFit = fitted ? { height: fitted, building: tallest.height, known: tallest.heightFrom !== 'estimate' } : undefined;
       const wikidata = parts[0].groupWikidata ?? parts.find((b) => b.wikidata)?.wikidata;
       const name = parts[0].groupName ?? parts.find((b) => b.name)?.name;
-      return { key, title, info: `${m(tallest.height)} (${from}) · ${roof}${count}`, canSize: true, canHeight: true, canModel: true, model, landmark: { wikidata, name } };
+      return { key, title, info: `${m(tallest.height)} (${from}) · ${roof}${count}`, canSize: true, canHeight: true, canModel: true, model, landmark: { wikidata, name }, modelFit };
     }
     const area = osm.structureAreas.find((s) => s.id === key);
     // A bridge deck spans between banks: resizing it would lift it off them.

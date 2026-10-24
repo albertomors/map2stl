@@ -8,6 +8,7 @@
 import { Color } from 'three';
 import { editKey, type Edits } from '../edits';
 import { modelAssets, type Axis, type ModelAsset, type ModelChoice } from '../model-assets';
+import type { LocalFrame } from '../local';
 import type { Building } from '../osm';
 import { COLORS, type PickableMesh, type Placement } from './objects';
 import { MeshBuilder, type Vec3 } from './mesh';
@@ -48,25 +49,10 @@ const MODEL_COLOR = new Color(COLORS.wall);
 // The model's triangles in the scene, fitted to the building's parts, and the ground it
 // stands on (scene height).
 function placeModel(asset: ModelAsset, choice: ModelChoice, parts: Building[], at: Placement, size: number, height: number) {
-  const t = upright(asset.triangles, choice.up);
-  if (!t.length) return null;
-  // The model's outline seen from above, and how tall it is.
-  let minY = Infinity;
-  let maxY = -Infinity;
-  const plan: P[] = [];
-  const stride = Math.max(1, Math.floor(t.length / 3 / 20000));
-  for (let i = 0; i < t.length; i += 3) {
-    minY = Math.min(minY, t[i + 1]);
-    maxY = Math.max(maxY, t[i + 1]);
-    if ((i / 3) % stride === 0) plan.push([t[i], t[i + 2]]);
-  }
-  const model = orientedBox(hull(plan));
-  // The footprint: every part's outline, in local meters.
-  const foot = hull(parts.flatMap((b) => b.outer.map((p) => at.frame.toLocal(p))));
-  const target = orientedBox(foot);
-  if (!model.halfL || !target.halfL) return null;
-  // Evenly, to fit inside the footprint; then the building's Size edit.
-  const s = Math.min(target.halfL / model.halfL, target.halfW / (model.halfW || model.halfL)) * size;
+  const f = fit(asset, choice, parts, at.frame);
+  if (!f) return null;
+  const { t, model, target, minY } = f;
+  const s = f.scale * size;
   const turn = Math.atan2(target.longAxis[1], target.longAxis[0]) - Math.atan2(model.longAxis[1], model.longAxis[0]) + (choice.turns * Math.PI) / 2;
   const [cos, sin] = [Math.cos(turn), Math.sin(turn)];
   // Standing on the lowest ground under the building, like the building would.
@@ -82,6 +68,37 @@ function placeModel(asset: ModelAsset, choice: ModelChoice, parts: Building[], a
     out[i + 2] = target.center[1] + x * sin + z * cos;
   }
   return { triangles: out, ground };
+}
+
+// How tall the model comes out (meters) once fitted to the building's footprint, before any
+// Size or Height edit: far off the building's known height, the model likely shows more
+// than the building (a whole square scanned around it) or only part of it.
+export function fittedHeight(asset: ModelAsset, choice: ModelChoice, parts: Building[], frame: LocalFrame): number | null {
+  const f = fit(asset, choice, parts, frame);
+  return f && (f.maxY - f.minY) * f.scale;
+}
+
+// The model upright, its outline's fitted rectangle and the footprint's, and the even scale
+// that puts the one inside the other.
+function fit(asset: ModelAsset, choice: ModelChoice, parts: Building[], frame: LocalFrame) {
+  const t = upright(asset.triangles, choice.up);
+  if (!t.length) return null;
+  // The model's outline seen from above, and how tall it is.
+  let minY = Infinity;
+  let maxY = -Infinity;
+  const plan: P[] = [];
+  const stride = Math.max(1, Math.floor(t.length / 3 / 20000));
+  for (let i = 0; i < t.length; i += 3) {
+    minY = Math.min(minY, t[i + 1]);
+    maxY = Math.max(maxY, t[i + 1]);
+    if ((i / 3) % stride === 0) plan.push([t[i], t[i + 2]]);
+  }
+  const model = orientedBox(hull(plan));
+  // The footprint: every part's outline, in local meters.
+  const target = orientedBox(hull(parts.flatMap((b) => b.outer.map((p) => frame.toLocal(p)))));
+  if (!model.halfL || !target.halfL) return null;
+  const scale = Math.min(target.halfL / model.halfL, target.halfW / (model.halfW || model.halfL));
+  return { t, model, target, minY, maxY, scale };
 }
 
 // The file's triangles turned so `up` points up (+y), as rotations only, so faces keep

@@ -11,7 +11,9 @@ import { DataPreview, LAYER_COLORS } from './preview';
 import { setupSearch } from './search';
 import { describe, loadSelection, saveSelection, type Selection, type ShapeKind } from './selection';
 import type { CommonsModel } from './commons';
-import { modelAssets, type ModelAsset, type ModelChoice } from './model-assets';
+import type { SketchfabModel } from './sketchfab';
+import { modelAssets, type ModelAsset, type ModelChoice, type ModelSource } from './model-assets';
+import type { ModelJob, ModelResult } from './model-worker';
 import type { ObjectPick, Viewer, ViewScales } from './viewer/viewer';
 import type { Edits } from './edits';
 import type { ThinObjects } from './export';
@@ -119,6 +121,7 @@ for (const [id, field] of [['object-size', 'scale'], ['object-height', 'heightSc
     if (!picked) return;
     edits.set(picked.key, { ...edits.get(picked.key), [field]: Number($<HTMLInputElement>(id).value) });
     showPickValues();
+    showModelFit(picked);
     showEditsSummary();
     viewer?.previewEdit(edits.get(picked.key));
   });
@@ -139,55 +142,125 @@ $('object-model-file').addEventListener('change', async () => {
   const status = $('object-model-status');
   status.textContent = `Reading ${file.name}…`;
   try {
-    const { readModelFile } = await import('./model-files');
-    useModel(key, await readModelFile(file));
+    useModel(key, await readModelInWorker(await file.arrayBuffer(), file.name, { kind: 'upload', title: file.name }));
     status.textContent = '';
   } catch (err) {
     status.textContent = `Couldn't use ${file.name}: ${(err as Error).message}`;
   }
 });
-// Openly licensed models of the landmark on Wikimedia Commons (see commons.ts).
+// Openly licensed models of the landmark online: Wikimedia Commons first (its matches are
+// exact: the landmark's own Wikidata model), then Sketchfab's much bigger catalog by name.
+// Every result shows its license; NonCommercial and ShareAlike ones are marked, not hidden.
 let modelSearch: AbortController | null = null;
-$('object-model-find').addEventListener('click', async () => {
-  if (!picked) return;
-  const { key, landmark } = picked;
+$('object-model-find').addEventListener('click', () => picked && searchModels(picked.key, { landmark: picked.landmark ?? {} }));
+// Or by hand: whatever the user types, on both sites.
+$('model-search-form').addEventListener('submit', (e) => {
+  e.preventDefault();
+  const query = $<HTMLInputElement>('model-search').value.trim();
+  if (picked && query) searchModels(picked.key, { query });
+});
+
+// Searches both sites for the selected building: by its landmark (its Wikidata model and
+// names, English first) or by a query typed in.
+async function searchModels(key: string, by: { landmark: { wikidata?: string; name?: string } } | { query: string }) {
   const status = $('object-model-status');
   const list = $('object-model-results');
   modelSearch?.abort();
   const search = (modelSearch = new AbortController());
   list.hidden = true;
-  status.textContent = 'Searching Wikimedia Commons…';
-  try {
-    const { findCommonsModels } = await import('./commons');
-    const found = await findCommonsModels(landmark ?? {}, search.signal);
-    if (search !== modelSearch || picked?.key !== key) return;
-    status.textContent = found.length
-      ? 'Openly licensed models on Wikimedia Commons. Check that it is this building before using one.'
-      : `No openly licensed 3D model of ${landmark?.name ?? 'this building'} on Wikimedia Commons. You can use your own file instead.`;
-    list.replaceChildren(
-      ...found.map((m) => {
-        const li = document.createElement('li');
-        const name = document.createElement('a');
-        name.href = m.pageUrl;
-        name.target = '_blank';
-        name.rel = 'noopener';
-        name.textContent = m.name;
-        const meta = document.createElement('span');
-        meta.className = 'meta';
-        const how = { wikidata: 'its Wikidata model', depicts: 'depicts it', name: 'name match' }[m.match];
-        meta.textContent = `${m.license} · ${m.author} · ${formatBytes(m.bytes)} · ${how}`;
-        const use = document.createElement('button');
-        use.textContent = 'Use';
-        use.addEventListener('click', () => useCommonsModel(key, m));
-        li.append(name, use, meta);
-        return li;
-      }),
-    );
-    list.hidden = !found.length;
-  } catch (err) {
-    if (search.signal.aborted) return;
-    status.textContent = `The search failed: ${(err as Error).message}`;
+  $('sketchfab-login').hidden = true;
+  $('model-search-form').hidden = false;
+  status.textContent = 'Searching Wikimedia Commons and Sketchfab…';
+  const [{ findCommonsModels, wikidataEnglishName }, { searchSketchfabNames }] = await Promise.all([import('./commons'), import('./sketchfab')]);
+  const landmark = 'landmark' in by ? by.landmark : { name: by.query };
+  // Sketchfab by name: the English one first (from Wikidata), then the local one from OSM.
+  const names = async () => {
+    const english = landmark.wikidata ? await wikidataEnglishName(landmark.wikidata, search.signal).catch(() => undefined) : undefined;
+    return [...new Set([english, landmark.name].filter((n): n is string => !!n))];
+  };
+  const searched = await names();
+  // The names searched, in the box: to refine by hand.
+  $<HTMLInputElement>('model-search').value = searched[0] ?? '';
+  // One failing source doesn't hide the other's results.
+  const [commons, sketchfab] = await Promise.all([
+    findCommonsModels(landmark, search.signal).catch(() => null),
+    (searched.length ? searchSketchfabNames(searched, search.signal) : Promise.resolve([])).catch(() => null),
+  ]);
+  if (search !== modelSearch || picked?.key !== key) return;
+  const rows = [
+    ...(commons ?? []).map((m) =>
+      resultRow({ source: 'Wikimedia Commons', name: m.name, pageUrl: m.pageUrl, license: m.license, restricted: false, author: m.author, size: formatBytes(m.bytes), how: { wikidata: 'its Wikidata model', depicts: 'depicts it', name: 'name match' }[m.match] }, (row) => useCommonsModel(key, m, row)),
+    ),
+    ...(sketchfab ?? []).map((m) =>
+      resultRow({ source: 'Sketchfab', name: m.name, pageUrl: m.pageUrl, license: m.license, restricted: m.restricted, author: m.author, size: m.bytes ? formatBytes(m.bytes) : '', how: m.faces ? `${m.faces.toLocaleString()} triangles` : '', thumbnail: m.thumbnail }, (row) => useSketchfabModel(key, m, row)),
+    ),
+  ];
+  const failed = [commons === null && 'Wikimedia Commons', sketchfab === null && 'Sketchfab'].filter(Boolean).join(' and ');
+  const what = 'query' in by ? `"${by.query}"` : (landmark.name ?? 'this building');
+  status.textContent = rows.length
+    ? `Check that it's ${'query' in by ? (picked?.title ?? 'this building') : what} before using one. NonCommercial and ShareAlike licenses are highlighted: how you use the print is up to you.${failed ? ` (${failed} didn't answer.)` : ''}`
+    : failed
+      ? `The search failed: ${failed} didn't answer.`
+      : searched.length || landmark.wikidata
+        ? `No downloadable 3D model found for ${what}. Try other words in the box, or use your own file.`
+        : 'This building has no name or Wikidata tag in OpenStreetMap to search by: type what it is in the box, or use your own file.';
+  list.replaceChildren(...rows);
+  list.hidden = !rows.length;
+  showSketchfabForget();
+}
+
+// One search result: thumbnail (if any), name linking to its page, license and the rest.
+function resultRow(
+  r: { source: string; name: string; pageUrl: string; license: string; restricted: boolean; author: string; size: string; how: string; thumbnail?: string },
+  use: (row: HTMLLIElement) => void,
+): HTMLLIElement {
+  const li = document.createElement('li');
+  if (r.thumbnail) {
+    li.classList.add('with-thumb');
+    const img = document.createElement('img');
+    img.src = r.thumbnail;
+    img.alt = '';
+    img.loading = 'lazy';
+    li.append(img);
   }
+  const name = document.createElement('a');
+  name.href = r.pageUrl;
+  name.target = '_blank';
+  name.rel = 'noopener';
+  name.textContent = r.name;
+  const button = document.createElement('button');
+  button.textContent = 'Use';
+  button.addEventListener('click', () => use(li));
+  const meta = document.createElement('span');
+  meta.className = 'meta';
+  const source = document.createElement('span');
+  source.className = 'source';
+  source.textContent = `${r.source} · `;
+  const license = document.createElement('span');
+  license.className = r.restricted ? 'restricted' : '';
+  license.textContent = r.license;
+  meta.append(source, license, ` · ${[r.author, r.size, r.how].filter(Boolean).join(' · ')}`);
+  li.append(name, button, meta);
+  return li;
+}
+
+// Sketchfab downloads need the user's own account: their API token, asked for once.
+let pendingSketchfab: (() => void) | null = null;
+$('sketchfab-token-save').addEventListener('click', async () => {
+  const token = $<HTMLInputElement>('sketchfab-token').value.trim();
+  if (!token) return;
+  const { setSketchfabToken } = await import('./sketchfab');
+  setSketchfabToken(token);
+  $<HTMLInputElement>('sketchfab-token').value = '';
+  $('sketchfab-login').hidden = true;
+  pendingSketchfab?.();
+  pendingSketchfab = null;
+});
+$('sketchfab-forget').addEventListener('click', async () => {
+  const { setSketchfabToken } = await import('./sketchfab');
+  setSketchfabToken(null);
+  showSketchfabForget();
+  $('object-model-status').textContent = 'Your Sketchfab token is no longer kept in this browser.';
 });
 const AXES = ['y', 'z', 'x'] as const;
 $('object-model-turn').addEventListener('click', () => changeModel((m) => ({ ...m, turns: (m.turns + 1) % 4 })));
@@ -206,7 +279,13 @@ $('object-reset').addEventListener('click', () => {
   showEditsSummary();
 });
 $('restore-deleted').addEventListener('click', () => {
-  for (const [key, edit] of edits) if (edit.deleted) edits.delete(key);
+  // Back as they were before: size, height and 3D model kept through the delete.
+  for (const [key, edit] of edits) {
+    if (!edit.deleted) continue;
+    const { deleted: _, ...rest } = edit;
+    if (Object.keys(rest).length) edits.set(key, rest);
+    else edits.delete(key);
+  }
   viewer?.setEdits(edits);
   showEditsSummary();
 });
@@ -557,7 +636,8 @@ function showScales() {
 
 function deletePicked() {
   if (!picked) return;
-  edits.set(picked.key, { deleted: true });
+  // The other edits stay, for Restore deleted.
+  edits.set(picked.key, { ...edits.get(picked.key), deleted: true });
   viewer?.setEdits(edits);
   viewer?.select(null);
   showEditsSummary();
@@ -580,35 +660,132 @@ function showPick(pick: ObjectPick | null) {
     shownModelKey = pick.key;
     modelSearch?.abort();
     $('object-model-results').hidden = true;
+    $('sketchfab-login').hidden = true;
+    pendingSketchfab = null;
+    $<HTMLInputElement>('model-search').value = '';
+    $('model-search-form').hidden = true;
     $('object-model-status').textContent = '';
   }
   $('object-model').hidden = !pick.canModel;
   $('object-model-current').hidden = !pick.model;
   $('object-model-name').textContent = pick.model ?? '';
+  showModelFit(pick);
   $('object-model-upload').textContent = pick.model ? 'Use another 3D model…' : 'Replace with a 3D model…';
   showPickValues();
 }
 
+// Model files are read in a worker (model-worker.ts): a big scan takes seconds.
+function readModelInWorker(data: ArrayBuffer, name: string, source: ModelSource): Promise<ModelAsset> {
+  const worker = new Worker(new URL('./model-worker.ts', import.meta.url), { type: 'module' });
+  return new Promise((resolve, reject) => {
+    worker.onmessage = (e: MessageEvent<ModelResult>) => {
+      worker.terminate();
+      if (e.data.ok) resolve(e.data.asset);
+      else reject(new Error(e.data.message));
+    };
+    worker.onerror = (e) => {
+      worker.terminate();
+      reject(new Error(e.message || 'reading the file stopped'));
+    };
+    const job: ModelJob = { data, name, source };
+    worker.postMessage(job, [data]);
+  });
+}
+
 function useModel(key: string, asset: ModelAsset) {
   modelAssets.set(asset.id, asset);
-  edits.set(key, { ...edits.get(key), model: { asset: asset.id, up: asset.up, turns: 0 } });
+  edits.set(key, { ...edits.get(key), model: { asset: asset.id, up: viewer?.suggestModelUp(key, asset) ?? asset.up, turns: 0 } });
   refreshModel(key);
 }
 
-async function useCommonsModel(key: string, m: CommonsModel) {
+async function showSketchfabForget() {
+  const { sketchfabToken } = await import('./sketchfab');
+  $('sketchfab-forget').hidden = !sketchfabToken();
+}
+
+async function useSketchfabModel(key: string, m: SketchfabModel, row: HTMLLIElement) {
+  const { sketchfabToken, setSketchfabToken, downloadSketchfab, TokenRejected } = await import('./sketchfab');
   const status = $('object-model-status');
-  status.textContent = `Downloading ${m.name} (${formatBytes(m.bytes)})…`;
+  const token = sketchfabToken();
+  if (!token) {
+    pendingSketchfab = () => useSketchfabModel(key, m, row);
+    $('sketchfab-login').hidden = false;
+    $('sketchfab-login').scrollIntoView({ block: 'nearest' });
+    $<HTMLInputElement>('sketchfab-token').focus();
+    status.textContent = `To download ${m.name}, Sketchfab needs you logged in.`;
+    return;
+  }
+  status.textContent = '';
+  const bar = modelProgress(row);
   try {
-    const res = await fetch(m.url);
-    if (!res.ok) throw new Error(`Commons answered ${res.status}`);
-    const { readModel } = await import('./model-files');
+    const file = await downloadSketchfab(m.uid, token, bar.bytes);
+    bar.reading();
+    const source = { kind: 'sketchfab' as const, title: m.name, url: m.pageUrl, license: m.license, author: m.author };
+    useModel(key, await readModelInWorker(file.data, file.name, source));
+    $('object-model-results').hidden = true;
+    status.textContent = `${m.license} by ${m.author}: the export credits it.`;
+    showSketchfabForget();
+  } catch (err) {
+    if (err instanceof TokenRejected) {
+      // A wrong or revoked token: forget it and ask again.
+      setSketchfabToken(null);
+      pendingSketchfab = () => useSketchfabModel(key, m, row);
+      $('sketchfab-login').hidden = false;
+      $('sketchfab-login').scrollIntoView({ block: 'nearest' });
+      status.textContent = 'Sketchfab didn\'t accept that token. Paste it again (Password & API in your Sketchfab settings).';
+      showSketchfabForget();
+      return;
+    }
+    status.textContent = `Couldn't use ${m.name}: ${(err as Error).message}`;
+  } finally {
+    bar.end();
+  }
+}
+
+async function useCommonsModel(key: string, m: CommonsModel, row: HTMLLIElement) {
+  const status = $('object-model-status');
+  status.textContent = '';
+  const bar = modelProgress(row);
+  try {
+    const { fetchWithProgress } = await import('./sketchfab');
+    const data = await fetchWithProgress(m.url, bar.bytes);
+    bar.reading();
     const source = { kind: 'commons' as const, title: m.name, url: m.pageUrl, license: m.license, author: m.author };
-    useModel(key, await readModel(await res.arrayBuffer(), m.title, source));
+    useModel(key, await readModelInWorker(data, m.title, source));
     $('object-model-results').hidden = true;
     status.textContent = `${m.license} by ${m.author}: the export credits it.`;
   } catch (err) {
     status.textContent = `Couldn't use ${m.name}: ${(err as Error).message}`;
+  } finally {
+    bar.end();
   }
+}
+
+// A bar inside the clicked result while its model downloads (then reads, in the
+// background): right where the click was, even far down a scrolled list.
+let progressRows = 0;
+function modelProgress(row: HTMLLIElement) {
+  const id = `model-progress-${++progressRows}`;
+  const bar = document.createElement('div');
+  bar.className = 'progress';
+  bar.id = id;
+  bar.innerHTML = '<div class="progress-head"><span class="progress-label">Downloading</span><span class="progress-text"></span></div><div class="bar"><div></div></div><p class="progress-note"></p>';
+  row.append(bar);
+  const button = row.querySelector('button')!;
+  button.disabled = true;
+  setBar(id, '', null, '');
+  bar.scrollIntoView({ block: 'nearest' });
+  return {
+    bytes: (bytes: number, total?: number) => setBar(id, total ? `${formatBytes(bytes)} of ${formatBytes(total)}` : formatBytes(bytes), total ? bytes / total : null, ''),
+    reading: () => {
+      bar.querySelector('.progress-label')!.textContent = 'Reading';
+      setBar(id, '', null, 'Big models are simplified to what a print can hold.');
+    },
+    end: () => {
+      bar.remove();
+      button.disabled = false;
+    },
+  };
 }
 
 function changeModel(change: (m: ModelChoice) => ModelChoice) {
@@ -623,6 +800,43 @@ function refreshModel(key: string) {
   viewer?.setEdits(edits);
   viewer?.select(key);
   showEditsSummary();
+}
+
+// How the model came out fitted to the footprint, against the building's height: far off,
+// it likely shows more than this building (a whole square) or only part of it.
+const FIT_TOLERANCE = 1.6;
+function showModelFit(pick: ObjectPick) {
+  const line = $('object-model-fit');
+  const f = pick.modelFit;
+  line.classList.remove('warning');
+  line.replaceChildren();
+  if (!f) return;
+  const m = (v: number) => `${Math.round(v)} m`;
+  // As it stands now: fitted, then Size and Height.
+  const e = edits.get(pick.key);
+  const height = f.height * (e?.scale ?? 1) * (e?.heightScale ?? 1);
+  const off = Math.max(height / f.building, f.building / height) > FIT_TOLERANCE;
+  if (f.known && off) {
+    line.classList.add('warning');
+    const why =
+      height < f.building
+        ? 'its outline seen from above is wider than the building: a base or a square around it, a lean, or a whole scene'
+        : 'it may show only part of the building, or something else';
+    line.append(`It's ${m(height)} tall, but this building is ${m(f.building)}: ${why}. `);
+    // One click to the building's height (Size scales it evenly, so the footprint follows).
+    const fix = document.createElement('button');
+    fix.className = 'link';
+    fix.textContent = `Make it ${m(f.building)} tall`;
+    fix.addEventListener('click', () => {
+      const now = edits.get(pick.key);
+      if (!now) return;
+      edits.set(pick.key, { ...now, scale: Math.round((f.building / f.height) * 100) / 100, heightScale: 1 });
+      refreshModel(pick.key);
+    });
+    line.append(fix, ', or try another model.');
+  } else {
+    line.append(`${m(height)} tall (OpenStreetMap ${f.known ? 'says' : 'estimates'} ${m(f.building)}).`);
+  }
 }
 
 function showPickValues() {
@@ -830,6 +1044,13 @@ async function downloadModel() {
     button.disabled = false;
   }
 }
+
+// The cards at the top right stop above the export card, however tall it gets (a warning,
+// the progress bar): its height, kept in a CSS variable.
+new ResizeObserver(() => {
+  const card = $('export');
+  document.body.style.setProperty('--export-space', card.hidden ? '0px' : `${card.offsetHeight + 12}px`);
+}).observe($('export'));
 
 // The export card floats over the 3D view, and only once the detailed data is in: the quick
 // tile data has no roofs, trees or walls and isn't worth printing.

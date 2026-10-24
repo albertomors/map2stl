@@ -444,6 +444,19 @@ dd {
   margin-top: 12px;
 }
 
+/* A model downloading, inside its row in the results. */
+.model-results .progress {
+  grid-column: 1 / -1;
+}
+
+.model-search[hidden] {
+  display: none;
+}
+
+#object-model-fit.warning {
+  margin-top: 6px;
+}
+
 #data-progress {
   display: flex;
   flex-direction: column;
@@ -623,6 +636,76 @@ body.mode-3d .map-only {
   border-top: 1px solid var(--border);
 }
 
+.model-results li.with-thumb {
+  grid-template-columns: 56px 1fr auto;
+}
+
+.model-results img {
+  grid-row: 1 / span 2;
+  width: 56px;
+  height: 42px;
+  object-fit: cover;
+  border-radius: 4px;
+}
+
+.model-results .source {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+
+.model-results .restricted {
+  color: var(--warn-fg);
+  font-weight: 600;
+}
+
+.model-search {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.model-search input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 6px;
+}
+
+.sketchfab-login {
+  margin-top: 6px;
+}
+
+.token-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.token-row input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  font-size: 13px;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 6px;
+}
+
+#sketchfab-forget {
+  margin-top: 4px;
+  font-size: 12px;
+}
+
 .model-results .meta {
   grid-column: 1;
   color: var(--muted);
@@ -631,8 +714,13 @@ body.mode-3d .map-only {
 
 .model-results button {
   grid-row: 1 / span 2;
-  grid-column: 2;
+  grid-column: -2;
   padding: 4px 10px;
+}
+
+.model-results li.with-thumb .meta,
+.model-results li.with-thumb a {
+  grid-column: 2;
 }
 
 #object-model-current .actions {
@@ -674,8 +762,9 @@ button.link:disabled {
   right: 12px;
   z-index: 4;
   width: 300px;
-  /* Leaves room for the export card below; scrolls on short screens. */
-  max-height: calc(100% - 320px);
+  /* Leaves room for the export card below (its height, measured: see main.ts); scrolls when
+     the selected object's card is long. */
+  max-height: calc(100% - 24px - var(--export-space, 308px));
   overflow-y: auto;
   display: flex;
   flex-direction: column;

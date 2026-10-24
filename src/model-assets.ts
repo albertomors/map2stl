@@ -6,7 +6,7 @@ export type Axis = 'x' | 'y' | 'z';
 
 // Where a model came from, for the panel and for the credit in the export.
 export interface ModelSource {
-  kind: 'upload' | 'commons';
+  kind: 'upload' | 'commons' | 'sketchfab';
   title: string;
   url?: string;
   license?: string;

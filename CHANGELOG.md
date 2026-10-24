@@ -7,6 +7,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Sketchfab in the 3D model search, next to Wikimedia Commons: a much bigger catalog (the
+  Leaning Tower of Pisa has a dozen downloadable models). Searching needs no account; using
+  a model asks once for your Sketchfab API token (a free account works), kept in this
+  browser, with a link to forget it. Every result shows a thumbnail, its license, author,
+  size and triangle count; NonCommercial and ShareAlike licenses are highlighted, not
+  hidden. Landmarks are searched by their English name (from Wikidata) as well as the local
+  one from OSM, which finds many more.
+- Models come as zipped glTF too (as Sketchfab sends them). Textures are skipped (a print
+  doesn't use them), and models over 300,000 triangles are simplified, so a laser scan
+  loads in seconds. Files are read in the background: the page doesn't freeze.
+- A search box, shown once "Find a 3D model online" has run, to search both sites by hand:
+  it holds the name the automatic search used, to refine.
+- A progress bar in the result you clicked while its model downloads (the real size, not
+  the one Sketchfab lists), then reads.
+- How tall a model comes out, against the building's height in OpenStreetMap. Where that
+  height is real and the two differ a lot, a warning says why it may be (a base or square
+  around it, a lean, a whole scene) with a one-click "Make it N m tall".
+- A model lying on its side stands up by itself: of its three axes, the one that makes it
+  closest to the building's known height is up (the file's own unless another is clearly
+  better). Stand up still cycles them by hand.
+- Size goes down to ×0.25, for models that come out too big.
+
+### Fixed
+
+- A building replaced by a 3D model can be selected again (to resize, replace or delete
+  it): its bounds were cached while it was hidden for the selection, and clicks missed it.
+- Delete, then Restore deleted, brings an object back as it was: size, height and 3D model
+  are kept through the delete.
+- The selected object's card no longer runs under the Export card: the cards at the top
+  right stop above it, however tall it gets, and scroll.
+
 ## [0.6.0] - 2026-10-24
 
 Landmarks as real 3D models: your own file, or an openly licensed one found on Wikimedia
