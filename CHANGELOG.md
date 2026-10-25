@@ -63,12 +63,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   selected and deleted.
 - Steep ground prints as rock, its own part in a 3MF (gray, like the 3D view's relief
   shading), so it can take its own filament.
-- National LiDAR terrain where a country publishes it: Norway first, Kartverket's height
-  model (about 1 m, CC BY 4.0), asked for at the detail the print can use (about 1–2.5 m
+- National LiDAR terrain where a country publishes it in a form a browser can load: Norway
+  (Kartverket, CC BY 4.0), the Netherlands (AHN, CC0), England (the Environment Agency's
+  LiDAR composite, Open Government Licence) and the US (USGS 3DEP, public domain; LiDAR
+  over most of it, coarser elsewhere), about 0.5–1 m, asked for at the detail the print can use (about 1–2.5 m
   depending on the area's size) and fitted into the same grid as the worldwide tiles, which
   fill anything it doesn't cover. Ridges, gullies and rock faces come out sharp instead of
   rounded. The data panel names the terrain's source and spacing, and the export credits it.
-- Forests as tall as they really are, where the LiDAR has the surface model too (Norway):
+- Forests as tall as they really are, where the LiDAR has the surface model too (Norway,
+  the Netherlands, England):
   each crown takes the measured height of the trees under it, and where nothing as tall as
   a tree stands, the wood opens into a clearing, its edge sloping and lined with trees like
   the wood's outline. Elsewhere the canopy stays at 15 m.
