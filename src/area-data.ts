@@ -2,8 +2,8 @@
 // The output of milestone 2 and the input of the 3D viewer.
 
 import { depthAt, fetchBathymetry, type Bathymetry } from './bathymetry';
-import { forestTrees, FOREST_SPACING_M } from './forest';
-import { centroid, distance, intersectsRing, pathLength, type LngLat } from './geo';
+import { forestAreas } from './forest';
+import { centroid, distance, intersectsRing, pathLength, ringArea, type LngLat } from './geo';
 import { buildQuery, parse, type OsmData } from './osm';
 import { overpass, type OverpassElement } from './overpass';
 import { describe, type Selection } from './selection';
@@ -263,11 +263,13 @@ export function summarize({ osm, detail }: AreaData): LayerSummary[] {
     { layer: 'green', label: 'Green areas', count: osm.green.length, detail: kinds(osm.green) },
     { layer: 'surfaces', label: 'Sand, rock, glacier', count: osm.surfaces.length, detail: kinds(osm.surfaces) },
     (() => {
-      // Forests' trees count too: a wooded island has trees though OSM maps none one by one.
-      const forest = forestTrees(osm, FOREST_SPACING_M).length;
+      // Forests count too: a wooded island has trees though OSM maps none one by one.
+      const woods = forestAreas(osm);
       const single = osm.trees.length;
-      const detail = forest ? (single ? `${single.toLocaleString()} mapped, ${forest.toLocaleString()} in forests` : 'in forests') : '';
-      return { layer: 'trees' as const, label: 'Trees', count: single + forest, detail };
+      const m2 = woods.reduce((n, a) => n + ringArea(a.outer) - a.holes.reduce((h, r) => h + ringArea(r), 0), 0);
+      const forest = woods.length ? `${woods.length} ${woods.length === 1 ? 'forest' : 'forests'}, ${m2 >= 1e4 ? `${(m2 / 1e4).toFixed(1)} ha` : `${Math.round(m2)} m²`}` : '';
+      const detail = [single && `${single.toLocaleString()} single`, forest].filter(Boolean).join(', ');
+      return { layer: 'trees' as const, label: 'Trees & forests', count: single + woods.length, detail };
     })(),
   ];
 }

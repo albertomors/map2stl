@@ -7,9 +7,9 @@ import type { AreaData, Layer } from './area-data';
 import { clipObjects } from './clip';
 import { applyEdits, editedTrees, type Edits } from './edits';
 import type { Wasm } from './merge';
-import { FOREST_SPACING_M, forestTrees } from './forest';
-import { pointInRing } from './geo';
+import { buildCanopy, canopySolid } from './forest';
 import { buildGroundSolids } from './print-ground';
+import { elevationAt } from './terrain';
 import { buildModels } from './viewer/models';
 import { buildBridges, buildBuildings, buildStructures, COLORS, TREE_HEIGHT_M, treesGeometry, type PickableMesh } from './viewer/objects';
 import { prepareScene } from './viewer/scene';
@@ -124,10 +124,20 @@ export function buildPrintModel(
       ],
     },
     (() => {
-      // Forests' trees too, spaced no closer than the print can tell apart, inside the selection.
-      const spacing = Math.max(FOREST_SPACING_M, 3 * at.minWidth);
-      const forest = forestTrees(applyEdits(data.osm, edits), spacing, (id) => !!edits.get(id)?.noTrees).filter((t) => pointInRing(t.at, ring));
-      const g = show('trees') ? treesGeometry([...editedTrees(data.osm.trees, edits, TREE_HEIGHT_M), ...forest], at) : null;
+      // Forests: their canopy, crowns no narrower than a few thinnest details (so the print
+      // shows them), reaching into the ground like everything standing on it.
+      const canopy = show('trees')
+        ? buildCanopy(applyEdits(data.osm, edits), ring, frame, (x, z) => groundHeight(elevationAt(data.terrain, ...frame.toLngLat([x, z]))), {
+            heightScale: scales.heights,
+            minCrownM: 4 * at.minWidth,
+            pointsPerCrown: 4,
+            bare: (id) => !!edits.get(id)?.noTrees,
+          })
+        : null;
+      return { name: 'Forests', color: '#' + COLORS.tree.getHexString(), pieces: [canopy && { geometry: flat(canopySolid(canopy, 2 * SINK_M)) }] };
+    })(),
+    (() => {
+      const g = show('trees') ? treesGeometry(editedTrees(data.osm.trees, edits, TREE_HEIGHT_M), at) : null;
       // Each tree is a cone of the same number of triangles, one after another.
       const perTree = new ConeGeometry(1, 1, 7).toNonIndexed().getAttribute('position').count / 3;
       return { name: 'Trees', color: '#' + COLORS.tree.getHexString(), pieces: [g && { geometry: g, owners: treeOwners(g, perTree) }] };

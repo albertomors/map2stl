@@ -17,12 +17,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Relief shading in the 3D view: steep ground turns to rock (whatever's painted there:
   wood, fell, grass) as mountainsides do from above, and hollows darken while ridges
   lighten a little, bringing out gullies and crests. The sun is lower, for longer shadows.
-- Forests print as a texture of trees: OpenStreetMap maps a wood as an area, so its trees
-  are placed inside it on a jittered grid (the same every time), varied in size, clear of
-  roads and water, and spaced no closer than the print can resolve (at most 40,000). They
-  show in the 3D view and print in the Trees part; a click on one selects its wood, and a
-  wood printed as something else loses its trees. Delete on a wood ("Delete trees") takes
-  only its trees: the wood stays; Restore deleted brings them back.
+- Forests as one canopy of treetops: OpenStreetMap maps a wood as an area, so it's drawn as
+  a single surface over the whole wood, whatever its size: pointed crowns on a jittered
+  grid, varied in size and height, sloping down to the ground at the edge along a ragged
+  line, like trees thinning out, and opened up by roads, railways and water. The same in
+  the 3D view and the print (its own Forests part, crowns never finer than the print can
+  show); bigger areas get bigger crowns, so it costs the same for a copse or a
+  mountainside. A click on it selects its wood (tinted); a wood printed as something else
+  loses it. Delete on a wood ("Delete trees") takes only the trees: the wood stays;
+  Restore deleted brings them back. The data panel shows forests in hectares.
+- The "Building height multiplier" slider is now "Object height multiplier": it raises
+  everything standing on the ground, trees and forests too.
 - The sea floor, from EMODnet Bathymetry (European seas, about 115 m, CC BY 4.0; the
   terrain tiles have almost none near coasts): switch the Water layer off and the sea
   becomes ground at its real depths, in the 3D view and in the print, the deepest point

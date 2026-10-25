@@ -10,6 +10,7 @@ import {
   Color,
   DirectionalLight,
   DoubleSide,
+  Float32BufferAttribute,
   Group,
   HemisphereLight,
   InstancedMesh,
@@ -34,8 +35,9 @@ import type { PrintModel, ThinObjects } from '../export';
 import { clipObjects, clipToSelection } from '../clip';
 import { applyEdits, editedTrees, editKey, type Edits, type GroundKind, type ObjectEdit } from '../edits';
 import { centroid, pointInRing, ringArea, type LngLat } from '../geo';
+import { elevationAt } from '../terrain';
 import type { Area, Building, Line, OsmData } from '../osm';
-import { FOREST, FOREST_SPACING_M, forestTrees, isForestTree } from '../forest';
+import { buildCanopy, canopySurface, FOREST, forestAreas, type Canopy } from '../forest';
 import { GroundTexture } from './ground';
 import { groundAt } from './ground-pick';
 import { buildBridges, buildBuildings, buildStructures, buildTrees, COLORS, TREE_HEIGHT_M, type PickableMesh, type Placement } from './objects';
@@ -135,6 +137,11 @@ export class Viewer {
   private stretchDepth: MeshDepthMaterial | null = null;
   // Trees are instances: the sliders scale their matrices (ground y, cone height) directly.
   private trees: { mesh: InstancedMesh; built: Float32Array } | null = null;
+  // Forests' canopy (forest.ts), its height field, and its colors as built (the selected
+  // wood is tinted over them).
+  private canopy: { mesh: Mesh; field: Canopy; colors: Float32Array } | null = null;
+  // Terrain height → scene height, as last built.
+  private groundHeight: (h: number) => number = (h) => h;
   private layerObjects = new Map<Layer, Object3D[]>();
   private ground: GroundTexture | null = null;
   private data: AreaData | null = null;
@@ -401,6 +408,37 @@ export class Viewer {
   // The ground, with the selected street or area (if that's what's selected) highlighted.
   private paintGround() {
     this.ground?.paint(this.visible, this.selected);
+    this.tintCanopy();
+  }
+
+  // The selected wood's canopy tinted like a selected object; the rest as built.
+  private tintCanopy() {
+    if (!this.canopy || !this.clipped) return;
+    const { mesh, field, colors } = this.canopy;
+    const attr = mesh.geometry.getAttribute('color') as BufferAttribute;
+    const live = attr.array as Float32Array;
+    live.set(colors);
+    const woods = this.selected ? applyEdits(this.clipped, this.edits).green.filter((a) => a.id === this.selected && FOREST.test(a.kind)) : [];
+    const frame = this.placement!.frame;
+    const tint = new Color('#ff6b2c');
+    for (const wood of woods) {
+      const outer = wood.outer.map((p) => frame.toLocal(p));
+      const holes = wood.holes.map((h) => h.map((p) => frame.toLocal(p)));
+      const xs = outer.map((p) => p[0]);
+      const zs = outer.map((p) => p[1]);
+      const cell = (v: number, v0: number) => Math.round((v - v0) / field.cell);
+      const [i0, i1] = [Math.max(0, cell(Math.min(...xs), field.x0)), Math.min(field.cols - 1, cell(Math.max(...xs), field.x0))];
+      const [j0, j1] = [Math.max(0, cell(Math.min(...zs), field.z0)), Math.min(field.rows - 1, cell(Math.max(...zs), field.z0))];
+      for (let j = j0; j <= j1; j++) {
+        for (let i = i0; i <= i1; i++) {
+          const p: [number, number] = [field.x0 + i * field.cell, field.z0 + j * field.cell];
+          if (!pointInRing(p, outer) || holes.some((h) => pointInRing(p, h))) continue;
+          const k = (j * field.cols + i) * 3;
+          for (let c = 0; c < 3; c++) live[k + c] += ([tint.r, tint.g, tint.b][c] - live[k + c]) * 0.45;
+        }
+      }
+    }
+    attr.needsUpdate = true;
   }
 
   setLayerVisible(layer: Layer, visible: boolean) {
@@ -437,6 +475,7 @@ export class Viewer {
     const { ring, frame, bounds, placement, groundHeight } = prepareScene(data, scales, !this.visible.has('water'));
     this.ring = ring;
     this.placement = placement;
+    this.groundHeight = groundHeight;
     // Nothing may stick out past the tile edge.
     const osm = (this.clipped ??= clipToSelection(data.osm, ring));
 
@@ -530,20 +569,23 @@ export class Viewer {
     solid(buildBridges(edited.roads, at, COLORS.road), 'roads', COLORS.road);
     solid(buildBridges(edited.railways, at, COLORS.rail), 'railways', COLORS.rail);
 
-    // OSM's single trees, and forests' trees (forest.ts), from the edited woods: a wood
-    // deleted or printed as something else loses its trees.
-    const forest = forestTrees(applyEdits(this.clipped ?? osm, this.edits), FOREST_SPACING_M, (id) => !!this.edits.get(id)?.noTrees);
-    const trees = [...editedTrees(osm.trees, this.edits, TREE_HEIGHT_M), ...forest];
+    // OSM's single trees, and the forests' (forest.ts): a canopy, with single trees along
+    // its border.
+    const field = this.forestField();
+    const trees = [
+      ...editedTrees(osm.trees, this.edits, TREE_HEIGHT_M),
+      ...(field?.border ?? []).map((t) => ({ key: t.key, at: at.frame.toLngLat([t.x, t.z]), size: t.size, height: t.height })),
+    ];
     const treeMesh = buildTrees(trees, at);
     this.trees = treeMesh ? { mesh: treeMesh, built: (treeMesh.instanceMatrix.array as Float32Array).slice() } : null;
     if (treeMesh) {
       this.add('trees', treeMesh);
       this.pickables.push({
         object: treeMesh,
-        // A forest's tree isn't an object of its own: the click goes to its wood, on the ground.
+        // A forest's tree isn't an object of its own: the click goes to its wood (below).
         keyAt: (_face, instance) => {
           const key = instance === undefined ? undefined : trees[instance]?.key;
-          return key && !isForestTree(key) ? key : undefined;
+          return key?.startsWith('forest/') ? undefined : key;
         },
         hide: (key) => {
           const i = trees.findIndex((t) => t.key === key);
@@ -559,7 +601,54 @@ export class Viewer {
         },
       });
     }
+    this.buildForests(field);
     this.drawHighlight();
+  }
+
+  // The forests, from the edited woods: a wood deleted, printed as something else or with its
+  // trees deleted has none.
+  private forestField(): Canopy | null {
+    const at = this.placement!;
+    const t = this.data!.terrain;
+    const groundAt = (x: number, z: number) => {
+      const [lng, lat] = at.frame.toLngLat([x, z]);
+      return this.groundHeight(elevationAt(t, lng, lat));
+    };
+    return buildCanopy(applyEdits(this.clipped ?? this.data!.osm, this.edits), this.ring, at.frame, groundAt, {
+      heightScale: at.heightScale,
+      bare: (id) => !!this.edits.get(id)?.noTrees,
+      borderTrees: true,
+    });
+  }
+
+  // The canopy's mesh.
+  private buildForests(field: Canopy | null) {
+    this.canopy = null;
+    if (!field) return;
+    const { positions, grounds, index } = canopySurface(field);
+    if (!index.length) return;
+    // Darker down between the crowns, lighter at their tips: depth from above.
+    const colors = new Float32Array(positions.length);
+    const base = COLORS.tree;
+    for (let k = 0; k < field.above.length; k++) {
+      const shade = 0.55 + 0.6 * Math.min(1, Math.max(0, field.above[k] / field.top));
+      colors[k * 3] = base.r * shade;
+      colors[k * 3 + 1] = base.g * shade;
+      colors[k * 3 + 2] = base.b * shade;
+    }
+    const g = new BufferGeometry();
+    g.setAttribute('position', new BufferAttribute(positions, 3));
+    g.setAttribute('groundY', new Float32BufferAttribute(grounds, 1));
+    g.setAttribute('color', new BufferAttribute(colors.slice(), 3));
+    g.setIndex(new BufferAttribute(index, 1));
+    g.computeVertexNormals();
+    const mesh = new Mesh(g, this.stretchable(new MeshLambertMaterial({ vertexColors: true })));
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.customDepthMaterial = this.depthMaterial();
+    this.add('trees', mesh);
+    this.canopy = { mesh, field, colors };
+    this.tintCanopy();
   }
 
   private pickAt(e: PointerEvent) {
@@ -575,9 +664,17 @@ export class Viewer {
     const pickable = hit && visible.find((p) => p.object === hit.object);
     const key = pickable?.keyAt(hit.faceIndex ?? undefined, hit.instanceId);
     if (key) return this.select(key);
-    // No object: the street, river or area painted on the ground there, if any.
+    // No object: a forest's canopy (its wood), or the street, river or area painted on the
+    // ground there, if any.
     const top = this.terrain.children[0];
-    const ground = top && ray.intersectObject(top, false)[0];
+    const canopy = this.canopy?.mesh.visible ? this.canopy.mesh : null;
+    const ground = top && ray.intersectObjects(canopy ? [canopy, top] : [top], false)[0];
+    if (ground && ground.object === canopy && this.clipped && this.placement) {
+      const at = this.placement.frame.toLngLat([ground.point.x, ground.point.z]);
+      const bare = (id: string) => !!this.edits.get(id)?.noTrees;
+      const wood = forestAreas(applyEdits(this.clipped, this.edits), bare).find((a) => pointInRing(at, a.outer) && !a.holes.some((h) => pointInRing(at, h)));
+      if (wood) return this.select(wood.id);
+    }
     if (ground && this.clipped && this.placement) {
       const at = this.placement.frame.toLngLat([ground.point.x, ground.point.z]);
       return this.select(groundAt(applyEdits(this.clipped, this.edits), this.visible, at, this.placement.frame));

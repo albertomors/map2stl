@@ -1,107 +1,307 @@
-// Forests as trees: OSM maps a wood as an area, not tree by tree, so its trees are placed
-// here, on a jittered grid inside it (natural-looking, and the same every time for the same
-// data), a little varied in size, none on a road or in water. In the print they make the
-// forest a rough, raised texture; the spacing never drops below what the print can resolve,
-// which also bounds how many there are.
+// Forests as one canopy: OSM maps a wood as an area, not tree by tree, so it's drawn as a
+// mass of treetops over the whole wood, a single surface whatever its size (tens of
+// thousands of trees would be too many to draw). The surface is crowns: pointed tips on a
+// jittered grid, a little varied in size and height, dipping between them. Toward its edge
+// it slopes down to the ground over about a tree, along a ragged line. On screen, single
+// trees stand along the border, a few meters apart and thinning out toward the edge, with
+// the canopy's slope hidden among them: the inside reads as a mass of trees, the edge as
+// trees (they grow with the forest's outline, not its area, so they stay few). Roads,
+// railways and water cut it open.
+//
+// It's a height field on a regular grid, its spacing a fraction of the crowns': the same
+// number of points for a copse or a mountainside (bigger forests get bigger crowns, the way
+// they'd look from farther away anyway). The forest is rasterized onto that grid (a canvas:
+// it works in the print worker too), and each point's distance into it sets the edge slope.
 
-import type { EditedTree } from './edits';
-import { pointInRing, type LngLat } from './geo';
+import type { LngLat } from './geo';
+import type { LocalFrame } from './local';
 import type { Area, OsmData } from './osm';
 
 // The green areas that are forest.
 export const FOREST = /^(wood|forest)$/;
-// Between trees, in the 3D view (the print may space them wider: see the export).
-export const FOREST_SPACING_M = 12;
-const HEIGHT_M = [12, 18];
-const SIZE = [0.8, 1.3];
-// Clear of roads by this much past their edge.
-const ROAD_CLEARANCE_M = 2;
-// Never more than this many, whatever the area.
-const MAX_TREES = 40_000;
-const METERS_PER_DEGREE = 111_320;
+// Tree height (before the height multiplier), crowns at the closest, and the height between
+// crowns, as a fraction of the trees'.
+const TREE_M = 15;
+const CROWN_SPACING_M = 5;
+const BETWEEN = 0.15;
+// Grid points per crown spacing (enough for a pointed tip; the print asks for more), and at
+// most this many crowns across the selection's longest side (bigger areas get bigger
+// crowns).
+const POINTS_PER_CROWN = 3;
+const MAX_CROWNS_ACROSS = 400;
+// The edge slopes down over this many crown spacings, along a line this ragged (in crown
+// spacings, either way, in lumps a few crowns long).
+const EDGE_CROWNS = 1.2;
+const RAGGED_CROWNS = 0.8;
+// Single trees along the border (on screen): this far into the forest, this far apart
+// (wider with bigger crowns), a third of those points used at the inner side of the band and
+// fewer toward the edge, a little varied; the canopy rises from this far into the band,
+// behind them.
+const BORDER_M = 8;
+const BORDER_SPACING_M = 3.5;
+const BORDER_INNER_DENSITY = 1 / 3;
+const BORDER_OUTER_DENSITY = 0.1;
+const BORDER_HEIGHT_M = [11, 17];
+const BORDER_SIZE = [0.7, 1.1];
+const CANOPY_FROM = 0.5;
+// Roads and water cut the canopy this much wider than they are: a forest road is a clearing.
+const CLEARANCE_M = 2;
+// Outside the forest the surface tucks just under the ground, so its edge never floats.
+const TUCK_M = 0.5;
 
-// `bare`: woods whose trees were deleted (the wood stays).
-export function forestTrees(osm: OsmData, spacingM: number, bare: (id: string) => boolean = () => false): EditedTree[] {
-  const forests = osm.green.filter((a) => FOREST.test(a.kind) && !bare(a.id));
-  if (!forests.length) return [];
-  const lat = forests[0].outer[0][1];
-  const kLat = 1 / METERS_PER_DEGREE;
-  const kLng = kLat / Math.cos((lat * Math.PI) / 180);
-  const toM = ([lng, lat0]: LngLat): [number, number] => [lng / kLng, lat0 / kLat];
-  const nearRoad = roadIndex(osm, toM);
-  const water = osm.waterAreas.map((a) => ({ area: a, box: box(a) }));
-  const inside = (a: Area, p: LngLat) => pointInRing(p, a.outer) && !a.holes.some((h) => pointInRing(p, h));
-  const out: EditedTree[] = [];
-  for (const forest of forests) {
-    const [w, s, e, n] = box(forest);
-    const [x0, y0] = toM([w, s]);
-    const [x1, y1] = toM([e, n]);
-    for (let gx = Math.floor(x0 / spacingM); gx <= Math.ceil(x1 / spacingM); gx++) {
-      for (let gy = Math.floor(y0 / spacingM); gy <= Math.ceil(y1 / spacingM); gy++) {
-        // Jitter, size and height from the grid cell: the same tree every time.
-        const r = [hash(gx, gy, 1), hash(gx, gy, 2), hash(gx, gy, 3), hash(gx, gy, 4)];
-        const mx = (gx + 0.15 + 0.7 * r[0]) * spacingM;
-        const my = (gy + 0.15 + 0.7 * r[1]) * spacingM;
-        const p: LngLat = [mx * kLng, my * kLat];
-        if (!inside(forest, p)) continue;
-        if (nearRoad(mx, my)) continue;
-        if (water.some((wa) => p[0] >= wa.box[0] && p[0] <= wa.box[2] && p[1] >= wa.box[1] && p[1] <= wa.box[3] && inside(wa.area, p))) continue;
-        out.push({
-          key: `forest/${forest.id}/${gx},${gy}`,
-          at: p,
-          size: SIZE[0] + (SIZE[1] - SIZE[0]) * r[2],
-          height: HEIGHT_M[0] + (HEIGHT_M[1] - HEIGHT_M[0]) * r[3],
-        });
-        if (out.length >= MAX_TREES) return out;
+// Woods that have their trees (`bare`: woods whose trees were deleted; the wood stays).
+export function forestAreas(osm: OsmData, bare: (id: string) => boolean = () => false): Area[] {
+  return osm.green.filter((a) => FOREST.test(a.kind) && !bare(a.id));
+}
+
+// The canopy as a height field: grid point (i, j) at scene (x0 + i·cell, z0 + j·cell),
+// `above` the ground (scene units, multiplier applied; negative: tucked under), the ground
+// at `ground`.
+export interface Canopy {
+  x0: number;
+  z0: number;
+  cell: number;
+  cols: number;
+  rows: number;
+  above: Float32Array;
+  ground: Float32Array;
+  // The tallest a crown gets (for shading).
+  top: number;
+  // Single trees along the border (scene x, z; meters before the multiplier), when asked.
+  border: { x: number; z: number; key: string; height: number; size: number }[];
+}
+
+export function buildCanopy(
+  osm: OsmData,
+  ring: LngLat[],
+  frame: LocalFrame,
+  // Scene ground height at a scene point.
+  groundAt: (x: number, z: number) => number,
+  {
+    heightScale,
+    minCrownM = 0,
+    pointsPerCrown = POINTS_PER_CROWN,
+    bare = () => false,
+    borderTrees = false,
+  }: { heightScale: number; minCrownM?: number; pointsPerCrown?: number; bare?: (id: string) => boolean; borderTrees?: boolean },
+): Canopy | null {
+  const woods = forestAreas(osm, bare);
+  if (!woods.length) return null;
+  const local = (r: LngLat[]) => r.map((p) => frame.toLocal(p));
+  const outline = local(ring);
+  let [minX, minZ, maxX, maxZ] = [Infinity, Infinity, -Infinity, -Infinity];
+  for (const [x, z] of outline) {
+    [minX, maxX, minZ, maxZ] = [Math.min(minX, x), Math.max(maxX, x), Math.min(minZ, z), Math.max(maxZ, z)];
+  }
+  const spacing = Math.max(CROWN_SPACING_M, minCrownM, Math.max(maxX - minX, maxZ - minZ) / MAX_CROWNS_ACROSS);
+  const cell = spacing / pointsPerCrown;
+  // A cell of margin all round: the field is tucked under at its border.
+  const [x0, z0] = [minX - cell, minZ - cell];
+  const cols = Math.ceil((maxX - minX) / cell) + 3;
+  const rows = Math.ceil((maxZ - minZ) / cell) + 3;
+
+  // The forest on the grid, one pixel per point: woods inside the selection, minus roads,
+  // railways and water; and the selection alone (green), to keep the canopy inside it.
+  const canvas = new OffscreenCanvas(cols, rows);
+  const ctx = canvas.getContext('2d')!;
+  ctx.setTransform(1 / cell, 0, 0, 1 / cell, -x0 / cell + 0.5, -z0 / cell + 0.5);
+  const path = (rings: [number, number][][]) => {
+    ctx.beginPath();
+    for (const r of rings) r.forEach(([x, z], k) => (k ? ctx.lineTo(x, z) : ctx.moveTo(x, z)));
+  };
+  path([outline]);
+  ctx.fillStyle = '#0f0';
+  ctx.fill();
+  ctx.clip();
+  ctx.fillStyle = '#fff';
+  for (const a of woods) {
+    path([a.outer, ...a.holes].map(local));
+    ctx.fill('evenodd');
+  }
+  ctx.fillStyle = ctx.strokeStyle = '#0f0';
+  ctx.lineCap = ctx.lineJoin = 'round';
+  for (const a of osm.waterAreas) {
+    path([a.outer, ...a.holes].map(local));
+    ctx.fill('evenodd');
+  }
+  for (const l of [...osm.roads, ...osm.railways, ...osm.waterways]) {
+    if (l.bridge) continue;
+    path([local(l.path)]);
+    ctx.lineWidth = l.width + 2 * CLEARANCE_M;
+    ctx.stroke();
+  }
+  const pixels = ctx.getImageData(0, 0, cols, rows).data;
+
+  // Each point's distance into the forest, and into the selection (scene meters; 0
+  // outside).
+  const n = cols * rows;
+  const dist = distances(cols, rows, cell, (k) => pixels[k * 4] > 127);
+  const inside = distances(cols, rows, cell, (k) => pixels[k * 4 + 1] > 127);
+
+  const scale = TREE_M * heightScale;
+  // The edge's line wanders in and out by this (meters), in lumps a few crowns long.
+  const ragged = (x: number, z: number) => RAGGED_CROWNS * spacing * valueNoise(x / (3 * spacing), z / (3 * spacing), 7);
+  const band = BORDER_M * (spacing / CROWN_SPACING_M);
+  const above = new Float32Array(n);
+  const ground = new Float32Array(n);
+  for (let j = 0; j < rows; j++) {
+    for (let i = 0; i < cols; i++) {
+      const k = j * cols + i;
+      const [x, z] = [x0 + i * cell, z0 + j * cell];
+      ground[k] = groundAt(x, z);
+      // Down to the ground a cell and a half inside the selection's edge, so no cell with any
+      // point above it reaches past the edge.
+      if (!dist[k] || inside[k] < 1.5 * cell) {
+        above[k] = -TUCK_M;
+        continue;
       }
+      const into = dist[k] + ragged(x, z) - (borderTrees ? CANOPY_FROM * band : 0);
+      const edge = Math.min(1, Math.max(0, into / (EDGE_CROWNS * spacing)));
+      above[k] = edge > 0 ? scale * edge * crowns(x / spacing, z / spacing, x0 / spacing, z0 / spacing, 1 / pointsPerCrown) : -TUCK_M;
+    }
+  }
+
+  // The border's trees: a jittered grid, kept where the point is in the band (by the same
+  // ragged distance), more of them toward the inside.
+  const border: Canopy['border'] = [];
+  if (borderTrees) {
+    const step = BORDER_SPACING_M * (spacing / CROWN_SPACING_M);
+    for (let gx = Math.floor(minX / step); gx <= Math.ceil(maxX / step); gx++) {
+      for (let gz = Math.floor(minZ / step); gz <= Math.ceil(maxZ / step); gz++) {
+        const r = [hash(gx, gz, 11), hash(gx, gz, 12), hash(gx, gz, 13), hash(gx, gz, 14), hash(gx, gz, 15)];
+        const x = (gx + 0.1 + 0.8 * r[0]) * step;
+        const z = (gz + 0.1 + 0.8 * r[1]) * step;
+        const k = Math.round((z - z0) / cell) * cols + Math.round((x - x0) / cell);
+        if (k < 0 || k >= n || !dist[k] || inside[k] < 1.5 * cell) continue;
+        const d = (dist[k] + ragged(x, z)) / band;
+        if (d <= 0 || d >= 1 || r[2] > BORDER_OUTER_DENSITY + (BORDER_INNER_DENSITY - BORDER_OUTER_DENSITY) * d) continue;
+        border.push({
+          x,
+          z,
+          key: `forest/${gx},${gz}`,
+          height: BORDER_HEIGHT_M[0] + (BORDER_HEIGHT_M[1] - BORDER_HEIGHT_M[0]) * r[3],
+          size: BORDER_SIZE[0] + (BORDER_SIZE[1] - BORDER_SIZE[0]) * r[4],
+        });
+      }
+    }
+  }
+  return { x0, z0, cell, cols, rows, above, ground, top: scale * 1.25, border };
+}
+
+// Distance from each grid point to the nearest point outside a mask (0 outside it): two
+// chamfer passes.
+function distances(cols: number, rows: number, cell: number, inMask: (k: number) => boolean): Float32Array {
+  const dist = new Float32Array(cols * rows);
+  for (let k = 0; k < dist.length; k++) dist[k] = inMask(k) ? 1e9 : 0;
+  const diag = cell * Math.SQRT2;
+  const at = (i: number, j: number) => (i < 0 || j < 0 || i >= cols || j >= rows ? 0 : dist[j * cols + i]);
+  for (let j = 0; j < rows; j++) {
+    for (let i = 0; i < cols; i++) {
+      const k = j * cols + i;
+      if (dist[k]) dist[k] = Math.min(dist[k], at(i - 1, j) + cell, at(i, j - 1) + cell, at(i - 1, j - 1) + diag, at(i + 1, j - 1) + diag);
+    }
+  }
+  for (let j = rows - 1; j >= 0; j--) {
+    for (let i = cols - 1; i >= 0; i--) {
+      const k = j * cols + i;
+      if (dist[k]) dist[k] = Math.min(dist[k], at(i + 1, j) + cell, at(i, j + 1) + cell, at(i + 1, j + 1) + diag, at(i - 1, j + 1) + diag);
+    }
+  }
+  return dist;
+}
+
+// The canopy surface for the 3D view: indexed triangles over every cell with any point above
+// the ground, and each position's ground height (for the height slider's stretch).
+export function canopySurface(c: Canopy): { positions: Float32Array; grounds: Float32Array; index: Uint32Array } {
+  const { cols, rows, above, ground } = c;
+  const positions = new Float32Array(cols * rows * 3);
+  for (let j = 0; j < rows; j++) {
+    for (let i = 0; i < cols; i++) {
+      const k = j * cols + i;
+      positions[k * 3] = c.x0 + i * c.cell;
+      positions[k * 3 + 1] = ground[k] + above[k];
+      positions[k * 3 + 2] = c.z0 + j * c.cell;
+    }
+  }
+  const index: number[] = [];
+  for (let j = 0; j < rows - 1; j++) {
+    for (let i = 0; i < cols - 1; i++) {
+      const [a, b, d, e] = [j * cols + i, j * cols + i + 1, (j + 1) * cols + i, (j + 1) * cols + i + 1];
+      if (above[a] <= 0 && above[b] <= 0 && above[d] <= 0 && above[e] <= 0) continue;
+      // Facing up (+y), with x east and z south.
+      index.push(a, d, b, b, d, e);
+    }
+  }
+  return { positions, grounds: ground, index: Uint32Array.from(index) };
+}
+
+// The canopy as a closed solid for the print: the surface on top, the same cells `sink`
+// under the ground below, walls round the outline (where the surface is tucked under, so
+// they're short). Triangles, 9 floats each.
+export function canopySolid(c: Canopy, sink: number): number[] {
+  const { cols, rows, above, ground } = c;
+  const out: number[] = [];
+  const top = (i: number, j: number) => [c.x0 + i * c.cell, ground[j * cols + i] + above[j * cols + i], c.z0 + j * c.cell];
+  const bottom = (i: number, j: number) => [c.x0 + i * c.cell, ground[j * cols + i] - sink, c.z0 + j * c.cell];
+  const used = (i: number, j: number) => {
+    if (i < 0 || j < 0 || i >= cols - 1 || j >= rows - 1) return false;
+    const k = j * cols + i;
+    return above[k] > 0 || above[k + 1] > 0 || above[k + cols] > 0 || above[k + cols + 1] > 0;
+  };
+  const tri = (a: number[], b: number[], d: number[]) => {
+    for (const p of [a, b, d]) out.push(p[0], p[1], p[2]);
+  };
+  for (let j = 0; j < rows - 1; j++) {
+    for (let i = 0; i < cols - 1; i++) {
+      if (!used(i, j)) continue;
+      tri(top(i, j), top(i, j + 1), top(i + 1, j));
+      tri(top(i + 1, j), top(i, j + 1), top(i + 1, j + 1));
+      tri(bottom(i, j), bottom(i + 1, j), bottom(i, j + 1));
+      tri(bottom(i + 1, j), bottom(i + 1, j + 1), bottom(i, j + 1));
+      // A wall on each side with no cell beyond it, facing out.
+      const wall = (p: [number, number], q: [number, number]) => {
+        tri(top(...p), bottom(...p), top(...q));
+        tri(top(...q), bottom(...p), bottom(...q));
+      };
+      if (!used(i, j - 1)) wall([i + 1, j], [i, j]);
+      if (!used(i + 1, j)) wall([i + 1, j + 1], [i + 1, j]);
+      if (!used(i, j + 1)) wall([i, j + 1], [i + 1, j + 1]);
+      if (!used(i - 1, j)) wall([i, j], [i, j + 1]);
     }
   }
   return out;
 }
 
-export const isForestTree = (key: string) => key.startsWith('forest/');
-
-// Whether a point (meters) is on or next to a road: road segments bucketed into cells, so
-// each tree checks only the few nearby.
-function roadIndex(osm: OsmData, toM: (p: LngLat) => [number, number]) {
-  const CELL = 50;
-  const cells = new Map<string, [number, number, number, number, number][]>();
-  for (const l of osm.roads) {
-    if (l.bridge) continue;
-    const reach = l.width / 2 + ROAD_CLEARANCE_M;
-    const pts = l.path.map(toM);
-    for (let i = 1; i < pts.length; i++) {
-      const [ax, ay] = pts[i - 1];
-      const [bx, by] = pts[i];
-      for (let cx = Math.floor((Math.min(ax, bx) - reach) / CELL); cx <= Math.floor((Math.max(ax, bx) + reach) / CELL); cx++) {
-        for (let cy = Math.floor((Math.min(ay, by) - reach) / CELL); cy <= Math.floor((Math.max(ay, by) + reach) / CELL); cy++) {
-          const key = `${cx},${cy}`;
-          const list = cells.get(key) ?? [];
-          list.push([ax, ay, bx, by, reach]);
-          cells.set(key, list);
-        }
-      }
+// Height of the crowns at a point (in crown spacings), as a fraction of the trees': the
+// tallest of the nearby crowns there, each a cone on a jittered grid, never below the level
+// between them. Shaped like the single trees' cones (as narrow, as steep), each tip on a
+// grid point (`ox`, `oy`, every `step`), so the surface has the peak, not a blunt top
+// between points.
+function crowns(x: number, y: number, ox: number, oy: number, step: number): number {
+  const [gx, gy] = [Math.floor(x), Math.floor(y)];
+  let h = BETWEEN;
+  for (let dx = -1; dx <= 1; dx++) {
+    for (let dy = -1; dy <= 1; dy++) {
+      const [cx, cy] = [gx + dx, gy + dy];
+      const snap = (v: number, o: number) => o + Math.round((v - o) / step) * step;
+      const px = snap(cx + 0.15 + 0.7 * hash(cx, cy, 1), ox);
+      const py = snap(cy + 0.15 + 0.7 * hash(cx, cy, 2), oy);
+      const radius = 0.45 + 0.2 * hash(cx, cy, 3);
+      const height = 0.75 + 0.4 * hash(cx, cy, 4);
+      const d = Math.hypot(x - px, y - py);
+      if (d < radius) h = Math.max(h, BETWEEN + (height - BETWEEN) * (1 - d / radius));
     }
   }
-  return (x: number, y: number) =>
-    (cells.get(`${Math.floor(x / CELL)},${Math.floor(y / CELL)}`) ?? []).some(([ax, ay, bx, by, reach]) => {
-      const dx = bx - ax;
-      const dy = by - ay;
-      const len2 = dx * dx + dy * dy;
-      const t = len2 ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / len2)) : 0;
-      return Math.hypot(x - ax - t * dx, y - ay - t * dy) <= reach;
-    });
+  return h;
 }
 
-function box(a: Area): [number, number, number, number] {
-  let [w, s, e, n] = [Infinity, Infinity, -Infinity, -Infinity];
-  for (const [x, y] of a.outer) {
-    w = Math.min(w, x);
-    e = Math.max(e, x);
-    s = Math.min(s, y);
-    n = Math.max(n, y);
-  }
-  return [w, s, e, n];
+// Smooth noise between -1 and 1, about one unit per lump, the same every time for the place.
+function valueNoise(x: number, y: number, k: number): number {
+  const [x0, y0] = [Math.floor(x), Math.floor(y)];
+  const s = (v: number) => v * v * (3 - 2 * v);
+  const [u, v] = [s(x - x0), s(y - y0)];
+  const h = (i: number, j: number) => hash(x0 + i, y0 + j, k) * 2 - 1;
+  return (h(0, 0) * (1 - u) + h(1, 0) * u) * (1 - v) + (h(0, 1) * (1 - u) + h(1, 1) * u) * v;
 }
 
 // A number in [0, 1) from integers, the same every time.

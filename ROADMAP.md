@@ -12,9 +12,9 @@ LiDAR terrain, official 3D data and photogrammetry, and the rest of the look, re
 Swapping the OSM approximation for something better. Google's photorealistic tiles can't be
 used (their terms forbid extracting them), and no open worldwide photogrammetry exists, so:
 
-- **Better terrain where it exists:** national LiDAR terrain models (about 1 m), country by
-  country where the service lets a browser load it: Norway first (høydedata, nationwide),
-  then the Netherlands (AHN), Denmark, Switzerland (swissALTI3D), England and the US (3DEP).
+- **Better terrain in more countries:** national LiDAR terrain models (about 1 m), country by
+  country where the service lets a browser load it. Norway is done (Kartverket); next the
+  Netherlands (AHN), Denmark, Switzerland (swissALTI3D), England and the US (3DEP).
   Sampled to what the print can hold: at 150 mm for 2 km, 2–5 m already shows every ridge a
   nozzle can make. Everywhere else falls back to today's tiles (about 10–30 m), and the
   panel says which source the terrain (and so the print) uses. Not Copernicus GLO-30: it's
@@ -33,17 +33,9 @@ used (their terms forbid extracting them), and no open worldwide photogrammetry 
   export credits it. Where nothing covers the building, the button says so. (Google's
   Photorealistic 3D Tiles stay out: their terms forbid extracting, storing, offline use
   and deriving models.)
-- **Sketchfab without a token:** an approved integration (Sketchfab requires it for
-  downloads without each user logging in), with our own server: see "Faster, more reliable
-  data". Until then, a "Log in with Sketchfab" button instead of pasting a token needs our
-  app registered with them.
 - **Better name matching:** a landmark with no Wikidata tag is searched by its local name
   alone, which can match a namesake elsewhere ("Cattedrale di Santa Maria Assunta" in Atri
   for Pisa's): add the town's name, from reverse geocoding.
-- **Photogrammetry from tourist photos** (research): reconstruct famous landmarks from
-  hundreds of openly licensed photos (Wikimedia Commons) with COLMAP-style structure from
-  motion. Real geometry, but heavy server compute: needs a backend.
-
 ### Closer to the Google Earth look
 
 Compared on Store Ådnøy (Norway), the gap is mostly terrain detail (LiDAR, above), then
@@ -52,7 +44,11 @@ surface texture, color and water:
 - **Rock and vegetation as 3MF parts:** the relief shading's rock (steep ground) printed in
   its own filament.
 - **Forest heights from LiDAR:** the surface model minus the ground model gives each
-  forest's real canopy height, instead of placed trees.
+  forest's real canopy height, point by point, instead of today's 15 m with lumps.
+- **Boats at the piers:** a few boats moored along piers, jetties and harbor quays
+  (OSM's `man_made=pier`, `harbour`/`marina` areas), randomly spaced and sized, a few here
+  and there rather than every berth filled; the same every time for the same place. Their
+  own objects, so they can be selected and deleted like trees.
 - **Sea depths beyond Europe:** EMODnet covers European seas; GEBCO (worldwide, about
   450 m) or national charts elsewhere.
 
@@ -99,7 +95,17 @@ Overpass is the most complete OSM source but the slowest part of the app (40–1
 city center, and the public servers are often busy).
 
 - Overture Maps buildings to fill gaps in OSM heights (cloud GeoParquet, no API).
-- Our own Overpass instance (or a commercial extract service) before going public.
+
+## Publishing
+
+What going public needs.
+
+- Our own Overpass instance (or a commercial extract service): the public servers are too
+  busy and slow for many users.
+- **Sketchfab without a token:** an approved integration (Sketchfab requires it for
+  downloads without each user logging in), with our own server. Until then, a "Log in
+  with Sketchfab" button instead of pasting a token needs our app registered with them.
+- Deploy as a public site.
 
 ## Later
 
@@ -107,4 +113,6 @@ city center, and the public servers are often busy).
 - Sea when the selection is entirely water, or the coast is broken near it (today: land).
 - Clip the base map's buildings to the selection while previewing, instead of hiding all.
 - Segmentation for mesh sources (photogrammetry) where objects aren't already separate.
-- Deploy as a public site.
+- **Photogrammetry from tourist photos** (research): reconstruct famous landmarks from
+  hundreds of openly licensed photos (Wikimedia Commons) with COLMAP-style structure from
+  motion. Real geometry, but heavy server compute: needs a backend.

@@ -108,8 +108,9 @@ How heights are decided:
 Press **Open 3D view**. Three.js loads the first time, which takes a moment.
 
 - **Left-drag:** orbit. **Right-drag:** pan. **Scroll:** zoom.
-- **Terrain height multiplier** (×1–5) exaggerates the terrain; **Building height
-  multiplier** (×0.5–3) everything standing on it. Both rebuild the scene, which takes a moment on big areas (making them
+- **Terrain height multiplier** (×1–5) exaggerates the terrain; **Object height
+  multiplier** (×0.5–3) everything standing on it: buildings, bridges, towers, trees and
+  forests. Both rebuild the scene, which takes a moment on big areas (making them
   instant is on the roadmap).
 - The layer **checkboxes** work in 3D too.
 - **Back to map** returns to the map.
