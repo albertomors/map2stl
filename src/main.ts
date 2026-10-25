@@ -15,7 +15,8 @@ import type { SketchfabModel } from './sketchfab';
 import { modelAssets, type ModelAsset, type ModelChoice, type ModelSource } from './model-assets';
 import type { ModelJob, ModelResult } from './model-worker';
 import type { ObjectPick, Viewer, ViewScales } from './viewer/viewer';
-import type { Edits, GroundKind } from './edits';
+import { editKey, type Edits, type GroundKind } from './edits';
+import { officialSourceAt } from './official-sources';
 import type { PrintModel, ThinObjects } from './export';
 import type { PrintJob, PrintProgress, PrintResult } from './print-worker';
 
@@ -737,6 +738,13 @@ function showPick(pick: ObjectPick | null) {
   $('object-ground-row').hidden = !pick.ground;
   if (pick.ground) $<HTMLSelectElement>('object-ground').value = pick.ground;
   $('object-model').hidden = !pick.canModel;
+  // An official model, where a source covers the area and it's a building.
+  const official = areaData && pick.canModel && areaData.osm.buildings.some((b) => editKey(b) === pick.key) ? officialSourceAt(areaData.selection.center) : undefined;
+  $('object-official').hidden = !official;
+  if (official) {
+    $('object-official-one').textContent = `Use the official 3D model (${official.name})`;
+    $('object-official-all').textContent = 'Use official models for every building in the area';
+  }
   $('object-model-current').hidden = !pick.model;
   $('object-model-name').textContent = pick.model ?? '';
   showModelFit(pick);
@@ -950,6 +958,61 @@ function changeModel(change: (m: ModelChoice) => ModelChoice) {
 }
 
 // After a model change: rebuild, and show the selected building's card again.
+// Official 3D models (official3d.ts) for some buildings: each takes its model, placed by its
+// real coordinates. One load at a time.
+let officialLoad: AbortController | null = null;
+async function useOfficialModels(keys: string[]) {
+  const data = areaData;
+  const source = data && officialSourceAt(data.selection.center);
+  if (!data || !source) return;
+  officialLoad?.abort();
+  const load = (officialLoad = new AbortController());
+  const key = picked?.key;
+  const say = (text: string) => (key && picked?.key === key ? ($('object-model-status').textContent = text) : modelTask.say(text));
+  const wanted = new Set(keys);
+  const footprints = new Map<string, { outer: [number, number][]; holes: [number, number][][] }[]>();
+  for (const b of data.osm.buildings) {
+    const k = editKey(b);
+    if (!wanted.has(k)) continue;
+    footprints.set(k, [...(footprints.get(k) ?? []), { outer: b.outer, holes: b.holes }]);
+  }
+  say(`Reading ${source.name}…`);
+  try {
+    const { fetchOfficialModels } = await import('./official3d');
+    const { describe } = await import('./selection');
+    const models = await fetchOfficialModels(source, footprints, describe(data.selection).ring, load.signal, (done, total) => say(`Reading ${source.name}: ${done} of ${total} tiles…`));
+    if (load.signal.aborted) return;
+    for (const [k, asset] of models) {
+      modelAssets.set(asset.id, asset);
+      edits.set(k, { ...edits.get(k), model: { asset: asset.id, up: 'y', turns: 0 } });
+    }
+    if (key && picked?.key === key) refreshModel(key);
+    else {
+      viewer?.setEdits(edits);
+      showEditsSummary();
+    }
+    const n = [...models.values()].filter((m) => m.triangles.length).length;
+    say(
+      keys.length === 1
+        ? n
+          ? `This building now uses its ${source.name} model, by ${source.author} (the export credits it).`
+          : `${source.name} has no model for this building.`
+        : `${n.toLocaleString()} of ${keys.length.toLocaleString()} buildings now use their ${source.name} models, by ${source.author} (the export credits it).`,
+    );
+  } catch (err) {
+    if (!load.signal.aborted) say(`Couldn't read ${source.name}: ${(err as Error).message}`);
+  } finally {
+    if (officialLoad === load) officialLoad = null;
+  }
+}
+$('object-official-one').addEventListener('click', () => picked && useOfficialModels([picked.key]));
+// Every building in the selection that isn't deleted or already has a model of its own.
+$('object-official-all').addEventListener('click', () => {
+  if (!areaData) return;
+  const keys = new Set(areaData.osm.buildings.map(editKey).filter((k) => !edits.get(k)?.deleted && !edits.get(k)?.model));
+  useOfficialModels([...keys]);
+});
+
 function refreshModel(key: string) {
   viewer?.setEdits(edits);
   viewer?.select(key);

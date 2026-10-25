@@ -4,8 +4,7 @@ Open work only: built items move to the README and CHANGELOG.
 
 ## Milestone 0.7.x: real terrain, real objects, and the look
 
-LiDAR terrain, official 3D data and photogrammetry, and the rest of the look, released as
-0.7.x steps.
+LiDAR terrain, official 3D data, and the rest of the look. What's left of it:
 
 ### Improve objects and terrain
 
@@ -13,44 +12,19 @@ Swapping the OSM approximation for something better. Google's photorealistic til
 used (their terms forbid extracting them), and no open worldwide photogrammetry exists, so:
 
 - **Better terrain in more countries:** national LiDAR terrain models (about 1 m), country by
-  country where the service lets a browser load it. Norway is done (Kartverket); next the
-  Netherlands (AHN), Denmark, Switzerland (swissALTI3D), England and the US (3DEP).
+  country where the service lets a browser load it. Done: Norway, the Netherlands, England,
+  the US. Left: Switzerland (swissALTI3D: only per-kilometer files in the Swiss grid, no
+  service cutting out an area), Denmark (needs an access token), and others as found.
   Sampled to what the print can hold: at 150 mm for 2 km, 2–5 m already shows every ridge a
   nozzle can make. Everywhere else falls back to today's tiles (about 10–30 m), and the
   panel says which source the terrain (and so the print) uses. Not Copernicus GLO-30: it's
   a surface model, with buildings and tree canopy in its heights, so the ground would bump
   up under every city block. FABDEM (GLO-30 cleaned of them) is non-commercial only, and
   served as archives a browser can't read.
-- **Improve with official 3D data:** an "Improve" button on a building (and "Improve all"
-  for the selection) that swaps the OSM block for the official open 3D city model where one
-  exists: measured roof shapes and heights (LoD2), from the Netherlands' 3DBAG, Switzerland's
-  swissBUILDINGS3D, Japan's PLATEAU (about 200 cities), German states (North
-  Rhine-Westphalia, Bavaria, Berlin, Hamburg…), New York, Helsinki, Vienna, Zurich; and
-  open photogrammetry meshes where a city publishes one (Helsinki). They carry real
-  coordinates, so they go exactly in place, no fitting. Two readers cover most of them: 3D
-  Tiles (walked down to the tiles over the building) and CityJSON. Per source: find the
-  endpoint a browser can load (CORS), and the license; the panel shows the source and the
-  export credits it. Where nothing covers the building, the button says so. (Google's
-  Photorealistic 3D Tiles stay out: their terms forbid extracting, storing, offline use
-  and deriving models.)
-- **Better name matching:** a landmark with no Wikidata tag is searched by its local name
-  alone, which can match a namesake elsewhere ("Cattedrale di Santa Maria Assunta" in Atri
-  for Pisa's): add the town's name, from reverse geocoding.
-### Closer to the Google Earth look
-
-Compared on Store Ådnøy (Norway), the gap is mostly terrain detail (LiDAR, above), then
-surface texture, color and water:
-
-- **Rock and vegetation as 3MF parts:** the relief shading's rock (steep ground) printed in
-  its own filament.
-- **Forest heights from LiDAR:** the surface model minus the ground model gives each
-  forest's real canopy height, point by point, instead of today's 15 m with lumps.
-- **Boats at the piers:** a few boats moored along piers, jetties and harbor quays
-  (OSM's `man_made=pier`, `harbour`/`marina` areas), randomly spaced and sized, a few here
-  and there rather than every berth filled; the same every time for the same place. Their
-  own objects, so they can be selected and deleted like trees.
-- **Sea depths beyond Europe:** EMODnet covers European seas; GEBCO (worldwide, about
-  450 m) or national charts elsewhere.
+- **More official 3D buildings:** Switzerland (swissBUILDINGS3D) is done. Next the
+  Netherlands' 3DBAG (its servers didn't answer when this was built), Japan's PLATEAU,
+  German states, New York, Helsinki, Vienna, Zurich's city model; where a source isn't 3D
+  Tiles, a CityJSON reader. Per source: an endpoint a browser can load, and the license.
 
 ## Export for other 3D software
 

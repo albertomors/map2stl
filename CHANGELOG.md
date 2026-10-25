@@ -56,6 +56,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   sea level is the lowest point, as before. Fetched only for areas with sea; the data
   panel shows how deep it goes and from where, and an export showing the sea floor credits
   its source.
+- Official 3D building models, where a country publishes them openly: Switzerland's
+  swissBUILDINGS3D (swisstopo) first, with measured roof shapes and heights. Select a
+  building and "Use the official 3D model", or use them for every building in the area at
+  once. They come in real coordinates, so they go exactly in place (no fitting); each goes
+  to the OSM building holding most of it, and an OSM building another's model covers (the
+  two split blocks differently) gives way. Models reaching past the selection are left out.
+  Remove brings the OSM building back; the export credits swisstopo. Read from swisstopo's
+  3D Tiles (b3dm, Draco-compressed), which the browser loads directly.
 - Boats moored at piers, a few here and there: along the sides of each pier facing water,
   some berths get a boat lying alongside, varied in length (5–14 m) and color, most with a
   cabin; the same place gets the same boats every time. They float on the water, so they

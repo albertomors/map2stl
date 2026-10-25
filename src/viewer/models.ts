@@ -93,7 +93,7 @@ function placeModel(asset: ModelAsset, choice: ModelChoice, points: LngLat[], at
   if (!f) return null;
   const { t, model, target, minY } = f;
   const s = f.scale * size;
-  const turn = Math.atan2(target.longAxis[1], target.longAxis[0]) - Math.atan2(model.longAxis[1], model.longAxis[0]) + (choice.turns * Math.PI) / 2;
+  const turn = asset.anchor ? 0 : Math.atan2(target.longAxis[1], target.longAxis[0]) - Math.atan2(model.longAxis[1], model.longAxis[0]) + (choice.turns * Math.PI) / 2;
   const [cos, sin] = [Math.cos(turn), Math.sin(turn)];
   // Standing on the lowest ground under the building, like the building would.
   const ground = points.reduce((low, p) => Math.min(low, at.elevation(p)), Infinity) * at.terrainScale;
@@ -121,7 +121,7 @@ export function fittedHeight(asset: ModelAsset, choice: ModelChoice, points: Lng
 // The model upright, its outline's fitted rectangle and the footprint's, and the even scale
 // that puts the one inside the other.
 function fit(asset: ModelAsset, choice: ModelChoice, points: LngLat[], frame: LocalFrame) {
-  const t = upright(asset.triangles, choice.up);
+  const t = asset.anchor ? asset.triangles : upright(asset.triangles, choice.up);
   if (!t.length) return null;
   // The model's outline seen from above, and how tall it is.
   let minY = Infinity;
@@ -132,6 +132,12 @@ function fit(asset: ModelAsset, choice: ModelChoice, points: LngLat[], frame: Lo
     minY = Math.min(minY, t[i + 1]);
     maxY = Math.max(maxY, t[i + 1]);
     if ((i / 3) % stride === 0) plan.push([t[i], t[i + 2]]);
+  }
+  // An official model goes where its coordinates say, as it is.
+  if (asset.anchor) {
+    const at = frame.toLocal(asset.anchor);
+    const box = { center: [0, 0] as P, longAxis: [1, 0] as P, halfL: 1, halfW: 1 };
+    return { t, model: box, target: { ...box, center: at }, minY, maxY, scale: 1 };
   }
   const model = orientedBox(hull(plan));
   // The footprint, in local meters.
