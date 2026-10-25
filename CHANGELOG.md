@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-25
+
+Real terrain, real forests and real buildings: national LiDAR height models (Norway, the
+Netherlands, England, the US), forests as a canopy of treetops at their measured height,
+the sea floor at its real depths worldwide, boats at the piers, and Switzerland's official
+3D buildings in place of OpenStreetMap's blocks.
+
 ### Changed
 
 - A landmark with no Wikidata tag is searched by its name and its town (from reverse
