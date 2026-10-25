@@ -10,7 +10,7 @@ import type { Wasm } from './merge';
 import { boatInside, mooredBoats } from './boats';
 import { buildCanopy, canopySolid } from './forest';
 import { buildGroundSolids } from './print-ground';
-import { elevationAt } from './terrain';
+import { canopySampler, elevationAt } from './terrain';
 import { buildModels } from './viewer/models';
 import { buildBoats, buildBridges, buildBuildings, buildStructures, COLORS, TREE_HEIGHT_M, treesGeometry, type PickableMesh } from './viewer/objects';
 import { prepareScene } from './viewer/scene';
@@ -139,6 +139,7 @@ export function buildPrintModel(
             heightScale: scales.heights,
             minCrownM: 4 * at.minWidth,
             pointsPerCrown: 4,
+            treeHeight: canopySampler(data.terrain, frame) ?? undefined,
             bare: (id) => !!edits.get(id)?.noTrees,
           })
         : null;

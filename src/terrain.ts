@@ -28,6 +28,9 @@ export interface Terrain {
   zoom: number;
   // Where the heights come from (absent: AWS Terrain Tiles).
   source?: TerrainSource;
+  // How tall what stands on the ground is (trees, mostly), per pixel, meters; NaN unknown.
+  // From LiDAR surface and terrain models, where a country publishes both.
+  canopy?: Float32Array;
 }
 
 export async function fetchTerrain(
@@ -151,6 +154,25 @@ export function elevationAt(t: Terrain, lng: number, lat: number): number {
   const top = h(r, c) * (1 - fx) + h(r, c + 1) * fx;
   const bottom = h(r + 1, c) * (1 - fx) + h(r + 1, c + 1) * fx;
   return top * (1 - fy) + bottom * fy;
+}
+
+// The height of what stands at a scene point (meters, nearest pixel), or undefined where
+// unknown; null when the terrain has no such heights. Across a selection (a few km), scene
+// meters map to grid pixels linearly to well under a pixel, so the map projection is done
+// once, not per point.
+export function canopySampler(t: Terrain, frame: { toLngLat: (p: [number, number]) => [number, number] }): ((x: number, z: number) => number | undefined) | null {
+  const canopy = t.canopy;
+  if (!canopy) return null;
+  const [ox, oy] = lngLatPixel(t, frame.toLngLat([0, 0]));
+  const [ex] = lngLatPixel(t, frame.toLngLat([1000, 0]));
+  const [, sy] = lngLatPixel(t, frame.toLngLat([0, 1000]));
+  const [kx, ky] = [(ex - ox) / 1000, (sy - oy) / 1000];
+  return (x, z) => {
+    const [c, r] = [Math.round(ox + x * kx), Math.round(oy + z * ky)];
+    if (c < 0 || r < 0 || c >= t.width || r >= t.height) return undefined;
+    const v = canopy[r * t.width + c];
+    return Number.isNaN(v) ? undefined : v;
+  };
 }
 
 // Grid position of a point: fractional (col, row) in pixel-center units, the inverse of

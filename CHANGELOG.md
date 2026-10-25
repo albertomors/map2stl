@@ -68,6 +68,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   depending on the area's size) and fitted into the same grid as the worldwide tiles, which
   fill anything it doesn't cover. Ridges, gullies and rock faces come out sharp instead of
   rounded. The data panel names the terrain's source and spacing, and the export credits it.
+- Forests as tall as they really are, where the LiDAR has the surface model too (Norway):
+  each crown takes the measured height of the trees under it, and where nothing as tall as
+  a tree stands, the wood opens into a clearing, its edge sloping and lined with trees like
+  the wood's outline. Elsewhere the canopy stays at 15 m.
 
 ## [0.6.0] - 2026-10-24
 

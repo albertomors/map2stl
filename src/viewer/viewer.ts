@@ -35,7 +35,7 @@ import type { PrintModel, ThinObjects } from '../export';
 import { clipObjects, clipToSelection } from '../clip';
 import { applyEdits, editedTrees, editKey, type Edits, type GroundKind, type ObjectEdit } from '../edits';
 import { centroid, pointInRing, ringArea, type LngLat } from '../geo';
-import { elevationAt } from '../terrain';
+import { canopySampler, elevationAt } from '../terrain';
 import { isSea, type Area, type Building, type Line, type OsmData } from '../osm';
 import { boatInside, mooredBoats, type Boat } from '../boats';
 import { buildCanopy, canopySurface, FOREST, forestAreas, type Canopy } from '../forest';
@@ -624,6 +624,7 @@ export class Viewer {
       heightScale: at.heightScale,
       bare: (id) => !!this.edits.get(id)?.noTrees,
       borderTrees: true,
+      treeHeight: canopySampler(t, at.frame) ?? undefined,
     });
   }
 

@@ -547,7 +547,9 @@ function showData(data: AreaData) {
   const sea = deepest < 0 ? ` Sea down to ${Math.round(-deepest)} m (${data.bathymetry!.source.name}).` : '';
   // Which heights: national LiDAR where there is some, else the worldwide tiles.
   const from = t.source ? `${t.source.name}, ≈${t.source.resolutionM.toFixed(1)} m` : `AWS Terrain Tiles, ≈${spacing.toFixed(0)} m`;
-  $('data-terrain').textContent = `Terrain ${Math.round(t.min)}–${Math.round(t.max)} m above sea level, ${t.width}×${t.height} grid (${from}).${sea}`;
+  // Forests as tall as they really are, where the LiDAR has the surface too.
+  const trees = t.canopy ? ' Forest heights measured by the same LiDAR.' : '';
+  $('data-terrain').textContent = `Terrain ${Math.round(t.min)}–${Math.round(t.max)} m above sea level, ${t.width}×${t.height} grid (${from}).${trees}${sea}`;
   if (replacing) viewer?.show(data, visibleLayers, scales(), { keepCamera: true, edits });
   showExport();
   updatePrintPreview();
