@@ -7,11 +7,12 @@ import type { AreaData, Layer } from './area-data';
 import { clipObjects } from './clip';
 import { applyEdits, editedTrees, type Edits } from './edits';
 import type { Wasm } from './merge';
+import { boatInside, mooredBoats } from './boats';
 import { buildCanopy, canopySolid } from './forest';
 import { buildGroundSolids } from './print-ground';
 import { elevationAt } from './terrain';
 import { buildModels } from './viewer/models';
-import { buildBridges, buildBuildings, buildStructures, COLORS, TREE_HEIGHT_M, treesGeometry, type PickableMesh } from './viewer/objects';
+import { buildBoats, buildBridges, buildBuildings, buildStructures, COLORS, TREE_HEIGHT_M, treesGeometry, type PickableMesh } from './viewer/objects';
 import { prepareScene } from './viewer/scene';
 import { buildTerrain } from './viewer/terrain-mesh';
 
@@ -101,11 +102,18 @@ export function buildPrintModel(
   const groups: { name: string; color: string; pieces: Piece[] }[] = [
     { name: TERRAIN, color: '#c9bba5', pieces: tile ? [{ geometry: tile.top }, { geometry: tile.sides }] : [{ geometry: flat(ground.terrain!.positions) }] },
     { name: 'Water', color: '#3b8fe0', pieces: [solids(ground.water)] },
+    {
+      name: 'Boats',
+      color: '#f4f4f0',
+      pieces: show('water') ? [pick(buildBoats(mooredBoats({ ...data.osm, ...edited }).filter((b) => boatInside(b, ring) && !edits.get(b.key)?.deleted), at))] : [],
+    },
     { name: 'Streets', color: '#' + COLORS.road.getHexString(), pieces: [solids(ground.streets)] },
     // Each its own part, so a slicer can give it its own filament or the terrain's.
     { name: 'Squares', color: '#c9c6c1', pieces: [solids(ground.squares)] },
     { name: 'Parks', color: '#5fae4c', pieces: [solids(ground.parks)] },
     { name: 'Sand and rock', color: '#e8d6a4', pieces: [solids(ground.sand)] },
+    // Steep ground, gray like the 3D view's rock: its own filament in a 3MF.
+    { name: 'Rock', color: '#9c978e', pieces: [solids(ground.rock)] },
     {
       name: 'Buildings',
       color: '#' + COLORS.wall.getHexString(),

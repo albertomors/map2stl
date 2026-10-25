@@ -1,7 +1,9 @@
 // Everything that stands on the ground: buildings with roofs, structures (bridge decks, piers,
-// walls, towers), road and rail bridges, and trees. Each sits on the terrain below it.
+// walls, towers), road and rail bridges, trees, and boats on the water. Each sits on the
+// terrain below it.
 
 import { Color, ConeGeometry, InstancedMesh, Matrix4, MeshLambertMaterial, ShapeUtils, Vector2, type BufferGeometry } from 'three';
+import { BOAT_PAINTS, type Boat } from '../boats';
 import type { LngLat } from '../geo';
 import type { LocalFrame } from '../local';
 import { editKey, type EditedTree } from '../edits';
@@ -18,7 +20,17 @@ export const COLORS = {
   road: new Color('#5b606b'),
   rail: new Color('#6e5a8a'),
   tree: new Color('#3f8a3a'),
+  cabin: new Color('#f2f0ea'),
 };
+// Hulls: white, navy, red, varnished wood.
+const HULLS = ['#f4f4f0', '#2c3e66', '#b8423a', '#9a6a3c'].map((c) => new Color(c));
+// A boat's hull above the water (and drawn this far into it), and its cabin: above the deck,
+// from the stern this far along, and this much of the beam.
+const FREEBOARD_M = 1;
+const DRAFT_M = 0.3;
+const CABIN_M = 1.5;
+const CABIN_SPAN = [0.2, 0.55];
+const CABIN_WIDTH = 0.7;
 
 const BRIDGE_DECK_M = 1.2;
 const BRIDGE_CLEARANCE_M = 1;
@@ -113,6 +125,37 @@ export function buildStructures(osm: OsmData, at: Placement): PickableMesh | nul
   for (const t of osm.towers) {
     own(t.id);
     tower(m, t, at, c);
+  }
+  return m.empty ? null : { geometry: m.build(), owners: m.owners, keys };
+}
+
+// Boats on the water (boats.ts): a hull pointed at the bow, and a cabin on most.
+export function buildBoats(boats: Boat[], at: Placement): PickableMesh | null {
+  const m = new MeshBuilder();
+  const keys: string[] = [];
+  for (const b of boats) {
+    m.owner = keys.push(b.key) - 1;
+    const [x, z] = at.frame.toLocal(b.at);
+    const water = at.elevation(b.at) * at.terrainScale;
+    m.ground = water;
+    // Along the boat (bow +) and across it, in plan.
+    const [ux, uz] = [Math.cos(b.heading), -Math.sin(b.heading)];
+    const width = Math.max(b.beam, at.minWidth ?? 0);
+    const pt = (along: number, across: number): P => [x + ux * along * b.length - uz * across * width, z + uz * along * b.length + ux * across * width];
+    const hull: P[] = [pt(-0.5, -0.5), pt(0.2, -0.5), pt(0.5, 0), pt(0.2, 0.5), pt(-0.5, 0.5)];
+    const deck = water + FREEBOARD_M * at.heightScale;
+    const color = HULLS[b.paint % BOAT_PAINTS];
+    walls(m, hull, water - Math.max(DRAFT_M, at.sink ?? 0), deck, color);
+    flatCap(m, hull, [], deck, color);
+    flatCap(m, hull, [], water - Math.max(DRAFT_M, at.sink ?? 0), color, 'down');
+    if (!b.cabin) continue;
+    const [a0, a1] = [CABIN_SPAN[0] - 0.5, CABIN_SPAN[1] - 0.5];
+    const w = CABIN_WIDTH / 2;
+    const cabin: P[] = [pt(a0, -w), pt(a1, -w), pt(a1, w), pt(a0, w)];
+    const roof = deck + CABIN_M * at.heightScale;
+    walls(m, cabin, deck - 0.05, roof, COLORS.cabin);
+    flatCap(m, cabin, [], roof, COLORS.cabin);
+    flatCap(m, cabin, [], deck - 0.05, COLORS.cabin, 'down');
   }
   return m.empty ? null : { geometry: m.build(), owners: m.owners, keys };
 }

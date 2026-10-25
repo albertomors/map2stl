@@ -5,8 +5,8 @@
 // would print.
 //
 // Each spot belongs to one layer only, so multi-color prints get clean borders: water wins
-// (a road crossing a river without a bridge is cut there), then streets, squares, sand, and
-// parks. The 2D work (unions, cuts) is done by Clipper2, through manifold-3d's
+// (a road crossing a river without a bridge is cut there), then streets, squares, sand, rock
+// (steep ground, as the 3D view shades it) and parks. The 2D work (unions, cuts) is done by Clipper2, through manifold-3d's
 // CrossSection: fast, and exact (integer coordinates inside), where float polygon clipping
 // fails on near-degenerate city data.
 
@@ -26,6 +26,7 @@ export interface GroundSolids {
   squares: Solids;
   parks: Solids;
   sand: Solids;
+  rock: Solids;
   // The terrain tile with all of them carved in; null when there's nothing to carve.
   terrain: { positions: number[]; baseY: number } | null;
 }
@@ -33,6 +34,9 @@ export interface GroundSolids {
 // How deep each kind lies below the ground, in steps (its top), and how deep it's carved
 // (its fill's bottom edge sits there, overlapping the terrain a step more).
 const DEPTH = { flush: 0, streets: 1, water: 2 };
+// Ground this steep (as shown, with the terrain exaggeration) is rock: the middle of the 3D
+// view's blend from ground to rock (relief.ts).
+const ROCK_DEG = 37.5;
 // Paths, tracks and steps print only at their real width, if that's wide enough: widened,
 // a footpath network covers a city center in thick bands. Streets of any kind are widened
 // when they're too narrow, so the street network stays connected.
@@ -125,6 +129,7 @@ export function buildGroundSolids(
   const roads = claim([...(show('roads') ? lines(osm.roads.filter((l) => !l.bridge)) : []), ...(show('railways') ? lines(osm.railways.filter((l) => !l.bridge)) : [])]);
   const paved = claim(show('paved') ? [...areas(osm.pavedAreas), ...lines(osm.pavedLines)] : none());
   const sand = claim(show('surfaces') ? areas(osm.surfaces) : none());
+  const rock = claim(show('surfaces') ? steepGround(wasm, grid, (h) => ground(h), metersPerPx, keep) : none());
   const parks = claim(show('green') ? areas(osm.green) : none());
   const land = taken ? keep(CrossSection.difference(selection, taken)) : null;
   const tiles = (cs: CS | null) => (cs ? tiled(cs, grid, keep) : []);
@@ -134,11 +139,12 @@ export function buildGroundSolids(
   const step = stepUnits;
   const fill = (polys: Poly[], depth: number) => drapedSolids(ctx, polys, -depth * step, -(depth + 2) * step);
   progress(0.2, 'Laying the streets');
-  const shapes = { water: tiles(water), streets: tiles(roads), squares: tiles(paved), sand: tiles(sand), parks: tiles(parks) };
+  const shapes = { water: tiles(water), streets: tiles(roads), squares: tiles(paved), sand: tiles(sand), rock: tiles(rock), parks: tiles(parks) };
   const streets = fill(shapes.streets, DEPTH.streets);
   progress(0.55, 'Laying squares, parks and sand');
   const squares = fill(shapes.squares, DEPTH.flush);
   const sandSolids = fill(shapes.sand, DEPTH.flush);
+  const rockSolids = fill(shapes.rock, DEPTH.flush);
   const parkSolids = fill(shapes.parks, DEPTH.flush);
   const waterSolids = fill(shapes.water, DEPTH.water);
   progress(0.7, 'Carving the terrain');
@@ -152,13 +158,43 @@ export function buildGroundSolids(
           { polys: shapes.streets, depth: (DEPTH.streets + 1) * step },
           { polys: shapes.squares, depth: (DEPTH.flush + 1) * step },
           { polys: shapes.sand, depth: (DEPTH.flush + 1) * step },
+          { polys: shapes.rock, depth: (DEPTH.flush + 1) * step },
           { polys: shapes.parks, depth: (DEPTH.flush + 1) * step },
         ],
         baseDepth,
       )
     : null;
   for (const cs of made) cs.delete();
-  return { water: waterSolids, streets, squares, parks: parkSolids, sand: sandSolids, terrain };
+  return { water: waterSolids, streets, squares, parks: parkSolids, sand: sandSolids, rock: rockSolids, terrain };
+}
+
+// The grid cells steeper than ROCK_DEG (in the scene, exaggeration included), as one shape:
+// each row's runs of steep cells a rectangle, all of them united.
+function steepGround(wasm: Wasm, grid: Grid, ground: (h: number) => number, metersPerPx: number, keep: (cs: CS) => CS): CS[] {
+  const { cols, rows, colX, rowY, height } = grid;
+  const limit = Math.tan((ROCK_DEG * Math.PI) / 180);
+  const rects: Pair[][] = [];
+  for (let r = 0; r < rows - 1; r++) {
+    let start = -1;
+    for (let c = 0; c <= cols - 1; c++) {
+      let steep = false;
+      if (c < cols - 1) {
+        const [a, b, d, e] = [ground(height(c, r)), ground(height(c + 1, r)), ground(height(c, r + 1)), ground(height(c + 1, r + 1))];
+        const w = (colX(c + 1) - colX(c)) * metersPerPx;
+        const h = (rowY(r + 1) - rowY(r)) * metersPerPx;
+        steep = w > 0 && h > 0 && Math.hypot((b - a + e - d) / (2 * w), (d - a + e - b) / (2 * h)) > limit;
+      }
+      if (steep && start < 0) start = c;
+      if (!steep && start >= 0) {
+        const [x0, x1, y0, y1] = [colX(start), colX(c), rowY(r), rowY(r + 1)];
+        rects.push([[x0, y0], [x1, y0], [x1, y1], [x0, y1]]);
+        start = -1;
+      }
+    }
+  }
+  if (!rects.length) return [];
+  // All wound the same way, so the Positive fill rule is their union.
+  return [keep(new wasm.CrossSection(rects.map((q) => (signedArea(q) > 0 ? q : [...q].reverse())), 'Positive'))];
 }
 
 // The shape cut into tiles along grid lines (halving it again and again: each round cuts

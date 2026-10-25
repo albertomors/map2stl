@@ -5,6 +5,7 @@
 import type { AreaData } from '../area-data';
 import type { LngLat } from '../geo';
 import { LocalFrame } from '../local';
+import { isSea } from '../osm';
 import { describe } from '../selection';
 import { elevationAt } from '../terrain';
 import type { Placement } from './objects';
@@ -33,7 +34,7 @@ export function prepareScene(data: AreaData, scales: { terrain: number; heights:
     maxZ: Math.max(...local.map((p) => p[1])),
   };
   // Terrarium includes the sea floor: where there's sea, the water surface is the ground.
-  const hasSea = osm.waterAreas.some((a) => a.kind === 'sea');
+  const hasSea = osm.waterAreas.some(isSea);
   const clampSea = (h: number) => (hasSea && !seaFloor ? Math.max(h, 0) : h);
   // Heights relative to the lowest point, so the model sits near y = 0 wherever it is.
   const ref = clampSea(terrain.min);

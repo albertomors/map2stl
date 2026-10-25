@@ -81,6 +81,7 @@ export async function fetchTerrain(
     }
   }
   await Promise.all(jobs);
+  despike(heights, width, height);
 
   let min = Infinity;
   let max = -Infinity;
@@ -99,12 +100,49 @@ export async function fetchTerrain(
   };
 }
 
+// The tiles have stray pixels far below everything around them, in water mostly (Sydney
+// Harbour: dozens at -1300 to -2200 m, where it's 10-40 m deep), which would sink the model's
+// lowest point into a pit. A pixel this far below the median of its eight neighbors takes
+// that median: a real cliff can't do it (a pixel on one matches the neighbors on its side).
+const SPIKE_M = 100;
+function despike(heights: Float32Array, width: number, height: number) {
+  const around: number[] = [];
+  const fixes: [number, number][] = [];
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      around.length = 0;
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dx = -1; dx <= 1; dx++) {
+          const [nx, ny] = [x + dx, y + dy];
+          if ((dx || dy) && nx >= 0 && ny >= 0 && nx < width && ny < height) around.push(heights[ny * width + nx]);
+        }
+      }
+      const i = y * width + x;
+      // Quick out: not below its lowest neighbor by much, so not below their median either.
+      let lowest = Infinity;
+      for (const v of around) lowest = Math.min(lowest, v);
+      if (heights[i] >= lowest - SPIKE_M) continue;
+      around.sort((a, b) => a - b);
+      const median = around[around.length >> 1];
+      if (heights[i] < median - SPIKE_M) fixes.push([i, median]);
+    }
+  }
+  // Applied after, so a fix doesn't change the next pixel's neighbors.
+  for (const [i, v] of fixes) heights[i] = v;
+}
+
+// Each terrain's north-west corner in world pixels, and the last latitude's (elevationAt).
+const corners = new WeakMap<Terrain, [number, number]>();
+const last = { lat: NaN, zoom: -1, y: 0 };
+
 // Ground height at a point, bilinear between the grid's pixel centers (clamped at the edges).
 export function elevationAt(t: Terrain, lng: number, lat: number): number {
-  const x0 = worldX(t.bbox[0], t.zoom);
-  const y0 = worldY(t.bbox[3], t.zoom);
-  const px = Math.min(Math.max(worldX(lng, t.zoom) - x0 - 0.5, 0), t.width - 1);
-  const py = Math.min(Math.max(worldY(lat, t.zoom) - y0 - 0.5, 0), t.height - 1);
+  let corner = corners.get(t);
+  if (!corner) corners.set(t, (corner = [worldX(t.bbox[0], t.zoom), worldY(t.bbox[3], t.zoom)]));
+  // Callers walk grids row by row: the same latitude again skips the log and tangent.
+  if (lat !== last.lat || t.zoom !== last.zoom) [last.lat, last.zoom, last.y] = [lat, t.zoom, worldY(lat, t.zoom)];
+  const px = Math.min(Math.max(worldX(lng, t.zoom) - corner[0] - 0.5, 0), t.width - 1);
+  const py = Math.min(Math.max(last.y - corner[1] - 0.5, 0), t.height - 1);
   const c = Math.min(Math.floor(px), t.width - 2);
   const r = Math.min(Math.floor(py), t.height - 2);
   const fx = px - c;

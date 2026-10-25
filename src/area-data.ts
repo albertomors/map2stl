@@ -2,13 +2,14 @@
 // The output of milestone 2 and the input of the 3D viewer.
 
 import { depthAt, fetchBathymetry, type Bathymetry } from './bathymetry';
+import { mooredBoats } from './boats';
 import { forestAreas } from './forest';
 import { centroid, distance, intersectsRing, pathLength, ringArea, type LngLat } from './geo';
-import { buildQuery, parse, type OsmData } from './osm';
+import { buildQuery, isSea, parse, type Area, type OsmData } from './osm';
 import { overpass, type OverpassElement } from './overpass';
 import { describe, type Selection } from './selection';
 import { fetchLidarTerrain } from './lidar';
-import { fetchTerrain, pixelLngLat, type Terrain } from './terrain';
+import { fetchTerrain, lngLatPixel, pixelLngLat, type Terrain } from './terrain';
 import { fetchTileData } from './vector-tiles';
 
 export interface AreaData {
@@ -18,26 +19,29 @@ export interface AreaData {
   // 'tiles': the quick version from the base map's vector tiles, while 'full' (Overpass:
   // roofs, colors, trees, walls…) is still on its way, or if it failed.
   detail: 'tiles' | 'full';
-  // Sea depths (EMODnet), when the area has sea and they're available.
+  // Sea depths (EMODnet in Europe, NOAA elsewhere), when the area has sea and they're available.
   bathymetry?: Bathymetry | null;
 }
 
-// The terrain with the sea floor in it: where the terrain is at sea level and the depths
-// say sea, the depth there (the tiles have almost none). With water shown it's flattened to
+// The terrain with the sea floor in it: inside the map's sea (and harbors, bays), the depths
+// replace the tiles' heights, which have almost none near coasts and stray a few meters
+// above sea level in places (kept, they stood as plateaus over the sea floor); where the
+// depths have none, sea level. The sea is taken from the map, not from heights at or below
+// zero: polders are land. With water shown it's flattened to
 // sea level again (scene.ts); with water off, it's the ground. The depths come in cells
 // about 115 m wide: interpolated, the floor shows their facets, and where the cells end
 // short of the coast it drops off a ledge; so the whole sea floor is smoothed over about a
 // cell, from sea points only (land doesn't drag the coast up, and stays as it was).
-function withSeaFloor(t: Terrain, b: Bathymetry): Terrain {
+function withSeaFloor(t: Terrain, b: Bathymetry, seaAreas: Area[]): Terrain {
   const heights = Float32Array.from(t.heights);
-  const sea = new Uint8Array(heights.length);
+  const sea = seaMask(t, seaAreas);
   for (let row = 0; row < t.height; row++) {
     for (let col = 0; col < t.width; col++) {
       const i = row * t.width + col;
-      if (heights[i] > 0) continue;
+      if (!sea[i]) continue;
       const [lng, lat] = pixelLngLat(t, col, row);
-      heights[i] = Math.min(heights[i], -depthAt(b, lng, lat));
-      sea[i] = 1;
+      const depth = depthAt(b, lng, lat);
+      heights[i] = depth > 0 ? -depth : Math.min(heights[i], 0);
     }
   }
   // A depth cell, in terrain pixels.
@@ -51,6 +55,30 @@ function withSeaFloor(t: Terrain, b: Bathymetry): Terrain {
     max = Math.max(max, h);
   }
   return { ...t, heights, min, max };
+}
+
+// Which terrain pixels are sea: the areas drawn on a canvas the grid's size.
+function seaMask(t: Terrain, areas: Area[]): Uint8Array {
+  const canvas = new OffscreenCanvas(t.width, t.height);
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
+  ctx.fillStyle = '#fff';
+  for (const a of areas) {
+    ctx.beginPath();
+    for (const ring of [a.outer, ...a.holes]) {
+      ring.forEach((p, k) => {
+        const [x, y] = lngLatPixel(t, p);
+        // Pixel centers sit half a pixel in on the canvas.
+        if (k) ctx.lineTo(x + 0.5, y + 0.5);
+        else ctx.moveTo(x + 0.5, y + 0.5);
+      });
+      ctx.closePath();
+    }
+    ctx.fill('evenodd');
+  }
+  const pixels = ctx.getImageData(0, 0, t.width, t.height).data;
+  const mask = new Uint8Array(t.width * t.height);
+  for (let i = 0; i < mask.length; i++) mask[i] = pixels[i * 4] > 127 ? 1 : 0;
+  return mask;
 }
 
 // Blurs `values` where `mask` is set, from masked values only (each point the average of
@@ -165,11 +193,11 @@ export async function fetchAreaData(
   const osm = parse(elements, ring);
   fullArrived = true;
   // Sea depths, only for areas with sea; without them the sea prints at its usual depth.
-  const sea = osm.waterAreas.some((a) => a.kind === 'sea');
+  const sea = osm.waterAreas.some(isSea);
   const bathymetry = sea ? await fetchBathymetry(bbox, signal).catch(() => null) : null;
   // LiDAR terrain where there is some, then the sea floor in it.
   const ground = await sharper;
-  return { selection, osm, terrain: bathymetry ? withSeaFloor(ground, bathymetry) : ground, detail: 'full', bathymetry };
+  return { selection, osm, terrain: bathymetry ? withSeaFloor(ground, bathymetry, osm.waterAreas.filter(isSea)) : ground, detail: 'full', bathymetry };
 }
 
 // Whether a chunk's box and the selection overlap. Edges count: the selection's corners lie
@@ -225,8 +253,9 @@ export function summarize({ osm, detail }: AreaData): LayerSummary[] {
     const n = lines.filter((l) => l.bridge).length;
     return n ? `, ${n} on bridges` : '';
   };
-  const sea = osm.waterAreas.some((a) => a.kind === 'sea');
-  const water = osm.waterAreas.filter((a) => a.kind !== 'sea').length;
+  const sea = osm.waterAreas.some(isSea);
+  const water = osm.waterAreas.filter((a) => !isSea(a)).length;
+  const boats = mooredBoats(osm).length;
   return [
     {
       layer: 'buildings',
@@ -256,7 +285,7 @@ export function summarize({ osm, detail }: AreaData): LayerSummary[] {
       layer: 'water',
       label: 'Water',
       count: osm.waterAreas.length + osm.waterways.length,
-      detail: [sea && 'sea', water && `${water} areas`, osm.waterways.length && `${osm.waterways.length} streams`]
+      detail: [sea && 'sea', water && `${water} areas`, osm.waterways.length && `${osm.waterways.length} streams`, boats && `${boats} boats at piers`]
         .filter(Boolean)
         .join(', '),
     },

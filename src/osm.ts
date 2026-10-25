@@ -59,6 +59,10 @@ export interface Area extends Polygon {
   wikidata?: string;
 }
 
+// Salt water at sea level: the sea (rebuilt from coastlines), and harbors, bays and straits
+// mapped as water areas (Sydney's Port Jackson has no coastline inside it).
+export const isSea = (a: { kind: string }) => /^(sea|harbour|bay|strait)$/.test(a.kind);
+
 // Piers, walls, towers…: built things that aren't buildings.
 export interface StructureLine extends Line {
   height: number;

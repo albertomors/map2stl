@@ -204,11 +204,19 @@ async function searchModels(key: string, by: { landmark: { wikidata?: string; na
   $('model-search-form').hidden = false;
   status.textContent = 'Searching Wikimedia Commons and Sketchfab…';
   const [{ findCommonsModels, wikidataEnglishName }, { searchSketchfabNames }] = await Promise.all([import('./commons'), import('./sketchfab')]);
-  const landmark = 'landmark' in by ? by.landmark : { name: by.query };
-  // Sketchfab by name: the English one first (from Wikidata), then the local one from OSM.
+  const landmark: { wikidata?: string; name?: string; town?: string } = 'landmark' in by ? { ...by.landmark } : { name: by.query };
+  // A local name with no Wikidata item goes with its town: "Cattedrale di Santa Maria
+  // Assunta" alone finds Atri's as readily as Pisa's.
+  if ('landmark' in by && !landmark.wikidata && landmark.name && areaData) {
+    const { townAt } = await import('./search');
+    landmark.town = await townAt(areaData.selection.center, search.signal).catch(() => undefined);
+  }
+  // Sketchfab by name: the English one first (from Wikidata), then the local one from OSM
+  // (with its town, if any).
   const names = async () => {
     const english = landmark.wikidata ? await wikidataEnglishName(landmark.wikidata, search.signal).catch(() => undefined) : undefined;
-    return [...new Set([english, landmark.name].filter((n): n is string => !!n))];
+    const local = landmark.name && landmark.town && !landmark.name.includes(landmark.town) ? `${landmark.name} ${landmark.town}` : landmark.name;
+    return [...new Set([english, local].filter((n): n is string => !!n))];
   };
   const searched = await names();
   // The names searched, in the box: to refine by hand.
@@ -536,7 +544,7 @@ function showData(data: AreaData) {
   const spacing = distance([t.bbox[0], midLat], [t.bbox[2], midLat]) / t.width;
   // With sea depths, the deepest point there too, and their source.
   const deepest = data.bathymetry ? data.bathymetry.heights.reduce((low, h) => (Number.isFinite(h) && h < low ? h : low), 0) : 0;
-  const sea = deepest < 0 ? ` Sea down to ${Math.round(-deepest)} m (EMODnet Bathymetry, CC BY 4.0).` : '';
+  const sea = deepest < 0 ? ` Sea down to ${Math.round(-deepest)} m (${data.bathymetry!.source.name}).` : '';
   // Which heights: national LiDAR where there is some, else the worldwide tiles.
   const from = t.source ? `${t.source.name}, ≈${t.source.resolutionM.toFixed(1)} m` : `AWS Terrain Tiles, ≈${spacing.toFixed(0)} m`;
   $('data-terrain').textContent = `Terrain ${Math.round(t.min)}–${Math.round(t.max)} m above sea level, ${t.width}×${t.height} grid (${from}).${sea}`;

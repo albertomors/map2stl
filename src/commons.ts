@@ -22,14 +22,19 @@ export interface CommonsModel {
   match: 'wikidata' | 'depicts' | 'name';
 }
 
-export async function findCommonsModels(landmark: { wikidata?: string; name?: string }, signal: AbortSignal): Promise<CommonsModel[]> {
+// `town`: searched with the name, when there's no Wikidata item to go by (a local name alone
+// can match a namesake elsewhere).
+export async function findCommonsModels(landmark: { wikidata?: string; name?: string; town?: string }, signal: AbortSignal): Promise<CommonsModel[]> {
   const found = new Map<string, CommonsModel['match']>();
   const add = (titles: string[], match: CommonsModel['match']) => titles.forEach((t) => found.has(t) || found.set(t, match));
   if (landmark.wikidata) {
     add(await wikidataModels(landmark.wikidata, signal), 'wikidata');
     add(await searchFiles(`haswbstatement:P180=${landmark.wikidata}`, signal), 'depicts');
   }
-  if (landmark.name) add((await searchFiles(`"${landmark.name.replace(/"/g, '')}"`, signal)).slice(0, NAME_RESULTS), 'name');
+  if (landmark.name) {
+    const town = landmark.town && !landmark.name.includes(landmark.town) ? ` ${landmark.town.replace(/"/g, '')}` : '';
+    add((await searchFiles(`"${landmark.name.replace(/"/g, '')}"${town}`, signal)).slice(0, NAME_RESULTS), 'name');
+  }
   if (!found.size) return [];
   const info = await fileInfo([...found.keys()], signal);
   return info

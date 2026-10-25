@@ -71,15 +71,25 @@ export function buildTerrain(
   const { step, cols, rows, colX, rowY, height } = terrainGrid(t);
 
   // Vertices are shared by position, so the open edges can be found by counting edge uses.
+  // Grid corners (nearly all of them) are found by their index; points cut along the
+  // outline by their position.
   const pos: number[] = [];
   const uv: number[] = [];
   const ids = new Map<string, number>();
+  const gridIds = new Int32Array(cols * rows).fill(-1);
+  const gridIndex = (x: number, y: number): number => {
+    const c = Math.min(Math.round(x / step), cols - 1);
+    const r = Math.min(Math.round(y / step), rows - 1);
+    return colX(c) === x && rowY(r) === y ? r * cols + c : -1;
+  };
   const vertex = ({ x, y, h }: GP): number => {
-    const key = `${x.toFixed(6)},${y.toFixed(6)}`;
-    let id = ids.get(key);
+    const g = gridIndex(x, y);
+    const key = g < 0 ? `${x.toFixed(6)},${y.toFixed(6)}` : '';
+    let id = g < 0 ? ids.get(key) : gridIds[g] < 0 ? undefined : gridIds[g];
     if (id === undefined) {
       id = pos.length / 3;
-      ids.set(key, id);
+      if (g < 0) ids.set(key, id);
+      else gridIds[g] = id;
       const [lx, lz] = frame.toLocal(pixelLngLat(t, x, y));
       pos.push(lx, ground(h), lz);
       uv.push((lx - bounds.minX) / (bounds.maxX - bounds.minX), 1 - (lz - bounds.minZ) / (bounds.maxZ - bounds.minZ));
@@ -134,10 +144,11 @@ export function buildTerrain(
   // Open edges of the surface (used by one face only) run along the outline. Each keeps the
   // direction its face goes round, so the walls hung from it can wind the opposite way: a
   // shared edge crossed in opposite directions is what makes the tile one closed solid.
-  const uses = new Map<string, [number, number]>();
+  const uses = new Map<number, [number, number]>();
+  const count = pos.length / 3;
   for (let i = 0; i < index.length; i += 3) {
     for (const [p, q] of [[index[i], index[i + 1]], [index[i + 1], index[i + 2]], [index[i + 2], index[i]]]) {
-      const key = p < q ? `${p},${q}` : `${q},${p}`;
+      const key = p < q ? p * count + q : q * count + p;
       if (uses.has(key)) uses.delete(key);
       else uses.set(key, [p, q]);
     }

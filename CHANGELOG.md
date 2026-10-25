@@ -9,8 +9,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- A landmark with no Wikidata tag is searched by its name and its town (from reverse
+  geocoding), not its name alone, which matched namesakes elsewhere ("Cattedrale di Santa
+  Maria Assunta" found Atri's for Pisa's).
+- The 3D view builds faster: the terrain mesh about 7× (grid corners found by index, not
+  by a text key), the forest's crowns and outline about 3× (worked out once each, the mask
+  read back from the CPU), and terrain heights at a point without recomputing the map
+  projection each time.
 - The nozzle goes down to 0.1 mm (such nozzles exist), the thinnest detail to 0.01 mm; their
   arrows step by 0.1 mm, and by 0.01 mm below 0.1 (0.1 up is 0.2, not 0.11).
+
+### Fixed
+
+- Stray terrain-tile pixels far below everything around them (Sydney Harbour has dozens at
+  -1300 to -2200 m, where it's 10-40 m deep) no longer sink the model's lowest point into
+  a pit: each takes the height of its neighbors.
+- The sea floor no longer stands in plateaus where the terrain tiles have the sea a few
+  meters above zero: the sea is taken from the map, and the depths replace the tiles'
+  heights there.
 
 ### Added
 
@@ -28,14 +44,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Restore deleted brings them back. The data panel shows forests in hectares.
 - The "Building height multiplier" slider is now "Object height multiplier": it raises
   everything standing on the ground, trees and forests too.
-- The sea floor, from EMODnet Bathymetry (European seas, about 115 m, CC BY 4.0; the
-  terrain tiles have almost none near coasts): switch the Water layer off and the sea
+- The sea floor, from EMODnet Bathymetry in European seas (about 115 m, CC BY 4.0) and
+  NOAA's global DEM mosaic everywhere else (ETOPO 2022, about 450 m, with NOAA's finer
+  coastal models where there are any; public domain); the terrain tiles have almost none
+  near coasts. Harbors, bays and straits count as sea too (Sydney's Port Jackson has no
+  coastline inside it). Switch the Water layer off and the sea
   becomes ground at its real depths, in the 3D view and in the print, the deepest point
   the model's lowest with the base under it (the whole map stands taller). The depths are
   smoothed over about a cell, so the floor slopes gently from the coast, without the
   data's facets or ledges where it stops short of the shore. With Water on,
   sea level is the lowest point, as before. Fetched only for areas with sea; the data
-  panel shows how deep it goes, and an export showing the sea floor credits EMODnet.
+  panel shows how deep it goes and from where, and an export showing the sea floor credits
+  its source.
+- Boats moored at piers, a few here and there: along the sides of each pier facing water,
+  some berths get a boat lying alongside, varied in length (5–14 m) and color, most with a
+  cabin; the same place gets the same boats every time. They float on the water, so they
+  show with the Water layer (and print with it, as their own Boats part), and each can be
+  selected and deleted.
+- Steep ground prints as rock, its own part in a 3MF (gray, like the 3D view's relief
+  shading), so it can take its own filament.
 - National LiDAR terrain where a country publishes it: Norway first, Kartverket's height
   model (about 1 m, CC BY 4.0), asked for at the detail the print can use (about 1–2.5 m
   depending on the area's size) and fitted into the same grid as the worldwide tiles, which

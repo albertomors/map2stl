@@ -1,5 +1,6 @@
 // City search with suggestions while typing, from Photon (photon.komoot.io):
-// OpenStreetMap data, free, no API key, typo tolerant.
+// OpenStreetMap data, free, no API key, typo tolerant. Also the town a point is in (for
+// searching a landmark's models by name and town).
 
 import type { Map } from 'maplibre-gl';
 
@@ -18,6 +19,15 @@ interface PhotonFeature {
     // [minLng, maxLat, maxLng, minLat]
     extent?: [number, number, number, number];
   };
+}
+
+// The name of the town or city a point is in, or undefined.
+export async function townAt([lng, lat]: [number, number], signal: AbortSignal): Promise<string | undefined> {
+  const res = await fetch(`https://photon.komoot.io/reverse?lon=${lng}&lat=${lat}&layer=city&limit=1`, { signal });
+  if (!res.ok) return undefined;
+  const json: { features?: PhotonFeature[] } = await res.json();
+  const p = json.features?.[0]?.properties as (PhotonFeature['properties'] & { city?: string }) | undefined;
+  return p?.city ?? p?.name;
 }
 
 export function setupSearch(map: Map, form: HTMLFormElement, input: HTMLInputElement, list: HTMLUListElement) {

@@ -7,7 +7,7 @@ import type { Edits } from './edits';
 import { buildPrintModel, findThinObjects, type PrintModel, type PrintOptions, type ThinObjects } from './export';
 import { to3MF, toSTL } from './export-files';
 import { loadManifold, mergeModel } from './merge';
-import { BATHYMETRY_CREDIT } from './bathymetry';
+import { isSea } from './osm';
 import { modelAssets, type ModelAsset } from './model-assets';
 import type { ViewScales } from './viewer/viewer';
 
@@ -88,7 +88,7 @@ self.onmessage = async (e: MessageEvent<PrintJob>) => {
     // So did the terrain, where it's national LiDAR, and the sea floor (printed only with
     // water off).
     if (job.data.terrain.source?.credit) credits.push(job.data.terrain.source.credit);
-    if (job.data.bathymetry && !job.visible.includes('water') && job.data.osm.waterAreas.some((a) => a.kind === 'sea')) credits.push(BATHYMETRY_CREDIT);
+    if (job.data.bathymetry && !job.visible.includes('water') && job.data.osm.waterAreas.some(isSea)) credits.push(job.data.bathymetry.source.credit);
     const file = job.kind === 'stl' ? toSTL(merged.model) : to3MF(merged.model, job.name, credits);
     // The unmerged model's size and counts are what the page reports; no need to send its
     // triangles back.

@@ -36,11 +36,12 @@ import { clipObjects, clipToSelection } from '../clip';
 import { applyEdits, editedTrees, editKey, type Edits, type GroundKind, type ObjectEdit } from '../edits';
 import { centroid, pointInRing, ringArea, type LngLat } from '../geo';
 import { elevationAt } from '../terrain';
-import type { Area, Building, Line, OsmData } from '../osm';
+import { isSea, type Area, type Building, type Line, type OsmData } from '../osm';
+import { boatInside, mooredBoats, type Boat } from '../boats';
 import { buildCanopy, canopySurface, FOREST, forestAreas, type Canopy } from '../forest';
 import { GroundTexture } from './ground';
 import { groundAt } from './ground-pick';
-import { buildBridges, buildBuildings, buildStructures, buildTrees, COLORS, TREE_HEIGHT_M, type PickableMesh, type Placement } from './objects';
+import { buildBoats, buildBridges, buildBuildings, buildStructures, buildTrees, COLORS, TREE_HEIGHT_M, type PickableMesh, type Placement } from './objects';
 import { modelAssets, type Axis, type ModelAsset } from '../model-assets';
 import { buildModels, fittedHeight, footprints } from './models';
 import { addRelief, reliefMaterial } from './relief';
@@ -137,6 +138,8 @@ export class Viewer {
   private stretchDepth: MeshDepthMaterial | null = null;
   // Trees are instances: the sliders scale their matrices (ground y, cone height) directly.
   private trees: { mesh: InstancedMesh; built: Float32Array } | null = null;
+  // Boats at the piers (boats.ts), as built.
+  private boats: Boat[] = [];
   // Forests' canopy (forest.ts), its height field, and its colors as built (the selected
   // wood is tinted over them).
   private canopy: { mesh: Mesh; field: Canopy; colors: Float32Array } | null = null;
@@ -448,7 +451,7 @@ export class Viewer {
     if (layer === this.liftLayer) this.highlight.visible = visible && !this.print.children.length;
     if (TEXTURE_LAYERS.includes(layer)) this.paintGround();
     // Water on or off moves the ground itself where there's sea: sea level, or the sea floor.
-    if (layer === 'water' && this.data?.osm.waterAreas.some((a) => a.kind === 'sea') && this.builtScales) this.build(this.builtScales, false);
+    if (layer === 'water' && this.data?.osm.waterAreas.some(isSea) && this.builtScales) this.build(this.builtScales, false);
   }
 
   dispose() {
@@ -522,7 +525,7 @@ export class Viewer {
     // The old meshes go away, and the object hidden in them with them.
     this.unhide = null;
     disposeChildren(this.objects);
-    for (const layer of ['buildings', 'structures', 'roads', 'railways', 'trees'] as Layer[]) this.layerObjects.delete(layer);
+    for (const layer of ['buildings', 'structures', 'roads', 'railways', 'trees', 'water'] as Layer[]) this.layerObjects.delete(layer);
     this.pickables = [];
     const at = this.placement!;
     const osm = this.data!.osm;
@@ -568,6 +571,9 @@ export class Viewer {
     solid(buildStructures({ ...osm, ...edited }, at), 'structures');
     solid(buildBridges(edited.roads, at, COLORS.road), 'roads', COLORS.road);
     solid(buildBridges(edited.railways, at, COLORS.rail), 'railways', COLORS.rail);
+    // Boats at the (edited) piers, inside the selection; they float on the water layer.
+    this.boats = mooredBoats({ ...osm, ...edited }).filter((b) => boatInside(b, this.ring) && !this.edits.get(b.key)?.deleted);
+    solid(buildBoats(this.boats, at), 'water');
 
     // OSM's single trees, and the forests' (forest.ts): a canopy, with single trees along
     // its border.
@@ -732,7 +738,9 @@ export class Viewer {
       mesh.castShadow = true;
       inner.add(mesh);
     };
-    if (key.startsWith('tree/')) {
+    if (key.startsWith('boat/')) {
+      add(buildBoats(this.boats.filter((b) => b.key === key), at));
+    } else if (key.startsWith('tree/')) {
       const tree = editedTrees(osm.trees, this.edits, TREE_HEIGHT_M).find((t) => t.key === key);
       const mesh = tree ? buildTrees([tree], at, COLORS.tree.clone().lerp(new Color('#ff6b2c'), 0.45)) : null;
       if (mesh) inner.add(mesh);
@@ -752,7 +760,9 @@ export class Viewer {
     pivot.add(inner);
     this.highlight.add(pivot);
     this.liftPivot = pivot;
-    this.liftLayer = key.startsWith('tree/')
+    this.liftLayer = key.startsWith('boat/')
+      ? 'water'
+      : key.startsWith('tree/')
       ? 'trees'
       : own.buildings.length || osm.buildings.some((b) => editKey(b) === key)
         ? 'buildings'
@@ -774,6 +784,8 @@ export class Viewer {
 
     const no = { canModel: false };
     if (key.startsWith('tree/')) return { key, title: 'Tree', info: `${m(TREE_HEIGHT_M)} tall (typical)`, canSize: true, canHeight: true, ...no };
+    const boat = key.startsWith('boat/') ? this.boats.find((b) => b.key === key) : undefined;
+    if (boat) return { key, title: 'Boat', info: `${m(boat.length)} long · placed at the pier (not in OpenStreetMap)`, canSize: false, canHeight: false, ...no };
 
     const parts = osm.buildings.filter((b) => editKey(b) === key);
     if (parts.length) {

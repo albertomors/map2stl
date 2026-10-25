@@ -103,7 +103,8 @@ export function buildCanopy(
   // The forest on the grid, one pixel per point: woods inside the selection, minus roads,
   // railways and water; and the selection alone (green), to keep the canopy inside it.
   const canvas = new OffscreenCanvas(cols, rows);
-  const ctx = canvas.getContext('2d')!;
+  // Read back once, on the CPU: a GPU canvas makes getImageData a slow round trip.
+  const ctx = canvas.getContext('2d', { willReadFrequently: true })!;
   ctx.setTransform(1 / cell, 0, 0, 1 / cell, -x0 / cell + 0.5, -z0 / cell + 0.5);
   const path = (rings: [number, number][][]) => {
     ctx.beginPath();
@@ -142,6 +143,8 @@ export function buildCanopy(
   // The edge's line wanders in and out by this (meters), in lumps a few crowns long.
   const ragged = (x: number, z: number) => RAGGED_CROWNS * spacing * valueNoise(x / (3 * spacing), z / (3 * spacing), 7);
   const band = BORDER_M * (spacing / CROWN_SPACING_M);
+  const [gx0, gy0] = [Math.floor(x0 / spacing) - 1, Math.floor(z0 / spacing) - 1];
+  const crowns = crownField(x0 / spacing, z0 / spacing, 1 / pointsPerCrown, gx0, gy0, Math.ceil((cols * cell) / spacing) + 3, Math.ceil((rows * cell) / spacing) + 3);
   const above = new Float32Array(n);
   const ground = new Float32Array(n);
   for (let j = 0; j < rows; j++) {
@@ -157,7 +160,7 @@ export function buildCanopy(
       }
       const into = dist[k] + ragged(x, z) - (borderTrees ? CANOPY_FROM * band : 0);
       const edge = Math.min(1, Math.max(0, into / (EDGE_CROWNS * spacing)));
-      above[k] = edge > 0 ? scale * edge * crowns(x / spacing, z / spacing, x0 / spacing, z0 / spacing, 1 / pointsPerCrown) : -TUCK_M;
+      above[k] = edge > 0 ? scale * edge * crowns(x / spacing, z / spacing) : -TUCK_M;
     }
   }
 
@@ -223,16 +226,17 @@ export function canopySurface(c: Canopy): { positions: Float32Array; grounds: Fl
       positions[k * 3 + 2] = c.z0 + j * c.cell;
     }
   }
-  const index: number[] = [];
+  const index = new Uint32Array((cols - 1) * (rows - 1) * 6);
+  let n = 0;
   for (let j = 0; j < rows - 1; j++) {
     for (let i = 0; i < cols - 1; i++) {
       const [a, b, d, e] = [j * cols + i, j * cols + i + 1, (j + 1) * cols + i, (j + 1) * cols + i + 1];
       if (above[a] <= 0 && above[b] <= 0 && above[d] <= 0 && above[e] <= 0) continue;
       // Facing up (+y), with x east and z south.
-      index.push(a, d, b, b, d, e);
+      index[n++] = a, index[n++] = d, index[n++] = b, index[n++] = b, index[n++] = d, index[n++] = e;
     }
   }
-  return { positions, grounds: ground, index: Uint32Array.from(index) };
+  return { positions, grounds: ground, index: index.slice(0, n) };
 }
 
 // The canopy as a closed solid for the print: the surface on top, the same cells `sink`
@@ -276,23 +280,34 @@ export function canopySolid(c: Canopy, sink: number): number[] {
 // tallest of the nearby crowns there, each a cone on a jittered grid, never below the level
 // between them. Shaped like the single trees' cones (as narrow, as steep), each tip on a
 // grid point (`ox`, `oy`, every `step`), so the surface has the peak, not a blunt top
-// between points.
-function crowns(x: number, y: number, ox: number, oy: number, step: number): number {
-  const [gx, gy] = [Math.floor(x), Math.floor(y)];
-  let h = BETWEEN;
-  for (let dx = -1; dx <= 1; dx++) {
-    for (let dy = -1; dy <= 1; dy++) {
-      const [cx, cy] = [gx + dx, gy + dy];
-      const snap = (v: number, o: number) => o + Math.round((v - o) / step) * step;
-      const px = snap(cx + 0.15 + 0.7 * hash(cx, cy, 1), ox);
-      const py = snap(cy + 0.15 + 0.7 * hash(cx, cy, 2), oy);
-      const radius = 0.45 + 0.2 * hash(cx, cy, 3);
-      const height = 0.75 + 0.4 * hash(cx, cy, 4);
-      const d = Math.hypot(x - px, y - py);
-      if (d < radius) h = Math.max(h, BETWEEN + (height - BETWEEN) * (1 - d / radius));
+// between points. Each crown is worked out once, for the grid cells from (gx0, gy0), `nx`
+// by `ny` of them (about nine points share each).
+function crownField(ox: number, oy: number, step: number, gx0: number, gy0: number, nx: number, ny: number): (x: number, y: number) => number {
+  const n = nx * ny;
+  const [cxs, cys, radii, heights] = [new Float64Array(n), new Float64Array(n), new Float64Array(n), new Float64Array(n)];
+  const snap = (v: number, o: number) => o + Math.round((v - o) / step) * step;
+  for (let j = 0; j < ny; j++) {
+    for (let i = 0; i < nx; i++) {
+      const [cx, cy, k] = [gx0 + i, gy0 + j, j * nx + i];
+      cxs[k] = snap(cx + 0.15 + 0.7 * hash(cx, cy, 1), ox);
+      cys[k] = snap(cy + 0.15 + 0.7 * hash(cx, cy, 2), oy);
+      radii[k] = 0.45 + 0.2 * hash(cx, cy, 3);
+      heights[k] = 0.75 + 0.4 * hash(cx, cy, 4);
     }
   }
-  return h;
+  return (x, y) => {
+    const [gx, gy] = [Math.floor(x) - gx0, Math.floor(y) - gy0];
+    let h = BETWEEN;
+    for (let j = Math.max(0, gy - 1); j <= Math.min(ny - 1, gy + 1); j++) {
+      for (let i = Math.max(0, gx - 1); i <= Math.min(nx - 1, gx + 1); i++) {
+        const k = j * nx + i;
+        const [dx, dy, r] = [x - cxs[k], y - cys[k], radii[k]];
+        const d2 = dx * dx + dy * dy;
+        if (d2 < r * r) h = Math.max(h, BETWEEN + (heights[k] - BETWEEN) * (1 - Math.sqrt(d2) / r));
+      }
+    }
+    return h;
+  };
 }
 
 // Smooth noise between -1 and 1, about one unit per lump, the same every time for the place.
