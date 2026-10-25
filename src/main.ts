@@ -8,11 +8,13 @@ import { countBuildings, estimateSeconds, recordSample, type EtaInput } from './
 import { distance } from './geo';
 import { setupNavigation } from './nav';
 import { DataPreview, LAYER_COLORS } from './preview';
+import { recordConsole, setupBugReport } from './bug-report';
 import { setupSearch } from './search';
 import { describe, loadSelection, saveSelection, type Selection, type ShapeKind } from './selection';
 import type { CommonsModel } from './commons';
 import type { SketchfabModel } from './sketchfab';
 import { modelAssets, type ModelAsset, type ModelChoice, type ModelSource } from './model-assets';
+import { sourceCredits } from './credits';
 import type { ModelJob, ModelResult } from './model-worker';
 import type { ObjectPick, Viewer, ViewScales } from './viewer/viewer';
 import { editKey, type Edits, type GroundKind } from './edits';
@@ -34,6 +36,9 @@ const SHAPE_NAMES: Record<ShapeKind, string> = { rectangle: 'Rectangle', hexagon
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
+// Before anything can fail: a bug report carries the recent errors.
+recordConsole();
+
 // MapLibre looks for its worker next to its own bundle, which Vite moves: point at it explicitly.
 maplibregl.setWorkerUrl(workerUrl);
 
@@ -49,7 +54,10 @@ const map = new maplibregl.Map({
 setupNavigation(map);
 map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left');
 
-setupSearch(map, $('search'), $('search-input'), $('search-results'));
+// A result's "Select" button draws a selection around it, as if drawn by hand.
+setupSearch(map, $('search'), $('search-input'), $('search-results'), (sel) => draw?.select(sel));
+
+setupBugReport(bugContext, bugScreenshot);
 
 const toolButtons = document.querySelectorAll<HTMLButtonElement>('[data-tool]');
 let draw: DrawController | null = null;
@@ -426,7 +434,7 @@ async function fetchData(sel: Selection) {
   status.textContent = 'Loading map data…';
   $('data-progress').hidden = false;
   // Re-render every second too, so a slow server shows a running clock instead of looking stuck.
-  const wait: ServerWait = { since: Date.now(), eta: estimateSeconds(etaInput) };
+  const wait: ServerWait = { since: Date.now(), trySince: Date.now(), eta: estimateSeconds(etaInput), filled: 0 };
   let last: FetchProgress = { osmBytes: 0, osmCached: false, osmDone: false };
   const render = () => showProgress(last, wait);
   render();
@@ -447,11 +455,11 @@ async function fetchData(sel: Selection) {
     );
     $('data-progress').hidden = true;
     status.textContent = '';
-    // Teach the estimate how long a single request really took (cache hits, chunked
-    // requests and waits for the server say nothing clean about one request).
-    if (!last.osmCached && wait.doneAt && last.chunks?.length === 1 && !wait.waited) {
+    // Teach the estimate how long a single request really took, from the try that answered
+    // (cache hits and chunked requests say nothing clean about one request).
+    if (!last.osmCached && wait.doneAt && last.chunks?.length === 1) {
       // The same building count the estimate uses: the quick data's.
-      recordSample({ km2: last.chunks[0].km2, buildings: last.chunks[0].buildings }, (wait.doneAt - wait.since) / 1000);
+      recordSample({ km2: last.chunks[0].km2, buildings: last.chunks[0].buildings }, (wait.doneAt - wait.trySince) / 1000);
     }
     showData(data);
   } catch (err) {
@@ -562,21 +570,27 @@ interface ServerWait {
   server?: string;
   previous?: string;
   since: number;
-  // Expected seconds for the whole OSM download (all chunks), and when it actually arrived.
+  // Expected seconds from `since` for the whole OSM download (all chunks), and when it
+  // actually arrived.
   eta: number;
   doneAt?: number;
-  // Set once the chunk plan is known and the estimate has been redone per chunk.
+  // Set once the chunk plan is known, with the estimate for each chunk.
   planned?: boolean;
+  chunkEtas?: number[];
   chunk?: number;
-  // Whether any wait for a slot or a back-off happened: those samples don't teach the ETA.
-  waited?: boolean;
+  // The request being waited on (part and server) and when it was sent: a retry or a
+  // mirror starts the wait over, so the estimate restarts from there.
+  tryKey?: string;
+  trySince: number;
+  // How far the bar has filled: a restarted estimate doesn't send it backward.
+  filled: number;
 }
 
 function showProgress(p: FetchProgress, wait: ServerWait) {
   // Once the chunks are planned, the estimate is the sum over them (each is one request).
   if (p.chunks && !wait.planned) {
     wait.planned = true;
-    wait.eta = p.chunks.reduce((sum, c) => sum + estimateSeconds({ km2: c.km2, buildings: c.buildings }), 0);
+    wait.chunkEtas = p.chunks.map((c) => estimateSeconds({ km2: c.km2, buildings: c.buildings }));
   }
   // Each part starts fresh: "server X was busy" is about the part being requested.
   if (p.chunk !== wait.chunk) {
@@ -588,7 +602,15 @@ function showProgress(p: FetchProgress, wait: ServerWait) {
     wait.previous = wait.server;
     wait.server = p.osmServer;
   }
-  if (p.osmWaitS) wait.waited = true;
+  // A new request (next part, another server, or the same one after waiting for a slot):
+  // what's left is a whole request for this part, plus the parts after it.
+  const tryKey = p.osmWaitS ? undefined : `${p.chunk}|${p.osmServer}`;
+  if (wait.chunkEtas && tryKey && tryKey !== wait.tryKey) {
+    wait.trySince = Date.now();
+    const left = wait.chunkEtas.slice((p.chunk ?? 1) - 1).reduce((sum, s) => sum + s, 0);
+    wait.eta = (wait.trySince - wait.since) / 1000 + left;
+  }
+  wait.tryKey = tryKey;
   if (p.osmDone && !wait.doneAt) wait.doneAt = Date.now();
   const seconds = Math.round((Date.now() - wait.since) / 1000);
   const many = (p.chunks?.length ?? 1) > 1;
@@ -611,7 +633,8 @@ function showProgress(p: FetchProgress, wait: ServerWait) {
     const note = wait.previous
       ? `${part}${wait.previous} was busy, now asking ${wait.server}.`
       : `${part}${wait.server ?? 'The server'} is collecting every feature in the area.`;
-    setBar('progress-osm', `About ${formatDuration(wait.eta - seconds)} left`, Math.min(Math.max(seconds / wait.eta, fraction), 0.95), note);
+    wait.filled = Math.min(Math.max(seconds / wait.eta, fraction, wait.filled), 0.95);
+    setBar('progress-osm', `About ${formatDuration(wait.eta - seconds)} left`, wait.filled, note);
   } else {
     const note = `${part}${wait.server ?? 'The server'} is busier than usual.`;
     setBar('progress-osm', `Taking longer than usual… ${formatDuration(seconds)}`, many ? fraction : null, note);
@@ -671,6 +694,54 @@ function close3d() {
   showPick(null);
   $('viewer').hidden = true;
   document.body.classList.remove('mode-3d');
+}
+
+// What a bug report carries to reproduce the user's conditions (bug-report.ts): where the
+// map is, the selection, the data, and in the 3D view its camera, layers, multipliers,
+// edits and export settings.
+function bugContext(): Record<string, unknown> {
+  const c = map.getCenter();
+  const value = (id: string) => $<HTMLInputElement>(id).value;
+  const text = (id: string) => ($(id).hidden ? null : $(id).textContent);
+  const t = areaData?.terrain;
+  return {
+    view: viewer ? (printPreview ? 'export preview' : '3d') : 'map',
+    map: { center: [c.lng, c.lat], zoom: map.getZoom(), bearing: map.getBearing(), pitch: map.getPitch() },
+    selection,
+    drawing: draw?.activeTool ?? null,
+    fetching: !!loading,
+    data: areaData && {
+      detail: areaData.detail,
+      status: $('data-status').textContent,
+      layers: summarize(areaData).map(({ layer, count, detail }) => ({ layer, count, detail })),
+      terrain: { source: t!.source?.name ?? 'AWS Terrain Tiles', min: t!.min, max: t!.max, grid: [t!.width, t!.height], zoom: t!.zoom },
+      seaFloor: areaData.bathymetry?.source ?? null,
+    },
+    layers: [...visibleLayers],
+    scales: scales(),
+    edits: Object.fromEntries(edits),
+    selected: picked && { key: picked.key, title: picked.title, info: picked.info, model: picked.model ?? null },
+    camera: viewer?.cameraState() ?? null,
+    export: viewer && {
+      longestSideMm: value('print-size'),
+      baseMm: value('print-base'),
+      thinnestDetailMm: value('print-min'),
+      nozzleMm: value('print-nozzle'),
+      format: exportFormat,
+      status: $('export-status').textContent,
+      warning: text('print-warning'),
+    },
+  };
+}
+
+// The map or the 3D view as it is now. WebGL keeps no copy of the last frame: it's drawn
+// again and read in the same task.
+function bugScreenshot(): Promise<Blob | null> {
+  if (viewer) return viewer.screenshot();
+  return new Promise((resolve) => {
+    map.once('render', () => map.getCanvas().toBlob(resolve));
+    map.triggerRepaint();
+  });
 }
 
 function scales(): ViewScales {
@@ -1129,7 +1200,7 @@ function runPrintJob(kind: PrintJob['kind'], data: AreaData, own?: (w: Worker) =
   };
   const nozzleMm = printNumber('print-nozzle', 'Nozzle', 0.1);
   const [lng, lat] = data.selection.center;
-  const models = [...edits.values()].flatMap((e) => (e.model && modelAssets.has(e.model.asset) ? [modelAssets.get(e.model.asset)!] : []));
+  const models = usedModels();
   const job: PrintJob = { kind, data, edits, scales: scales(), visible: [...visibleLayers], options, nozzleMm, name: printName(lat, lng), models, previewed };
   const worker = new Worker(new URL('./print-worker.ts', import.meta.url), { type: 'module' });
   own?.(worker);
@@ -1149,6 +1220,11 @@ function runPrintJob(kind: PrintJob['kind'], data: AreaData, own?: (w: Worker) =
     };
     worker.postMessage(job);
   });
+}
+
+// The 3D models the edits use.
+function usedModels(): ModelAsset[] {
+  return [...edits.values()].flatMap((e) => (e.model && modelAssets.has(e.model.asset) ? [modelAssets.get(e.model.asset)!] : []));
 }
 
 // The progress bar under the export buttons, for the print job that started last. It shows
@@ -1271,12 +1347,7 @@ async function downloadModel() {
     // The model previewed: merged and written, not built again.
     const { result } = await runPrintJob(format, areaData, undefined, { model: previewed.model, thin: previewed.thin.counts });
     const file = result.file!;
-    const [lng, lat] = areaData.selection.center;
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(file);
-    a.download = `${printName(lat, lng)}.${format}`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+    saveFile(file, format);
     const skipped = result.skipped ?? 0;
     const merged = skipped ? ` · ${skipped.toLocaleString()} ${skipped === 1 ? 'solid' : 'solids'} couldn't be merged and ${skipped === 1 ? 'is' : 'are'} included as ${skipped === 1 ? 'it is' : 'they are'}` : '';
     const [x, y, z] = result.model.sizeMm.map((v) => Math.round(v));
@@ -1289,6 +1360,41 @@ async function downloadModel() {
     // Settings changed meanwhile: the new preview must finish first.
     button.disabled = !previewed;
   }
+}
+
+// The 3D view as it looks, for other 3D software (viewer/gltf.ts): GLB, or glTF for those
+// who want to read or edit its JSON.
+$('download-glb').addEventListener('click', () => downloadScene(true));
+$('download-gltf').addEventListener('click', () => downloadScene(false));
+
+async function downloadScene(binary: boolean) {
+  if (!viewer || !areaData) return;
+  const status = $('export-status');
+  const buttons = [$<HTMLButtonElement>('download-glb'), $<HTMLButtonElement>('download-gltf')];
+  for (const b of buttons) b.disabled = true;
+  status.textContent = 'Writing the file…';
+  try {
+    const credits = sourceCredits(areaData, usedModels(), [...visibleLayers]);
+    const file = await viewer.exportGltf(binary, ['© OpenStreetMap contributors', ...credits].join('; '));
+    saveFile(file, binary ? 'glb' : 'gltf');
+    const more = credits.length ? ` and ${credits.join('; ')}` : '';
+    status.textContent = `The 3D view as shown, in meters · ${formatBytes(file.size)}. Credit "© OpenStreetMap contributors"${more} when you share it.`;
+  } catch (err) {
+    console.error('glTF export failed', err);
+    status.textContent = failure('The export', err);
+  } finally {
+    for (const b of buttons) b.disabled = false;
+  }
+}
+
+// Downloads a file named after the selection's center.
+function saveFile(file: Blob, extension: string) {
+  const [lng, lat] = areaData!.selection.center;
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(file);
+  a.download = `${printName(lat, lng)}.${extension}`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
 }
 
 // The cards at the top right stop above the export card, however tall it gets (a warning,

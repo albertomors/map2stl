@@ -59,6 +59,77 @@ body {
   gap: 16px;
 }
 
+header {
+  position: relative;
+}
+
+/* Bug reports (bug-report.ts) */
+
+.bug-open {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border-radius: 50%;
+  font-weight: 600;
+}
+
+.bug-dialog {
+  width: min(480px, calc(100% - 32px));
+  padding: 20px;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+
+.bug-dialog::backdrop {
+  background: rgb(0 0 0 / 0.35);
+}
+
+.bug-dialog textarea {
+  display: block;
+  width: 100%;
+  margin: 8px 0;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  resize: vertical;
+}
+
+.bug-dialog textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.bug-status:empty {
+  display: none;
+}
+
+.bug-status {
+  margin: 8px 0 0;
+  font-size: 13px;
+}
+
+.bug-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.bug-actions button {
+  width: auto;
+  padding: 8px 20px;
+}
+
 header h1 {
   margin: 0;
   font-size: 20px;
@@ -117,8 +188,8 @@ button.secondary {
 /* Search */
 
 #search {
-  position: relative;
   display: flex;
+  flex-wrap: wrap;
 }
 
 #search input {
@@ -152,13 +223,12 @@ button.secondary {
   stroke-linecap: round;
 }
 
+/* In the flow, below the box: the panel scrolls, so an overlay would be cut off at its
+   bottom edge when the panel is short. */
 #search-results {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
-  z-index: 10;
-  margin: 0;
+  flex-basis: 100%;
+  min-width: 0;
+  margin: 4px 0 0;
   padding: 4px;
   list-style: none;
   background: var(--bg);
@@ -172,16 +242,49 @@ button.secondary {
   border-radius: 6px;
   cursor: pointer;
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: center;
+  gap: 8px;
+}
+
+#search-results li > div {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 6px;
+  row-gap: 2px;
+}
+
+#search-results li strong {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* What the result is: town, street, address, tower, place of worship… */
+#search-results li em {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 4px;
 }
 
 #search-results li span {
+  flex-basis: 100%;
   font-size: 12px;
   color: var(--muted);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+#search-results li button {
+  font-size: 12px;
+  padding: 4px 8px;
 }
 
 #search-results li:hover,
@@ -929,6 +1032,18 @@ button.link:disabled {
 #preview-print[aria-pressed="true"] {
   border-color: var(--accent);
   color: var(--accent);
+}
+
+.scene-export {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.scene-export .hint {
+  flex: 1;
+  margin: 0;
 }
 
 #format-hint {

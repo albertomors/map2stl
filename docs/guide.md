@@ -17,9 +17,13 @@ Everything map2stl does today, step by step. For a quick tour, see the
 
 ### Search
 
-Type a city, region or country in the search box. Suggestions appear as you type;
-**↑ / ↓** and **Enter** pick one, or click it. Only places are searched, not streets or
-shops.
+Type a town, a street, an address ("Via Roma 12, Modena") or a landmark ("Eiffel Tower",
+"Colosseum") in the search box. Suggestions appear as you type, each with what it is
+(town, street, address, tower, place of worship…) and where; famous places come first,
+then those near where the map is. **↑ / ↓** and **Enter** pick one, or click it: the map
+flies there at the right scale. **Select** next to a street, address or landmark also
+draws a rectangle around it, with some ground around, ready to fetch. Shops, bus stops
+and the like are left out.
 
 ## 2. Selecting the area
 
@@ -71,10 +75,10 @@ arrives it replaces the quick version in place: layers you switched off stay off
 open 3D view updates without moving the camera.
 
 The progress bar shows an **estimate of the time left**. It starts from timed downloads
-(about 28 s plus 12.6 s per km²) and learns from your own downloads. Public servers are
-often busy, so expect ±20 s. If a server is busy or silent for 100 s, the next mirror is
-tried. If every server fails, the quick version stays and the panel tells you to fetch
-again later. Answers are cached in the browser for a week, so fetching the same area
+(about 44 s plus 1.9 s per 1,000 buildings) and learns from your own downloads. Public
+servers are often busy, so expect ±10 s. If a server is busy or silent for 100 s, the next
+mirror is tried, and the estimate starts over from that try. If every server fails, the
+quick version stays and the panel tells you to fetch again later. Answers are cached in the browser for a week, so fetching the same area
 again is instant.
 
 ### What's in the data
@@ -152,6 +156,31 @@ tagged, from floors or estimated), roof and number of parts. Click empty space o
   trimmed there. They last until you fetch a new area; the export will use them.
 - Selecting waits for the detailed data: the quick version's buildings are split at tile
   seams and have no parts, and their identities change when the detailed data arrives.
+
+## 6. Exporting
+
+The **Export** card floats over the 3D view once the detailed data is in.
+
+- **For printing:** set the longest side, base thickness, thinnest detail and nozzle,
+  press **Preview export** to see the model exactly as it will print, then download it as
+  **STL** (one watertight solid) or **3MF** (one colored part per layer, for multi-color
+  printers).
+- **For other 3D software** (Blender, Unity, Unreal, Sketchfab, a web page): **GLB** or
+  **glTF** saves the 3D view as it looks, not the print: the painted ground with its
+  relief shading, the buildings, structures, trees and forests of the layers that are on,
+  with your edits and height multipliers. In meters, y up. GLB is one binary file; glTF is
+  the same as JSON, for reading or editing by hand. No preview needed.
+
+Credit "© OpenStreetMap contributors" (and any other source the card names) when you
+share what you made.
+
+## Reporting a bug
+
+The **?** at the top right of the panel opens **Found a bug? Report it**. Describe what you
+did, what you expected and what happened, then **Send**: a zip is saved with your message,
+a screenshot, and what's needed to reproduce it (your selection, the view and its
+settings, your edits, your browser and graphics card, recent errors; nothing else), and
+your email app opens with the message. Attach the zip and send.
 
 ## Known limits
 

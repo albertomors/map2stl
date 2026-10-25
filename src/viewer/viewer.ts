@@ -143,6 +143,8 @@ export class Viewer {
   // Forests' canopy (forest.ts), its height field, and its colors as built (the selected
   // wood is tinted over them).
   private canopy: { mesh: Mesh; field: Canopy; colors: Float32Array } | null = null;
+  // The terrain's top, with the painted map (exported with the relief baked in).
+  private terrainTop: Mesh | null = null;
   // Terrain height → scene height, as last built.
   private groundHeight: (h: number) => number = (h) => h;
   private layerObjects = new Map<Layer, Object3D[]>();
@@ -302,6 +304,31 @@ export class Viewer {
   }
 
   // Switches the print preview between one color for all parts and each part's own.
+  // The scene as shown (layers on, edits, multipliers), as a glTF file (gltf.ts). The
+  // selected object goes back into place for it, untinted.
+  async exportGltf(binary: boolean, credits: string): Promise<Blob> {
+    // Loaded on first use: the exporter isn't needed to look at the view.
+    const { sceneToGltf } = await import('./gltf');
+    const selected = this.selected;
+    if (selected) this.select(null);
+    try {
+      return await sceneToGltf(this.renderer, [this.terrain, this.objects], this.terrainTop, binary, credits);
+    } finally {
+      if (selected) this.select(selected);
+    }
+  }
+
+  // The view as it is now, as a PNG (bug reports). Drawn again first: the canvas keeps no
+  // copy of the last frame.
+  screenshot(): Promise<Blob | null> {
+    this.renderer.render(this.scene, this.camera);
+    return new Promise((resolve) => this.renderer.domElement.toBlob(resolve));
+  }
+
+  cameraState() {
+    return { position: this.camera.position.toArray(), target: this.controls.target.toArray() };
+  }
+
   setPrintMonochrome(mono: boolean) {
     this.printMono = mono;
     for (const mesh of this.print.children) this.paintPrint(mesh as Mesh);
@@ -490,8 +517,11 @@ export class Viewer {
     // Rock on steep ground, darker hollows (relief.ts), over the painted map.
     addRelief(tile.top);
     const top = new Mesh(tile.top, reliefMaterial(new MeshLambertMaterial({ map: this.ground.texture })));
+    top.name = 'terrain';
     top.receiveShadow = true;
+    this.terrainTop = top;
     const sides = new Mesh(tile.sides, new MeshLambertMaterial({ color: '#b9ab96', side: DoubleSide }));
+    sides.name = 'terrain sides';
     this.terrain.add(top, sides);
     this.buildObjects();
 
@@ -893,6 +923,7 @@ export class Viewer {
   }
 
   private add(layer: Layer, object: Object3D) {
+    object.name = layer;
     object.visible = this.visible.has(layer);
     this.objects.add(object);
     this.layerObjects.set(layer, [...(this.layerObjects.get(layer) ?? []), object]);

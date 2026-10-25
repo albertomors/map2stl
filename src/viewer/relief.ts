@@ -5,7 +5,7 @@
 
 import { BufferAttribute, Color, type BufferGeometry, type MeshLambertMaterial } from 'three';
 
-const ROCK = new Color('#9c978e');
+export const ROCK = new Color('#9c978e');
 // Slopes (as shown, with the terrain exaggeration) from mostly ground to all rock.
 const ROCK_FROM_DEG = 30;
 const ROCK_FULL_DEG = 45;

@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The search box finds streets, addresses and landmarks, not just towns: "Baker Street",
+  "Via Roma 12, Modena", "Eiffel Tower", "Colosseum". Each suggestion says what it is and
+  where; famous places come first, then those near the map's center; a street's pieces
+  are one result spanning the whole street. **Select** on a street, address or landmark
+  flies there and draws a rectangle around it, ready to fetch.
+- GLB and glTF export, for Blender, Unity, Unreal, Sketchfab or the web: the 3D view as it
+  looks (not the print), from two buttons on the export card, no preview needed. The
+  layers that are on, with the edits and height multipliers, in meters with y up; the
+  ground's relief shading (rock on steep slopes, darker hollows) baked into its texture,
+  trees as one mesh, the credits in the file.
+- Bug reports: the "?" button in the panel's header opens "Found a bug? Report it". Send
+  saves a zip with the message, a screenshot of the map or 3D view, and what's needed to
+  reproduce it (the selection, the view and its camera, layers, multipliers, edits and
+  export settings, the data summary and sources, the browser, the graphics card, recent
+  errors), and opens an email with the message to attach it to.
+
+### Changed
+
+- The download estimate starts over when a request is retried or moves to another
+  server, instead of running out and saying "Taking longer than usual" for minutes. Its
+  formula held up on 162 logged fetches (44 s plus 1.9 s per 1,000 buildings when the
+  first server answers); what it missed were the failovers.
+- The overpass.private.coffee mirror is no longer used: it answered 1 request in 38, and
+  let the rest run into the 100 s timeout before the next server was tried.
+
 ## [0.7.0] - 2026-10-25
 
 Real terrain, real forests and real buildings: national LiDAR height models (Norway, the

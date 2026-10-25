@@ -128,6 +128,13 @@ export class DrawController {
     this.showHandles();
   }
 
+  // A selection made elsewhere (around a search result): shown and reported like a drawn one.
+  select(sel: Selection) {
+    this.setTool(null);
+    this.show(sel);
+    this.onSelection(sel, true);
+  }
+
   clear() {
     this.show(null);
     this.onSelection(null, true);

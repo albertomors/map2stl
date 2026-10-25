@@ -5,9 +5,9 @@
 import type { AreaData, Layer } from './area-data';
 import type { Edits } from './edits';
 import { buildPrintModel, findThinObjects, type PrintModel, type PrintOptions, type ThinObjects } from './export';
+import { sourceCredits } from './credits';
 import { to3MF, toSTL } from './export-files';
 import { loadManifold, mergeModel } from './merge';
-import { isSea } from './osm';
 import { modelAssets, type ModelAsset } from './model-assets';
 import type { ViewScales } from './viewer/viewer';
 
@@ -83,13 +83,7 @@ self.onmessage = async (e: MessageEvent<PrintJob>) => {
     const merged = await mergeModel(model, job.kind === 'stl', (f) => report('merge', f, label));
     next('merge');
     report('write', 0, 'Writing the file');
-    // Models found online came with a license asking for credit.
-    // Once each: official models come one per building, all with the same credit.
-    const credits = [...new Set(job.models.flatMap((m) => (m.source.kind !== 'upload' ? [`3D model "${m.source.title}" by ${m.source.author}, ${m.source.license}, ${m.source.url}`] : [])))];
-    // So did the terrain, where it's national LiDAR, and the sea floor (printed only with
-    // water off).
-    if (job.data.terrain.source?.credit) credits.push(job.data.terrain.source.credit);
-    if (job.data.bathymetry && !job.visible.includes('water') && job.data.osm.waterAreas.some(isSea)) credits.push(job.data.bathymetry.source.credit);
+    const credits = sourceCredits(job.data, job.models, job.visible);
     const file = job.kind === 'stl' ? toSTL(merged.model) : to3MF(merged.model, job.name, credits);
     // The unmerged model's size and counts are what the page reports; no need to send its
     // triangles back.

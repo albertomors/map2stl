@@ -19,14 +19,18 @@ interface Sample extends EtaInput {
 }
 
 // seconds = a + b·km² + c·(1000 buildings); the area-only form is used without a count.
-// Fitted on real use (October 2026, 10 completed requests from 0.03 to 5.9 km²): the public
-// server waits about 44 s before answering whatever the size, and then what costs time is how
-// much comes back, which follows the building count (26,800 buildings: 47 MB, 62 s), not the
-// area. Without a count, the area stands in for it.
+// Fitted on real use (October 2026; refitted on 29 requests answered at the first try, from
+// 0.03 to 6.4 km²: 44.3 s + 1.87 s per 1,000 buildings, within 7 s): the public server waits
+// about 44 s before answering whatever the size, and then what costs time is how much comes
+// back, which follows the building count (26,800 buildings: 47 MB, 62 s), not the area.
+// Without a count, the area stands in for it. A request that fails over to a mirror starts
+// the estimate over (main.ts), rather than the formula stretching to cover it.
 const DEFAULT_FULL = [44, 0, 1.9];
 const DEFAULT_AREA = [44, 3];
-// v2: samples count buildings from the quick data (v1 counted those visible on the map).
-const STORAGE_KEY = 'map2stl.eta-samples.v2';
+// v3: samples time the try that answered (v2 timed from the first try, so a failover to a
+// mirror counted its timeout too). v2 counted buildings from the quick data, v1 those
+// visible on the map.
+const STORAGE_KEY = 'map2stl.eta-samples.v3';
 const MAX_SAMPLES = 30;
 // Below this many own samples, the defaults weigh in as if they were this many samples.
 const PRIOR_WEIGHT = 4;

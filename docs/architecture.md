@@ -41,7 +41,7 @@ search / map ──► Selection ──► fetchAreaData ──┬─► quick: 
 | File | Role |
 |---|---|
 | `src/main.ts` | Map setup and all panel wiring (selection, fetching, layers, 3D, editing) |
-| `src/search.ts` | Photon city search box |
+| `src/search.ts` | Photon search box: towns, streets, addresses, landmarks |
 | `src/nav.ts` | Orbit drag (grabbed point follows the cursor) and the navigation control |
 | `src/draw.ts` | Drawing shapes on the map, free shapes, edit handles |
 | `src/selection.ts` | The `Selection` type, outline, handles, persistence |
@@ -62,6 +62,9 @@ search / map ──► Selection ──► fetchAreaData ──┬─► quick: 
 | `src/viewer/ground.ts` | Flat layers painted into the terrain texture |
 | `src/viewer/objects.ts` | Buildings, structures, bridges, trees |
 | `src/viewer/roofs.ts` | Roof shapes from `roof:shape` |
+| `src/viewer/gltf.ts` | The 3D view as GLB / glTF: relief baked into the texture, trees as one mesh |
+| `src/bug-report.ts` | The "?" bug report: message, context, screenshot, recent errors, zipped |
+| `src/credits.ts` | Credits a model's sources ask for (3MF, glTF, the export card) |
 | `src/viewer/mesh.ts` | Triangle collector with per-triangle owners, OSM color parsing |
 
 ## Design decisions

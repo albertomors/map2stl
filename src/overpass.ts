@@ -2,9 +2,10 @@
 // Tries mirrors in turn when one is busy, and caches answers in the browser for a week
 // so re-fetching the same area costs nothing.
 
+// overpass.private.coffee was dropped in October 2026: it answered 1 of 38 requests, and
+// let the other 37 run into the timeout (100 s each).
 const ENDPOINTS = [
   'https://overpass-api.de/api/interpreter',
-  'https://overpass.private.coffee/api/interpreter',
   'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
 ];
 // After a refusal: wait, then double the wait for each further refusal (what the server asks

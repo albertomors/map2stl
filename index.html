@@ -11,12 +11,13 @@ nom<!doctype html>
 
     <aside id="panel">
       <header>
+        <button id="bug-open" class="bug-open" title="Found a bug? Report it" aria-label="Found a bug? Report it">?</button>
         <h1>map2stl</h1>
         <p>Any place on Earth, ready to 3D print.</p>
       </header>
 
       <form id="search" class="map-only" role="search" autocomplete="off">
-        <input id="search-input" type="search" placeholder="Search a city…" aria-label="Search a city" />
+        <input id="search-input" type="search" placeholder="Search a place, address or landmark…" aria-label="Search a place, address or landmark" />
         <button type="submit" aria-label="Search">
           <svg viewBox="0 0 24 24" width="18" height="18"><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></svg>
         </button>
@@ -208,8 +209,30 @@ nom<!doctype html>
         <p id="format-hint" class="hint"></p>
         <button id="download" class="primary">Download STL</button>
       </div>
+      <!-- The 3D view as it looks, for other 3D software: no print preview needed. -->
+      <div class="scene-export">
+        <span class="hint">For Blender, Unity, the web:</span>
+        <button id="download-glb" title="Binary glTF: one file with the textures inside">GLB</button>
+        <button id="download-gltf" title="glTF as JSON, the textures inside, to read or edit">glTF</button>
+      </div>
       <p id="export-status" class="hint" aria-live="polite"></p>
     </section>
+
+    <dialog id="bug-dialog" class="bug-dialog" aria-labelledby="bug-title">
+      <h2 id="bug-title">Found a bug? Report it</h2>
+      <label for="bug-text" class="hint">What did you do, what did you expect, and what happened instead?</label>
+      <textarea id="bug-text" rows="6"></textarea>
+      <p class="hint">
+        Sent with it, to reproduce the same conditions: your selection, where the map or the
+        3D view is and its settings, your edits, a screenshot, your browser and graphics card,
+        and recent errors. Nothing else.
+      </p>
+      <p id="bug-status" class="bug-status" aria-live="polite"></p>
+      <div class="bug-actions">
+        <button id="bug-cancel" type="button">Close</button>
+        <button id="bug-send" type="button" class="primary">Send</button>
+      </div>
+    </dialog>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

@@ -2,14 +2,49 @@
 
 Open work only: built items move to the README and CHANGELOG.
 
-## Milestone 0.7.x: real terrain, real objects, and the look
+## Milestone 0.8: ready to share
 
-LiDAR terrain, official 3D data, and the rest of the look. What's left of it:
+What the app needs before strangers use it, all without a server of our own.
 
-### Improve objects and terrain
+### Request parts sized by what's in them, not by area
 
-Swapping the OSM approximation for something better. Google's photorealistic tiles can't be
-used (their terms forbid extracting them), and no open worldwide photogrammetry exists, so:
+Big selections are fetched in parts of at most 10 km² and 25,000 buildings, one after
+another, and each part costs about 44 s of server queue whatever its size: 4 parts take
+about 3 minutes. The logged fetches show the time follows how much comes back (6.4 km²
+with 1,600 buildings: 38 s; 5.8 km² with none: 48 s), so the area cap mostly adds queue
+waits where there's little to download (remote islands, mountains, farmland). Plan the
+parts from a predicted answer size instead: every feature in the quick tile data
+(buildings, roads, water, woods, landuse), not just buildings, with a cap per part a
+single request handles well (well under the server's 180 s and 512 MB), and a much higher
+area limit. To make bigger parts safe: when one comes back "too much data" or times out,
+split it in two and ask again, instead of failing. First log each part's timing and size
+(today's log only times whole fetches), to fit the prediction.
+
+### A gallery in the README
+
+A set of famous places, each shown twice side by side: the 3D view, and its export preview
+(the model exactly as it prints). Chosen to show what the app does well: a landmark
+(the Colosseum, the Eiffel Tower), a dense old town (Venice), a mountain (the Matterhorn,
+with LiDAR terrain), a harbor with the sea floor (Sydney), a bridge (the Golden Gate). Each
+with its selection, so anyone can make the same one, and the GLB to download. Made with the
+app itself (a script driving it), so it can be redone after each release.
+
+### General improvements from agents trying the app
+
+A suite of agents that run the app in a real browser (Playwright) the way a newcomer
+would, each with a task and no instructions: "print the Colosseum", "a 5 km hexagon of
+your hometown", "export a mountain for Blender", "delete a building and restore it",
+"a model of a harbor with the sea floor". Each one reports, with screenshots, where it
+hesitated, what it misread, what failed or took too long, and what it expected to find
+and didn't. A last agent ranks the findings across runs (what several agents tripped on
+first), and the fixes become this milestone's general improvements: wording, layout,
+defaults, error messages, missing feedback. Rerun after the fixes, and before each release.
+
+## More countries
+
+Ongoing, added to as sources turn up: swapping the OSM approximation for something
+better. Google's photorealistic tiles can't be used (their terms forbid extracting them),
+and no open worldwide photogrammetry exists, so:
 
 - **Better terrain in more countries:** national LiDAR terrain models (about 1 m), country by
   country where the service lets a browser load it. Done: Norway, the Netherlands, England,
@@ -25,43 +60,6 @@ used (their terms forbid extracting them), and no open worldwide photogrammetry 
   Netherlands' 3DBAG (its servers didn't answer when this was built), Japan's PLATEAU,
   German states, New York, Helsinki, Vienna, Zurich's city model; where a source isn't 3D
   Tiles, a CityJSON reader. Per source: an endpoint a browser can load, and the license.
-
-## Export for other 3D software
-
-Besides STL and 3MF for printing, the model to reuse elsewhere (Blender, Unity, Unreal,
-Sketchfab, Cesium, the web), exported from the 3D view's scene as it looks on screen:
-smooth terrain, colors, trees; not the print geometry (base, thickened details).
-
-- **GLB** (binary glTF): the main one. One file with geometry, materials and textures,
-  read by almost every 3D tool (three.js's `GLTFExporter`).
-- **OBJ + MTL** (optional): for older tools; plain geometry and material colors.
-- **USDZ** (optional): view in AR on an iPhone or iPad (three.js's `USDZExporter`).
-- Not FBX (closed format, no browser exporter; the tools that use it import glTF) or
-  COLLADA (superseded by glTF).
-
-## Bug reports with the full context
-
-A "?" button, always visible, opening a "Found a bug? Report it" window: a free-text box
-for the user to describe the bug in words, and a Send button. Everything needed to
-reproduce the same conditions is gathered automatically:
-
-- **The selection:** shape kind and its original coordinates (center, sizes, rotation, or
-  the polygon's points).
-- **The view the user is in:** map, 3D view or export preview, and for each what matters
-  there: the map's center and zoom; the camera, the layers on and off, the height
-  multipliers, the edits (deleted, restored, moved, landmark models);
-  the export settings (longest side, base, thinnest detail, nozzle, format) and the
-  preview's status line.
-- **The scene:** the data summary (counts per layer, terrain range and source, sea depths),
-  the data sources and their versions, the selected object if any.
-- **The app:** version, browser, screen, WebGL renderer, and recent errors from the
-  console.
-
-Send packs the message and the context (JSON, plus a screenshot of the view) into a zip
-for the maintainer's email. A browser can't send an email with an attachment by itself
-(mailto can't attach files), so it needs either a small server endpoint (or a form/email
-service) that receives the zip and forwards it, or, until then, a fallback: download the
-zip and open a mailto with the message, for the user to attach it.
 
 ## Faster, more reliable data
 
@@ -79,14 +77,11 @@ What going public needs.
 - **Sketchfab without a token:** an approved integration (Sketchfab requires it for
   downloads without each user logging in), with our own server. Until then, a "Log in
   with Sketchfab" button instead of pasting a token needs our app registered with them.
+- **Bug reports sent from the app:** a small endpoint (or a form/email service) that
+  receives the report's zip and forwards it to the maintainer, instead of the user
+  attaching it to an email themselves.
 - Deploy as a public site.
 
 ## Later
 
-- Keep building edits across reloads (today they last until a new area is fetched).
 - Sea when the selection is entirely water, or the coast is broken near it (today: land).
-- Clip the base map's buildings to the selection while previewing, instead of hiding all.
-- Segmentation for mesh sources (photogrammetry) where objects aren't already separate.
-- **Photogrammetry from tourist photos** (research): reconstruct famous landmarks from
-  hundreds of openly licensed photos (Wikimedia Commons) with COLMAP-style structure from
-  motion. Real geometry, but heavy server compute: needs a backend.
