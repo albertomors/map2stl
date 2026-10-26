@@ -1,6 +1,5 @@
 // The flat map layers in the print, carved into the ground like a relief: squares, parks and
-// sand flush with it, streets a step below, water two steps below, so a river always lies
-// lowest. Each is carved one step deeper still and filled back with its own colored part, so
+// sand flush with it, streets and water a step below (bridges rise above both). Each is carved one step deeper still and filled back with its own colored part, so
 // a 3MF can print it in its own filament. A step is the thinnest detail: nothing smaller
 // would print.
 //

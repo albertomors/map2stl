@@ -106,7 +106,7 @@ showScales();
 let exportFormat: 'stl' | '3mf' = 'stl';
 const FORMAT_HINTS = {
   stl: 'One color, for any slicer: everything that touches is joined into one watertight solid.',
-  '3mf': 'One colored part per layer (terrain, water, streets, squares, parks, sand, buildings, structures, trees), for multi-color printers.',
+  '3mf': 'One colored part per layer (terrain, rock, water, boats, streets, squares, parks, sand, buildings, bridges and structures, forests, trees), for multi-color printers.',
 };
 function showFormat() {
   for (const f of ['stl', '3mf'] as const) $(`format-${f}`).setAttribute('aria-pressed', String(f === exportFormat));

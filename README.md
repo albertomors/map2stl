@@ -11,7 +11,8 @@ STL or a multi-color 3MF for your slicer, or a GLB for Blender.
 
 ![St. Peter's Square and Basilica in the 3D view: the colonnades, the dome, the Vatican gardens and the streets of Rome around them, cut to a printable tile](docs/screenshots/hero-vatican-3d.png)
 
-No account, no API key, nothing to install: open data straight from public servers.
+No account, no API key, nothing to install: open data straight from public servers (only
+Sketchfab downloads ask for your own free token).
 
 [How it works](#how-it-works) · [Features](#features) · [Data sources](#data-sources) ·
 [Credits](#credits-and-licenses) · [Run it](#run-it) · [User guide](docs/guide.md)
@@ -20,7 +21,7 @@ No account, no API key, nothing to install: open data straight from public serve
 
 <table>
 <tr>
-<td width="38%"><b>1. Find the place.</b><br>Type a town, a street, an address or a landmark. <b>Select</b> next to a result draws a rectangle around it.</td>
+<td width="38%"><b>1. Find the place.</b><br>Type a town, a street, an address or a landmark. <b>Select area</b> on a result draws a rectangle around it.</td>
 <td><img src="docs/screenshots/step-1-search.png" alt="The search box with suggestions for Colosseum: the archaeological site in Rome first, each with its kind and place"></td>
 </tr>
 <tr>
@@ -46,13 +47,13 @@ No account, no API key, nothing to install: open data straight from public serve
 ### Find and select
 
 - **Search anything:** towns, streets, addresses ("Via Roma 12, Modena"), landmarks ("Eiffel
-  Tower"). Famous places first, then those near where you're looking; a street comes as one
-  result however many pieces it's mapped in.
+  Tower"). The best-known place first, then those near where you're looking; a street comes
+  as one result however many pieces it's mapped in.
 - **Four shapes:** rectangle, hexagon, circle, or a free shape clicked point by point. Drawn
   along the view, so a tilted tile is just a rotated map away.
 - **Links keep the view,** and the selection comes back after a reload.
 
-<img src="docs/screenshots/search-landmarks.png" alt="Suggestions for Eiffel Tower: the tower in Paris first, then a peak in Canada, a tower in Virginia, a garden in Denmark and two artworks" width="560">
+<img src="docs/screenshots/search-landmarks.png" alt="Suggestions for Eiffel Tower: the tower in Paris first, then artworks, a tower in Virginia and a garden in Denmark, each with its kind, its place and Select area" width="560">
 
 ### Real places, in 3D
 
@@ -82,7 +83,7 @@ No account, no API key, nothing to install: open data straight from public serve
 <td><img src="docs/screenshots/zurich-01-swissbuildings3d.png" alt="Zurich's old town with swisstopo's official 3D buildings: the Grossmünster, roofs with dormers, the river and tram lines"></td>
 </tr>
 <tr>
-<td>Water off: the fjord's floor at its real depth (EMODnet).</td>
+<td>Water off: the fjord's floor at its real depth, down to 65 m (EMODnet).</td>
 <td>Zurich with swisstopo's official 3D buildings.</td>
 </tr>
 </table>
@@ -90,8 +91,8 @@ No account, no API key, nothing to install: open data straight from public serve
 ### Make it yours
 
 - **Click anything to edit it:** a building, tree, bridge, tower, street, river or park.
-  Delete it, resize it (×0.25–4), stretch its height, make a street wider, turn a square into a park.
-  Restore deleted and Reset all undo it.
+  Delete it, resize it (×0.25–4), stretch its height, make a street wider, turn a square
+  into a park. Restore deleted and Reset all undo it.
 - **Landmarks as real 3D models:** find openly licensed models of a landmark on Wikimedia
   Commons and Sketchfab (with license, author and size shown), or use your own STL, OBJ,
   GLB or glTF. It's fitted to the footprint automatically, and the export credits its author.
@@ -101,27 +102,20 @@ No account, no API key, nothing to install: open data straight from public serve
 
 ### Print it, or take it elsewhere
 
-- **STL** (one watertight solid) or **3MF** with a colored part per layer: terrain, water,
-  streets, squares, parks, sand, rock, buildings, bridges and structures, trees, forests,
-  boats. The
+- **STL** for any slicer, or **3MF** with a colored part per layer: terrain, water, streets,
+  squares, parks, sand, rock, buildings, bridges and structures, trees, forests, boats. The
   parts come pre-assigned to filaments in OrcaSlicer and Bambu Studio.
 - **Print preview with a nozzle check:** the model exactly as it prints, at the size you
   chose. Anything narrower than the nozzle shows in red, forests too, with a count per part.
-- Exact tile edges, a solid base, streets and water carved into the ground; every export
-  merged into one watertight solid (manifold-3d).
+- Exact tile edges, a solid base, streets and water carved into the ground; everything
+  that touches joined into one watertight solid (manifold-3d).
 - **GLB and glTF** for Blender, Unity, Unreal, Sketchfab or the web: the 3D view as it looks,
-  painted ground with its relief shading, in meters with y up. No preview needed.
+  painted ground with its relief shading, your edits and multipliers, in meters with y up.
+  No preview needed.
 
-<table>
-<tr>
-<td width="50%"><img src="docs/screenshots/step-5-export.png" alt="The 3MF preview of the Roman Forum and the Colosseum"></td>
-<td width="50%"><img src="docs/screenshots/nozzle-check.png" alt="An 80 mm print with a 0.8 mm nozzle: most buildings, the trees and the forests in red, with the warning explaining why"></td>
-</tr>
-<tr>
-<td>3MF preview: a color per part.</td>
-<td>80 mm wide with a 0.8 mm nozzle: what won't print shows in red.</td>
-</tr>
-</table>
+<img src="docs/screenshots/nozzle-check.png" alt="An 80 mm print with a 0.8 mm nozzle: most buildings, the trees and the forests in red, with the warning explaining why" width="720">
+
+<sub>The Roman Forum at 80 mm with a 0.8 mm nozzle: what won't print shows in red, and the warning says why.</sub>
 
 ### Found a bug?
 
@@ -156,7 +150,8 @@ sources whose licenses ask for it.
 | [USGS 3D Elevation Program](https://www.usgs.gov/3d-elevation-program) | The US | 1 m LiDAR over most of it, coarser elsewhere | no (15 m canopy) | Public domain |
 
 LiDAR is asked for at the detail the print can use: 1 m for areas up to about 1 km across,
-2–2.5 m for a 3 km tile. Where it has gaps (the sea, across a border), the worldwide tiles fill in.
+2–2.5 m for a 3 km tile. Where it has gaps (the sea, across a border), the worldwide tiles
+fill in.
 
 ### Sea floor
 

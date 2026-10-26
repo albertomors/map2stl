@@ -19,9 +19,11 @@ Everything map2stl does today, step by step. For a quick tour, see the
 
 Type a town, a street, an address ("Via Roma 12, Modena") or a landmark ("Eiffel Tower",
 "Colosseum") in the search box. Suggestions appear as you type, each with what it is
-(town, street, address, tower, place of worship…) and where; famous places come first,
-then those near where the map is. **↑ / ↓** and **Enter** pick one, or click it: the map
-flies there at the right scale. **Select** next to a street, address or landmark also
+(town, street, address, tower, place of worship…) and where; the best-known place comes
+first (a landmark mapped in many pieces or tagged for tourists, a name made only of the
+words typed), then those near where the map is. **↑ / ↓** and **Enter** pick one, or click
+it: the map flies there at the right scale (a landmark with a kilometer or two around it),
+and a pin stays on the place. **Select area** next to a street, address or landmark also
 draws a rectangle around it, with some ground around, ready to fetch. Shops, bus stops
 and the like are left out.
 
@@ -216,7 +218,8 @@ The **?** at the top right of the panel opens **Found a bug? Report it**. Descri
 did, what you expected and what happened, then **Send**: a zip is saved with your message,
 a screenshot, and what's needed to reproduce it (your selection, the view and its
 settings, your edits, your browser and graphics card, recent errors; nothing else), and
-your email app opens with the message. Attach the zip and send.
+your email app (or, in builds without a report address, a new GitHub issue) opens with
+the message. Attach the zip and send.
 
 ## Known limits
 

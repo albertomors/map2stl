@@ -44,16 +44,13 @@ better. Google's photorealistic tiles can't be used (their terms forbid extracti
 and no open worldwide photogrammetry exists, so:
 
 - **Better terrain in more countries:** national LiDAR terrain models (about 1 m), country by
-  country where the service lets a browser load it. Done: Norway, the Netherlands, England,
-  the US. Left: Switzerland (swissALTI3D: only per-kilometer files in the Swiss grid, no
-  service cutting out an area), Denmark (needs an access token), and others as found.
-  Sampled to what the print can hold: at 150 mm for 2 km, 2–5 m already shows every ridge a
-  nozzle can make. Everywhere else falls back to today's tiles (about 10–30 m), and the
-  panel says which source the terrain (and so the print) uses. Not Copernicus GLO-30: it's
-  a surface model, with buildings and tree canopy in its heights, so the ground would bump
-  up under every city block. FABDEM (GLO-30 cleaned of them) is non-commercial only, and
+  country where the service lets a browser load it, as for the four countries in the README.
+  Next: Switzerland (swissALTI3D: only per-kilometer files in the Swiss grid, no service
+  cutting out an area), Denmark (needs an access token), and others as found. Not
+  Copernicus GLO-30: it's a surface model, with buildings and tree canopy in its heights, so
+  the ground would bump up under every city block. FABDEM (GLO-30 cleaned of them) is non-commercial only, and
   served as archives a browser can't read.
-- **More official 3D buildings:** Switzerland (swissBUILDINGS3D) is done. Next the
+- **More official 3D buildings,** as swissBUILDINGS3D in Switzerland: next the
   Netherlands' 3DBAG (its servers didn't answer when this was built), Japan's PLATEAU,
   German states, New York, Helsinki, Vienna, Zurich's city model; where a source isn't 3D
   Tiles, a CityJSON reader. Per source: an endpoint a browser can load, and the license.
