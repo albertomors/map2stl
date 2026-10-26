@@ -6,7 +6,7 @@ import { mooredBoats } from './boats';
 import { forestAreas } from './forest';
 import { centroid, distance, intersectsRing, pathLength, ringArea, type LngLat } from './geo';
 import { buildQuery, isSea, parse, type Area, type OsmData } from './osm';
-import { overpass, type OverpassElement } from './overpass';
+import { overpass, TooMuchData, type OverpassElement, type OverpassResponse } from './overpass';
 import { describe, type Selection } from './selection';
 import { fetchLidarTerrain } from './lidar';
 import { fetchTerrain, lngLatPixel, pixelLngLat, type Terrain } from './terrain';
@@ -122,9 +122,12 @@ export interface FetchProgress {
   osmDone: boolean;
   // Waiting before the next try: a free server slot, or backing off after a refusal.
   osmWaitS?: number;
-  // Big selections are requested in chunks, one after another: the plan and where we are.
+  // Big selections are requested in chunks, one after another: the plan (replaced when a
+  // chunk is split, see TooMuchData) and where we are.
   chunks?: ChunkPlan[];
   chunk?: number;
+  // The chunks answered so far, with how it went.
+  answered?: ChunkResult[];
 }
 
 export interface ChunkPlan {
@@ -132,14 +135,40 @@ export interface ChunkPlan {
   km2: number;
   // From the quick tile data; null when it didn't arrive.
   buildings: number | null;
+  // The answer's predicted size (KB), from everything in the quick tile data; null without it.
+  kb: number | null;
 }
 
-// A chunk holds at most this much: fewer, bigger requests are faster (each costs ~40 s of
-// server queue, area adds little), but each must stay inside the server's limits (120 s,
-// 512 MB per request). The biggest dense area measured (3.2 km², 2,700 buildings, 8 MB) took
-// under 60 s; these limits are a first guess to tune with real chunk timings.
-const CHUNK_MAX_KM2 = 10;
-const CHUNK_MAX_BUILDINGS = 25_000;
+export interface ChunkResult {
+  plan: ChunkPlan;
+  bytes: number;
+  cached: boolean;
+  server?: string;
+  // Seconds from sending the request that answered to its last byte, and requests it took.
+  answeredS?: number;
+  tries?: number;
+}
+
+// Each request costs about 44 s of server queue, whatever its size, and then time for what
+// comes back, which follows how much is in the area, not its size (logged October 2026: 5.8
+// km² with no buildings, 0.05 MB; 5.9 km² with 26,800, 47 MB). So chunks are planned by the
+// answer's predicted size: sparse ground (islands, mountains, farmland) goes in a few big
+// requests instead of many small ones. Fitted on the same fetches: per feature in the quick
+// tile data, a building about 1 KB, a road about 3 KB (its nodes and tags), anything else
+// about 0.5 KB.
+const KB_PER_BUILDING = 1;
+const KB_PER_ROAD = 3;
+const KB_PER_OTHER = 0.5;
+// A chunk holds at most this much: well under the server's limits (120 s, 512 MB), where the
+// biggest request logged (47 MB) took 41 s of queue and 62 s of download.
+const CHUNK_MAX_KB = 30_000;
+// And at most this much area: with the quick data's counts, the size prediction decides
+// within it. Without them (the quick data failed, or the area is too big for it) area alone
+// does, as a guess for a town.
+const CHUNK_MAX_KM2 = 100;
+const CHUNK_MAX_KM2_BLIND = 10;
+// A chunk the server gives up on is split in two and asked again, down to this size.
+const CHUNK_MIN_KM2 = 0.25;
 
 // Calls `onQuick` with the tile version as soon as it's ready (a second or two), then
 // resolves with the full version, requested chunk by chunk. If the full version fails, the
@@ -167,20 +196,34 @@ export async function fetchAreaData(
   let fullArrived = false;
   if (quick) terrain.then((t) => fullArrived || onQuick({ selection, osm: quick, terrain: t, detail: 'tiles' })).catch(() => {});
 
-  const centers = quick?.buildings.map((b) => centroid(b.outer)) ?? null;
-  const chunks = planChunks(bbox, ring, centers);
-  report({ chunks, chunk: 1 });
+  const features = quick ? weighFeatures(quick) : null;
+  const chunks = planChunks(bbox, ring, features);
+  report({ chunks, chunk: 1, answered: [] });
 
   // One chunk at a time: parallel requests would use up our share of the server.
   const seen = new Set<string>();
   const elements: OverpassElement[] = [];
   let bytes = 0;
-  for (const [i, chunk] of chunks.entries()) {
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i];
     report({ chunk: i + 1, osmServer: undefined, osmWaitS: undefined });
-    const res = await overpass(buildQuery(chunk.bbox), signal, ({ server, bytes: b, cached, waitS }) =>
-      report({ osmServer: server, osmBytes: bytes + b, osmCached: cached && (i === 0 || progress.osmCached), osmWaitS: waitS }),
-    );
+    const result: ChunkResult = { plan: chunk, bytes: 0, cached: false };
+    let res: OverpassResponse;
+    try {
+      res = await overpass(buildQuery(chunk.bbox), signal, ({ server, bytes: b, cached, waitS, answeredS, tries }) => {
+        Object.assign(result, { server, bytes: b, cached, answeredS, tries });
+        report({ osmServer: server, osmBytes: bytes + b, osmCached: cached && (i === 0 || progress.osmCached), osmWaitS: waitS });
+      });
+    } catch (err) {
+      // Too much for one request after all: the two halves, one after the other.
+      if (!(err instanceof TooMuchData) || chunk.km2 / 2 < CHUNK_MIN_KM2) throw err;
+      chunks.splice(i, 1, ...planChunks(chunk.bbox, ring, features, true));
+      report({ chunks: [...chunks] });
+      i--;
+      continue;
+    }
     bytes = progress.osmBytes;
+    report({ answered: [...progress.answered!, result] });
     // Ways and relations crossing a chunk border come back from both sides.
     for (const el of res.elements) {
       const id = `${el.type}/${el.id}`;
@@ -209,18 +252,46 @@ function touches([w, s, e, n]: [number, number, number, number], ring: LngLat[])
   return intersectsRing(corners, ring, true);
 }
 
-// Splits the selection's box in halves (along its longer side) until each piece is within
-// the limits, and keeps the pieces that touch the selection.
-function planChunks(bbox: [number, number, number, number], ring: LngLat[], centers: LngLat[] | null): ChunkPlan[] {
+// Every feature in the quick tile data, where it is and its predicted share of the answer.
+interface Weighed {
+  at: LngLat;
+  kb: number;
+  building: boolean;
+}
+
+function weighFeatures(osm: OsmData): Weighed[] {
+  const middle = (path: LngLat[]) => path[path.length >> 1];
+  const other = (at: LngLat) => ({ at, kb: KB_PER_OTHER, building: false });
+  return [
+    ...osm.buildings.map((b) => ({ at: centroid(b.outer), kb: KB_PER_BUILDING, building: true })),
+    ...osm.roads.map((l) => ({ at: middle(l.path), kb: KB_PER_ROAD, building: false })),
+    ...[...osm.railways, ...osm.waterways, ...osm.structureLines, ...osm.pavedLines].map((l) => other(middle(l.path))),
+    ...[...osm.waterAreas, ...osm.green, ...osm.structureAreas, ...osm.surfaces, ...osm.pavedAreas].map((a) => other(a.outer[0])),
+    ...osm.towers.map((t) => other(t.at)),
+    ...osm.trees.map(other),
+  ];
+}
+
+// Splits the box in halves (along its longer side) until each piece is within the limits,
+// and keeps the pieces that touch the selection. `split`: halve the box even if it's within
+// them (the server gave up on it).
+function planChunks(
+  bbox: [number, number, number, number],
+  ring: LngLat[],
+  features: Weighed[] | null,
+  split = false,
+): ChunkPlan[] {
   const out: ChunkPlan[] = [];
-  const split = (box: [number, number, number, number], pts: LngLat[] | null) => {
+  const maxKm2 = features ? CHUNK_MAX_KM2 : CHUNK_MAX_KM2_BLIND;
+  const plan = (box: [number, number, number, number], inside: Weighed[] | null, force: boolean) => {
     const [w, s, e, n] = box;
     const wide = distance([w, (s + n) / 2], [e, (s + n) / 2]);
     const tall = distance([(w + e) / 2, s], [(w + e) / 2, n]);
     const km2 = (wide * tall) / 1e6;
-    const count = pts ? pts.length : null;
-    if (km2 <= CHUNK_MAX_KM2 && (count === null || count <= CHUNK_MAX_BUILDINGS)) {
-      if (touches(box, ring)) out.push({ bbox: box, km2, buildings: count });
+    const kb = inside ? inside.reduce((sum, f) => sum + f.kb, 0) : null;
+    if (!force && km2 <= maxKm2 && (kb === null || kb <= CHUNK_MAX_KB)) {
+      const buildings = inside ? inside.filter((f) => f.building).length : null;
+      if (touches(box, ring)) out.push({ bbox: box, km2, buildings, kb });
       return;
     }
     const halves: [number, number, number, number][] =
@@ -228,11 +299,11 @@ function planChunks(bbox: [number, number, number, number], ring: LngLat[], cent
         ? [[w, s, (w + e) / 2, n], [(w + e) / 2, s, e, n]]
         : [[w, s, e, (s + n) / 2], [w, (s + n) / 2, e, n]];
     for (const h of halves) {
-      const inside = pts?.filter(([x, y]) => x >= h[0] && x < h[2] && y >= h[1] && y < h[3]) ?? null;
-      split(h, inside);
+      plan(h, inside?.filter(({ at: [x, y] }) => x >= h[0] && x < h[2] && y >= h[1] && y < h[3]) ?? null, false);
     }
   };
-  split(bbox, centers);
+  const [w, s, e, n] = bbox;
+  plan(bbox, features?.filter(({ at: [x, y] }) => x >= w && x <= e && y >= s && y <= n) ?? null, split);
   return out;
 }
 

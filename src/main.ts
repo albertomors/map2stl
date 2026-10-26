@@ -2,7 +2,8 @@ import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
 import './style.css';
-import { fetchAreaData, summarize, type AreaData, type FetchProgress, type Layer } from './area-data';
+import { fetchAreaData, summarize, type AreaData, type ChunkPlan, type ChunkResult, type FetchProgress, type Layer } from './area-data';
+import { devLog } from './dev-log';
 import { DrawController } from './draw';
 import { countBuildings, estimateSeconds, recordSample, type EtaInput } from './eta';
 import { distance } from './geo';
@@ -104,7 +105,7 @@ showScales();
 // Export: what's in the 3D view (edits, multipliers, visible layers), in millimeters.
 let exportFormat: 'stl' | '3mf' = 'stl';
 const FORMAT_HINTS = {
-  stl: 'One watertight solid, for any slicer.',
+  stl: 'One color, for any slicer: everything that touches is joined into one watertight solid.',
   '3mf': 'One colored part per layer (terrain, water, streets, squares, parks, sand, buildings, structures, trees), for multi-color printers.',
 };
 function showFormat() {
@@ -427,7 +428,7 @@ async function fetchData(sel: Selection) {
   resetData();
   const controller = new AbortController();
   loading = controller;
-  $('fetch').textContent = 'Cancel';
+  setFetchButton('cancel');
   $('data').hidden = false;
   const status = $('data-status');
   status.classList.remove('error');
@@ -439,6 +440,7 @@ async function fetchData(sel: Selection) {
   const render = () => showProgress(last, wait);
   render();
   const clock = setInterval(render, 1000);
+  let learned = 0;
   try {
     const data = await fetchAreaData(
       sel,
@@ -446,6 +448,11 @@ async function fetchData(sel: Selection) {
       (p) => {
         last = p;
         render();
+        // The bar says Done while the terrain and sea floor are still being finished: the
+        // caption mustn't still say the data is on its way.
+        if (p.osmDone) status.textContent = 'Detailed data in: finishing the terrain and the sea floor…';
+        for (const part of p.answered?.slice(learned) ?? []) learnFrom(part, p.chunks?.length ?? 1, info.areaM2 / 1e6);
+        learned = p.answered?.length ?? 0;
       },
       // The quick version from the map tiles: usable right away, replaced when the full one lands.
       (quick) => {
@@ -455,12 +462,6 @@ async function fetchData(sel: Selection) {
     );
     $('data-progress').hidden = true;
     status.textContent = '';
-    // Teach the estimate how long a single request really took, from the try that answered
-    // (cache hits and chunked requests say nothing clean about one request).
-    if (!last.osmCached && wait.doneAt && last.chunks?.length === 1) {
-      // The same building count the estimate uses: the quick data's.
-      recordSample({ km2: last.chunks[0].km2, buildings: last.chunks[0].buildings }, (wait.doneAt - wait.trySince) / 1000);
-    }
     showData(data);
   } catch (err) {
     if (controller.signal.aborted) {
@@ -478,9 +479,18 @@ async function fetchData(sel: Selection) {
     clearInterval(clock);
     if (loading === controller) {
       loading = null;
-      $('fetch').textContent = 'Fetch 3D data';
+      setFetchButton(areaData?.detail === 'full' ? 'again' : 'fetch');
     }
   }
+}
+
+// "Fetch 3D data" leads until there's detailed data; then "Open 3D view" does, and fetching
+// again is a secondary choice.
+function setFetchButton(state: 'fetch' | 'cancel' | 'again') {
+  const button = $('fetch');
+  button.textContent = { fetch: 'Fetch 3D data', cancel: 'Cancel', again: 'Fetch again' }[state];
+  button.classList.toggle('primary', state !== 'again');
+  button.classList.toggle('secondary', state === 'again');
 }
 
 function resetData() {
@@ -491,7 +501,7 @@ function resetData() {
   edits.clear();
   showEditsSummary();
   $('open-3d').hidden = true;
-  $('fetch').textContent = 'Fetch 3D data';
+  setFetchButton('fetch');
   preview?.clear();
   $('data').hidden = true;
   $('data-progress').hidden = true;
@@ -553,16 +563,51 @@ function showData(data: AreaData) {
   const spacing = distance([t.bbox[0], midLat], [t.bbox[2], midLat]) / t.width;
   // With sea depths, the deepest point there too, and their source.
   const deepest = data.bathymetry ? data.bathymetry.heights.reduce((low, h) => (Number.isFinite(h) && h < low ? h : low), 0) : 0;
-  const sea = deepest < 0 ? ` Sea down to ${Math.round(-deepest)} m (${data.bathymetry!.source.name}).` : '';
+  // The sea floor shows only with the Water layer off (with it on, the water's surface is
+  // what's printed): say so, or a harbour looks flat with no clue why.
+  const sea = deepest < 0 ? ` Sea down to ${Math.round(-deepest)} m (${data.bathymetry!.source.name}): switch Water off to see the sea floor and print it.` : '';
   // Which heights: national LiDAR where there is some, else the worldwide tiles.
   const from = t.source ? `${t.source.name}, ≈${t.source.resolutionM.toFixed(1)} m` : `AWS Terrain Tiles, ≈${spacing.toFixed(0)} m`;
   // Forests as tall as they really are, where the LiDAR has the surface too.
   const trees = t.canopy ? ' Forest heights measured by the same LiDAR.' : '';
-  $('data-terrain').textContent = `Terrain ${Math.round(t.min)}–${Math.round(t.max)} m above sea level, ${t.width}×${t.height} grid (${from}).${trees}${sea}`;
+  const [low, high] = [Math.round(t.min), Math.round(t.max)];
+  const range = low < 0 ? `from ${-low} m below to ${high} m above sea level` : `${low}–${high} m above sea level`;
+  $('data-terrain').textContent = `Terrain ${range}, ${t.width}×${t.height} grid (${from}).${trees}${sea}`;
+  // The credit line names the sources actually used, not the defaults.
+  $('data-credit').textContent = ['© OpenStreetMap contributors', `terrain: ${t.source?.name ?? 'AWS Terrain Tiles'}`, deepest < 0 ? `sea floor: ${data.bathymetry!.source.name}` : '']
+    .filter(Boolean)
+    .join(' · ');
+  // Folded: the two biggest counts, and how many more layers there are.
+  const filled = summarize(data).filter((s) => s.count);
+  const shown = filled.slice(0, 2).map((s) => `${s.count.toLocaleString()} ${s.label.toLowerCase()}`);
+  $('data-summary').textContent = [...shown, filled.length > 2 ? `${filled.length - 2} more layers` : ''].filter(Boolean).join(' · ');
   if (replacing) viewer?.show(data, visibleLayers, scales(), { keepCamera: true, edits });
   showExport();
   updatePrintPreview();
   showSelectHint();
+}
+
+// Each request answered teaches the estimate how long one takes, from the try that answered
+// (a cache hit says nothing), with the same building count it uses: the quick data's. In
+// the dev server, it's also logged with what was predicted, to tune how requests are sized.
+function learnFrom(part: ChunkResult, parts: number, selectionKm2: number) {
+  const { plan } = part;
+  const estimateS = Math.round(estimateSeconds({ km2: plan.km2, buildings: plan.buildings }));
+  if (!part.cached && part.answeredS !== undefined) recordSample({ km2: plan.km2, buildings: plan.buildings }, part.answeredS);
+  devLog('parts', {
+    selectionKm2: +selectionKm2.toFixed(3),
+    parts,
+    bbox: plan.bbox.map((v) => +v.toFixed(5)),
+    km2: +plan.km2.toFixed(3),
+    buildings: plan.buildings,
+    predictedKb: plan.kb === null ? null : Math.round(plan.kb),
+    kb: Math.round(part.bytes / 1000),
+    cached: part.cached,
+    server: part.server ?? null,
+    tries: part.tries ?? null,
+    answeredS: part.answeredS === undefined ? null : +part.answeredS.toFixed(2),
+    estimateS,
+  });
 }
 
 // Which Overpass server we're waiting on, and since when (reset when it moves to a mirror).
@@ -570,12 +615,12 @@ interface ServerWait {
   server?: string;
   previous?: string;
   since: number;
-  // Expected seconds from `since` for the whole OSM download (all chunks), and when it
-  // actually arrived.
+  // Expected seconds from `since` for the whole OSM download (all chunks).
   eta: number;
-  doneAt?: number;
-  // Set once the chunk plan is known, with the estimate for each chunk.
+  // Set once the chunk plan is known, with the estimate for each chunk (redone when a chunk
+  // the server gave up on is split).
   planned?: boolean;
+  plan?: ChunkPlan[];
   chunkEtas?: number[];
   chunk?: number;
   // The request being waited on (part and server) and when it was sent: a retry or a
@@ -588,9 +633,12 @@ interface ServerWait {
 
 function showProgress(p: FetchProgress, wait: ServerWait) {
   // Once the chunks are planned, the estimate is the sum over them (each is one request).
-  if (p.chunks && !wait.planned) {
+  if (p.chunks && p.chunks !== wait.plan) {
     wait.planned = true;
+    wait.plan = p.chunks;
     wait.chunkEtas = p.chunks.map((c) => estimateSeconds({ km2: c.km2, buildings: c.buildings }));
+    // What's left is estimated again, from now.
+    wait.tryKey = undefined;
   }
   // Each part starts fresh: "server X was busy" is about the part being requested.
   if (p.chunk !== wait.chunk) {
@@ -611,7 +659,6 @@ function showProgress(p: FetchProgress, wait: ServerWait) {
     wait.eta = (wait.trySince - wait.since) / 1000 + left;
   }
   wait.tryKey = tryKey;
-  if (p.osmDone && !wait.doneAt) wait.doneAt = Date.now();
   const seconds = Math.round((Date.now() - wait.since) / 1000);
   const many = (p.chunks?.length ?? 1) > 1;
   const part = many ? `Part ${p.chunk} of ${p.chunks!.length}. ` : '';
@@ -623,21 +670,21 @@ function showProgress(p: FetchProgress, wait: ServerWait) {
     setBar('progress-osm', 'Preparing the request…', null, '');
   } else if (p.osmWaitS) {
     // Refused or no free slot: waiting, as the server asks, before trying again.
-    const note = `${part}${wait.server ?? 'The server'} is at capacity; trying again in ${p.osmWaitS} s.`;
-    setBar('progress-osm', `Waiting for the server… ${formatDuration(seconds)}`, many ? fraction : null, note);
+    const note = `${part}The map data server is busy (${wait.server ?? 'Overpass'}): trying again in ${p.osmWaitS} s.`;
+    setBar('progress-osm', `Waiting for a free server · ${formatDuration(seconds)} so far`, many ? fraction : null, note);
   } else if (p.osmBytes && !many) {
     // The server doesn't say how big the answer is: count the bytes instead of a percentage.
-    setBar('progress-osm', `Downloading ${formatBytes(p.osmBytes)}`, null, `from ${wait.server}`);
+    setBar('progress-osm', `Downloading ${formatBytes(p.osmBytes)}`, null, '');
   } else if (seconds < wait.eta) {
     // Fills toward the estimate but never claims to be finished before the data arrives.
     const note = wait.previous
-      ? `${part}${wait.previous} was busy, now asking ${wait.server}.`
-      : `${part}${wait.server ?? 'The server'} is collecting every feature in the area.`;
+      ? `${part}The first server was busy: now asking another (${wait.server}).`
+      : `${part}The map data server is collecting every feature in the area.`;
     wait.filled = Math.min(Math.max(seconds / wait.eta, fraction, wait.filled), 0.95);
     setBar('progress-osm', `About ${formatDuration(wait.eta - seconds)} left`, wait.filled, note);
   } else {
-    const note = `${part}${wait.server ?? 'The server'} is busier than usual.`;
-    setBar('progress-osm', `Taking longer than usual… ${formatDuration(seconds)}`, many ? fraction : null, note);
+    const note = `${part}The map data server is busier than usual (${wait.server ?? 'Overpass'}); no estimate until it answers.`;
+    setBar('progress-osm', `Taking longer than usual · ${formatDuration(seconds)} so far`, many ? fraction : null, note);
   }
 }
 
@@ -666,12 +713,19 @@ async function open3d() {
   const button = $<HTMLButtonElement>('open-3d');
   button.disabled = true;
   button.textContent = 'Building 3D view…';
+  // Built while the map still shows, with a bar saying how far it got; shown when done.
+  const bar = $('progress-3d');
+  bar.hidden = false;
+  setBar('progress-3d', 'Loading the 3D engine…', 0, '');
   try {
-    const { Viewer } = await import('./viewer/viewer');
+    const { Viewer, BUILD_STAGES } = await import('./viewer/viewer');
+    const v = (viewer = new Viewer($('viewer'), showPick));
+    await v.showStaged(areaData, visibleLayers, scales(), edits, (stage, done) => setBar('progress-3d', `${stage}…`, (done + 1) / (BUILD_STAGES + 1), ''));
+    // A new selection while building closed it.
+    if (viewer !== v) return;
     document.body.classList.add('mode-3d');
     $('viewer').hidden = false;
-    viewer = new Viewer($('viewer'), showPick);
-    viewer.show(areaData, visibleLayers, scales(), { edits });
+    ($('data-details') as HTMLDetailsElement).open = true;
     showExport();
     showSelectHint();
     showEditsSummary();
@@ -681,6 +735,7 @@ async function open3d() {
     $('data-status').classList.add('error');
     $('data-status').textContent = `The 3D view failed to start: ${(err as Error).message}`;
   } finally {
+    bar.hidden = true;
     button.disabled = false;
     button.textContent = 'Open 3D view';
   }
@@ -694,6 +749,7 @@ function close3d() {
   showPick(null);
   $('viewer').hidden = true;
   document.body.classList.remove('mode-3d');
+  ($('data-details') as HTMLDetailsElement).open = false;
 }
 
 // What a bug report carries to reproduce the user's conditions (bug-report.ts): where the
@@ -1192,7 +1248,13 @@ function failure(what: string, err: unknown): string {
 // The print is built in a worker (see print-worker.ts), so the page stays responsive. The
 // preview has its own, ended when a newer preview is asked for; a download gets a fresh one.
 let previewWorker: Worker | null = null;
-function runPrintJob(kind: PrintJob['kind'], data: AreaData, own?: (w: Worker) => void, previewed?: PrintJob['previewed']): Promise<{ result: Extract<PrintResult, { ok: true }>; nozzle: number; minFeatureMm: number }> {
+function runPrintJob(
+  kind: PrintJob['kind'],
+  data: AreaData,
+  own?: (w: Worker) => void,
+  previewed?: PrintJob['previewed'],
+  onProgress?: (p: PrintProgress) => void,
+): Promise<{ result: Extract<PrintResult, { ok: true }>; nozzle: number; minFeatureMm: number }> {
   const options = {
     sizeMm: printNumber('print-size', 'Longest side', 1),
     baseMm: printNumber('print-base', 'Base thickness', 1),
@@ -1207,7 +1269,10 @@ function runPrintJob(kind: PrintJob['kind'], data: AreaData, own?: (w: Worker) =
   const bar = printProgress.start(worker);
   return new Promise((resolve, reject) => {
     worker.onmessage = (e: MessageEvent<PrintResult | PrintProgress>) => {
-      if ('progress' in e.data) return bar.update(e.data);
+      if ('progress' in e.data) {
+        onProgress?.(e.data);
+        return bar.update(e.data);
+      }
       worker.terminate();
       bar.end();
       if (e.data.ok) resolve({ result: e.data, nozzle: nozzleMm, minFeatureMm: options.minFeatureMm });
@@ -1275,14 +1340,24 @@ function printName(lat: number, lng: number): string {
 }
 
 // What in the model is too thin for the nozzle, under the Preview button.
-function showThinWarning(thin: ThinObjects, nozzle: number, minFeatureMm: number) {
+// `crownMm`: how wide the forests' crowns print (a forest is flagged as a whole).
+function showThinWarning(thin: ThinObjects, nozzle: number, minFeatureMm: number, crownMm?: number) {
   const warning = $('print-warning');
-  const total = thin.counts.reduce((n, [, c]) => n + c, 0);
-  const list = thin.counts.map(([name, c]) => `${c.toLocaleString()} ${name.toLowerCase()}`).join(', ');
+  const objects = thin.counts.filter(([name]) => name !== 'Forests');
+  const total = objects.reduce((n, [, c]) => n + c, 0);
+  const list = objects.map(([name, c]) => `${c.toLocaleString()} ${name.toLowerCase()}`).join(', ');
+  const forests =
+    crownMm !== undefined && crownMm < nozzle
+      ? ` The forests' crowns are ${crownMm.toFixed(2)} mm wide, under the ${nozzle} mm nozzle (red in the preview): they'll print as a rough surface rather than single trees.`
+      : '';
   const below = minFeatureMm < nozzle ? ` Thinnest detail is below the nozzle width: set it to at least ${nozzle} mm.` : '';
-  warning.textContent = total
-    ? `${total.toLocaleString()} ${total === 1 ? 'object is' : 'objects are'} narrower than the ${nozzle} mm nozzle (${list}), shown in red in the preview: they may print as blobs, or not at all. Make the model bigger, or enlarge or delete them.${below}`
-    : below.trim();
+  warning.textContent = (
+    (total
+      ? `${total.toLocaleString()} ${total === 1 ? 'object is' : 'objects are'} narrower than the ${nozzle} mm nozzle (${list}), shown in red in the preview: they may print as blobs, or not at all. Make the model bigger, or enlarge or delete them.`
+      : '') +
+    forests +
+    below
+  ).trim();
   warning.hidden = !warning.textContent;
 }
 
@@ -1324,7 +1399,7 @@ async function updatePrintPreview() {
     if (previewWorker !== mine || !printPreview) return;
     previewWorker = null;
     viewer?.showPrint(result.model, result.thin, exportFormat === 'stl');
-    showThinWarning(result.thin, nozzle, minFeatureMm);
+    showThinWarning(result.thin, nozzle, minFeatureMm, result.model.crownMm);
     previewed = { model: result.model, thin: result.thin, nozzle, minFeatureMm };
     $<HTMLButtonElement>('download').disabled = false;
     const [x, y, z] = result.model.sizeMm.map((v) => Math.round(v));
@@ -1342,21 +1417,36 @@ async function downloadModel() {
   const status = $('export-status');
   button.disabled = true;
   status.textContent = 'Writing the file…';
+  const previewTriangles = previewed.model.triangleCount;
+  // Merging a big city takes minutes: the button itself says how far it got.
+  const since = Date.now();
+  const onProgress = ({ progress, label }: PrintProgress) => {
+    const elapsed = (Date.now() - since) / 1000;
+    const left = progress > 0.05 && elapsed > 5 ? ` · about ${formatDuration((elapsed * (1 - progress)) / progress)} left` : '';
+    button.textContent = `${label}… ${Math.round(progress * 100)}%${left}`;
+  };
   try {
     const format = exportFormat;
     // The model previewed: merged and written, not built again.
-    const { result } = await runPrintJob(format, areaData, undefined, { model: previewed.model, thin: previewed.thin.counts });
+    const { result } = await runPrintJob(format, areaData, undefined, { model: previewed.model, thin: previewed.thin.counts }, onProgress);
     const file = result.file!;
     saveFile(file, format);
     const skipped = result.skipped ?? 0;
-    const merged = skipped ? ` · ${skipped.toLocaleString()} ${skipped === 1 ? 'solid' : 'solids'} couldn't be merged and ${skipped === 1 ? 'is' : 'are'} included as ${skipped === 1 ? 'it is' : 'they are'}` : '';
+    const merged = skipped
+      ? ` · ${skipped.toLocaleString()} small ${skipped === 1 ? 'piece is kept as a separate part' : 'pieces are kept as separate parts'} (slicers handle that fine)`
+      : '';
     const [x, y, z] = result.model.sizeMm.map((v) => Math.round(v));
+    const triangles = result.model.triangleCount;
+    // Joining overlapping objects cuts new edges where they meet.
+    const more = triangles > previewTriangles ? ` (more than the preview's ${previewTriangles.toLocaleString()}: joining touching objects adds edges where they meet)` : '';
     const credits = result.credits?.length ? ` and ${result.credits.join('; ')}` : '';
-    status.textContent = `${x} × ${y} × ${z} mm · ${result.model.triangleCount.toLocaleString()} triangles · ${formatBytes(file.size)}${merged}. Credit "© OpenStreetMap contributors"${credits} when you share it.`;
+    status.textContent = `${x} × ${y} × ${z} mm · ${triangles.toLocaleString()} triangles${more} · ${formatBytes(file.size)}${merged}. Credit "© OpenStreetMap contributors"${credits} when you share it.`;
   } catch (err) {
     if (!(err instanceof SettingError)) console.error('Export failed', err);
     status.textContent = failure('The export', err);
   } finally {
+    // Back to "Download STL/3MF".
+    showFormat();
     // Settings changed meanwhile: the new preview must finish first.
     button.disabled = !previewed;
   }
@@ -1378,7 +1468,10 @@ async function downloadScene(binary: boolean) {
     const file = await viewer.exportGltf(binary, ['© OpenStreetMap contributors', ...credits].join('; '));
     saveFile(file, binary ? 'glb' : 'gltf');
     const more = credits.length ? ` and ${credits.join('; ')}` : '';
-    status.textContent = `The 3D view as shown, in meters · ${formatBytes(file.size)}. Credit "© OpenStreetMap contributors"${more} when you share it.`;
+    // Meters, but with the view's multipliers: a Blender user needs to know heights aren't true.
+    const { terrain, heights } = scales();
+    const stretched = terrain !== 1 || heights !== 1 ? `, heights as in the view (terrain ×${terrain}, objects ×${heights}; set both to ×1 for true heights)` : ', true heights';
+    status.textContent = `The 3D view as shown, in meters${stretched} · ${formatBytes(file.size)}. Credit "© OpenStreetMap contributors"${more} when you share it.`;
   } catch (err) {
     console.error('glTF export failed', err);
     status.textContent = failure('The export', err);

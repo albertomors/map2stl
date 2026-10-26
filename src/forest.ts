@@ -65,6 +65,8 @@ export interface Canopy {
   cell: number;
   cols: number;
   rows: number;
+  // Meters between crowns: about a crown's width.
+  spacing: number;
   above: Float32Array;
   ground: Float32Array;
   // The tallest a crown gets (for shading).
@@ -81,14 +83,12 @@ export function buildCanopy(
   groundAt: (x: number, z: number) => number,
   {
     heightScale,
-    minCrownM = 0,
     pointsPerCrown = POINTS_PER_CROWN,
     bare = () => false,
     borderTrees = false,
     treeHeight,
   }: {
     heightScale: number;
-    minCrownM?: number;
     pointsPerCrown?: number;
     bare?: (id: string) => boolean;
     borderTrees?: boolean;
@@ -104,7 +104,7 @@ export function buildCanopy(
   for (const [x, z] of outline) {
     [minX, maxX, minZ, maxZ] = [Math.min(minX, x), Math.max(maxX, x), Math.min(minZ, z), Math.max(maxZ, z)];
   }
-  const spacing = Math.max(CROWN_SPACING_M, minCrownM, Math.max(maxX - minX, maxZ - minZ) / MAX_CROWNS_ACROSS);
+  const spacing = Math.max(CROWN_SPACING_M, Math.max(maxX - minX, maxZ - minZ) / MAX_CROWNS_ACROSS);
   const cell = spacing / pointsPerCrown;
   // A cell of margin all round: the field is tucked under at its border.
   const [x0, z0] = [minX - cell, minZ - cell];
@@ -222,7 +222,7 @@ export function buildCanopy(
       }
     }
   }
-  return { x0, z0, cell, cols, rows, above, ground, top: scale * 1.25, border };
+  return { x0, z0, cell, cols, rows, spacing, above, ground, top: scale * 1.25, border };
 }
 
 // Distance from each grid point to the nearest point outside a mask (0 outside it): two

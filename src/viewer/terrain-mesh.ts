@@ -77,18 +77,35 @@ export function buildTerrain(
   const uv: number[] = [];
   const ids = new Map<string, number>();
   const gridIds = new Int32Array(cols * rows).fill(-1);
+  // A point cut on an edge two grid triangles share is computed once by each, through
+  // different clipping steps: the two results differ by float noise, and as two vertices
+  // they'd leave open edges inside the surface (walls inside the tile, a base walking off
+  // the outline in stripes). Points this close (about a millimeter) are one vertex.
+  const SNAP = 1e-4;
+  // A grid corner, or a cut point within float noise of one (clipping a grid triangle the
+  // outline fully contains gives back its corners, recomputed): the same vertex either way.
   const gridIndex = (x: number, y: number): number => {
     const c = Math.min(Math.round(x / step), cols - 1);
     const r = Math.min(Math.round(y / step), rows - 1);
-    return colX(c) === x && rowY(r) === y ? r * cols + c : -1;
+    return Math.abs(colX(c) - x) < SNAP && Math.abs(rowY(r) - y) < SNAP ? r * cols + c : -1;
+  };
+  const cell = (v: number) => Math.round(v / SNAP);
+  const nearby = (x: number, y: number): number | undefined => {
+    const [cx, cy] = [cell(x), cell(y)];
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        const id = ids.get(`${cx + dx},${cy + dy}`);
+        if (id !== undefined) return id;
+      }
+    }
+    return undefined;
   };
   const vertex = ({ x, y, h }: GP): number => {
     const g = gridIndex(x, y);
-    const key = g < 0 ? `${x.toFixed(6)},${y.toFixed(6)}` : '';
-    let id = g < 0 ? ids.get(key) : gridIds[g] < 0 ? undefined : gridIds[g];
+    let id = g < 0 ? nearby(x, y) : gridIds[g] < 0 ? undefined : gridIds[g];
     if (id === undefined) {
       id = pos.length / 3;
-      if (g < 0) ids.set(key, id);
+      if (g < 0) ids.set(`${cell(x)},${cell(y)}`, id);
       else gridIds[g] = id;
       const [lx, lz] = frame.toLocal(pixelLngLat(t, x, y));
       pos.push(lx, ground(h), lz);
@@ -160,29 +177,49 @@ export function buildTerrain(
   const side: number[] = [];
   const top3 = (i: number) => [pos[3 * i], pos[3 * i + 1], pos[3 * i + 2]];
   const base3 = (i: number) => [pos[3 * i], baseY, pos[3 * i + 2]];
-  const next = new Map<number, number>();
+  const out = new Map<number, number[]>();
   for (const [p, q] of uses.values()) {
     side.push(...top3(q), ...top3(p), ...base3(p));
     side.push(...top3(q), ...base3(p), ...base3(q));
-    next.set(p, q);
+    out.set(p, [...(out.get(p) ?? []), q]);
   }
   // The base: each rim loop at the base height, through the very same points as the walls'
-  // bottom edges, triangulated (free shapes can be concave) and facing down.
-  const seen = new Set<number>();
-  for (const start of next.keys()) {
-    if (seen.has(start)) continue;
-    const loop: number[] = [];
-    for (let v: number | undefined = start; v !== undefined && !seen.has(v); v = next.get(v)) {
-      seen.add(v);
-      loop.push(v);
-    }
-    if (loop.length < 3) continue;
-    const outline = loop.map((v) => new Vector2(pos[3 * v], pos[3 * v + 2]));
-    for (const [a, b, c] of ShapeUtils.triangulateShape(outline, [])) {
-      const [pa, pb, pc] = [base3(loop[a]), base3(loop[b]), base3(loop[c])];
-      // Normal y < 0 means facing down.
-      const ny = (pb[2] - pa[2]) * (pc[0] - pa[0]) - (pb[0] - pa[0]) * (pc[2] - pa[2]);
-      side.push(...pa, ...(ny < 0 ? pb : pc), ...(ny < 0 ? pc : pb));
+  // bottom edges, triangulated (free shapes can be concave) and facing down. Where two parts
+  // of the surface touch at a point (the outline pinching through one grid triangle), the
+  // rim leaves that point twice: the walk takes the sharpest turn, so each loop stays a
+  // simple polygon instead of a figure eight that triangulates across the gap.
+  const dir = (a: number, b: number) => [pos[3 * b] - pos[3 * a], pos[3 * b + 2] - pos[3 * a + 2]];
+  const turn = (from: number, at: number, to: number) => {
+    const [ix, iz] = dir(from, at);
+    const [ox, oz] = dir(at, to);
+    return Math.atan2(ix * oz - iz * ox, ix * ox + iz * oz);
+  };
+  const take = (from: number, at: number): number | undefined => {
+    const options = out.get(at);
+    if (!options?.length) return undefined;
+    let best = 0;
+    for (let k = 1; k < options.length; k++) if (turn(from, at, options[k]) > turn(from, at, options[best])) best = k;
+    return options.splice(best, 1)[0];
+  };
+  for (const start of out.keys()) {
+    while (out.get(start)!.length) {
+      const loop = [start];
+      let prev = start;
+      let v: number | undefined = out.get(start)!.pop();
+      while (v !== undefined && v !== start) {
+        loop.push(v);
+        const w = take(prev, v);
+        prev = v;
+        v = w;
+      }
+      if (loop.length < 3) continue;
+      const outline = loop.map((i) => new Vector2(pos[3 * i], pos[3 * i + 2]));
+      for (const [a, b, c] of ShapeUtils.triangulateShape(outline, [])) {
+        const [pa, pb, pc] = [base3(loop[a]), base3(loop[b]), base3(loop[c])];
+        // Normal y < 0 means facing down.
+        const ny = (pb[2] - pa[2]) * (pc[0] - pa[0]) - (pb[0] - pa[0]) * (pc[2] - pa[2]);
+        side.push(...pa, ...(ny < 0 ? pb : pc), ...(ny < 0 ? pc : pb));
+      }
     }
   }
   const sides = new BufferGeometry();

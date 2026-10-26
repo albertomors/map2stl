@@ -43,6 +43,17 @@ export interface OverpassStatus {
   cached: boolean;
   // Seconds left waiting before the next try (a free slot, or backing off after a refusal).
   waitS?: number;
+  // Once answered: seconds from sending the request that answered to its last byte, and
+  // how many requests it took (busy servers, mirrors).
+  answeredS?: number;
+  tries?: number;
+}
+
+// The server gave up on the query (its time or memory limit): a smaller area may go through.
+export class TooMuchData extends Error {
+  constructor() {
+    super('The area has too much data for the OSM server. Try a smaller selection.');
+  }
 }
 
 export async function overpass(query: string, signal: AbortSignal, onProgress: (status: OverpassStatus) => void): Promise<OverpassResponse> {
@@ -63,6 +74,8 @@ export async function overpass(query: string, signal: AbortSignal, onProgress: (
       if (waitS > 0) await countdown(waitS * 1000, signal, (s) => onProgress({ server, bytes: 0, cached: false, waitS: s }));
     }
     onProgress({ server, bytes: 0, cached: false });
+    const sentAt = performance.now();
+    let received = 0;
     const attemptSignal = AbortSignal.any([signal, AbortSignal.timeout(ATTEMPT_TIMEOUT_MS)]);
     let res: Response;
     let text: string;
@@ -78,7 +91,7 @@ export async function overpass(query: string, signal: AbortSignal, onProgress: (
         continue;
       }
       if (!res.ok) throw new Error(`Overpass rejected the query (${res.status})`);
-      text = await readBody(res, (bytes) => onProgress({ server, bytes, cached: false }));
+      text = await readBody(res, (bytes) => onProgress({ server, bytes: (received = bytes), cached: false }));
     } catch (err) {
       if (signal.aborted) throw err;
       if ((err as Error).message.startsWith('Overpass rejected')) throw err;
@@ -88,9 +101,8 @@ export async function overpass(query: string, signal: AbortSignal, onProgress: (
 
     const json = JSON.parse(text) as OverpassResponse;
     // Timeouts and memory limits come back as 200 with partial data and a remark.
-    if (json.remark && /error|timed out|out of memory/i.test(json.remark)) {
-      throw new Error('The area has too much data for the OSM server. Try a smaller selection.');
-    }
+    if (json.remark && /error|timed out|out of memory/i.test(json.remark)) throw new TooMuchData();
+    onProgress({ server, bytes: received, cached: false, answeredS: (performance.now() - sentAt) / 1000, tries: attempt + 1 });
     await writeCache(query, text);
     return json;
   }

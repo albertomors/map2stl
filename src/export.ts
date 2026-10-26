@@ -35,6 +35,9 @@ export interface PrintPart {
   solids: Uint32Array;
   // Which object each triangle belongs to: a building of several parts is one object.
   objects: Uint32Array;
+  // For a part made of many like details (a forest's crowns), their width: the nozzle check
+  // looks at that, not at the part's outline.
+  featureMm?: number;
 }
 
 export interface PrintModel {
@@ -44,6 +47,8 @@ export interface PrintModel {
   triangleCount: number;
   // Print millimeters back to the 3D view's scene, so the preview sits where the model was.
   toScene: Matrix4;
+  // How wide the forests' crowns print, if there are forests.
+  crownMm?: number;
 }
 
 // Objects standing on the ground reach this far into it, so no gap opens on slopes.
@@ -99,7 +104,7 @@ export function buildPrintModel(
   type Piece = { geometry: BufferGeometry; owners?: number[]; keys?: string[] } | null | undefined;
   const pick = (r: PickableMesh | null): Piece => r && { geometry: r.geometry, owners: r.owners, keys: r.keys };
   progress(0.7, 'Adding buildings and trees');
-  const groups: { name: string; color: string; pieces: Piece[] }[] = [
+  const groups: { name: string; color: string; pieces: Piece[]; featureMm?: number }[] = [
     { name: TERRAIN, color: '#c9bba5', pieces: tile ? [{ geometry: tile.top }, { geometry: tile.sides }] : [{ geometry: flat(ground.terrain!.positions) }] },
     { name: 'Water', color: '#3b8fe0', pieces: [solids(ground.water)] },
     {
@@ -132,18 +137,23 @@ export function buildPrintModel(
       ],
     },
     (() => {
-      // Forests: their canopy, crowns no narrower than a few thinnest details (so the print
-      // shows them), reaching into the ground like everything standing on it.
+      // Forests: their canopy, crowns at a real crown's size whatever the print's (too small
+      // for the nozzle, they show in red, like any object), reaching into the ground like
+      // everything standing on it.
       const canopy = show('trees')
         ? buildCanopy(applyEdits(data.osm, edits), ring, frame, (x, z) => groundHeight(elevationAt(data.terrain, ...frame.toLngLat([x, z]))), {
             heightScale: scales.heights,
-            minCrownM: 4 * at.minWidth,
             pointsPerCrown: 4,
             treeHeight: canopySampler(data.terrain, frame) ?? undefined,
             bare: (id) => !!edits.get(id)?.noTrees,
           })
         : null;
-      return { name: 'Forests', color: '#' + COLORS.tree.getHexString(), pieces: [canopy && { geometry: flat(canopySolid(canopy, 2 * SINK_M)) }] };
+      return {
+        name: 'Forests',
+        color: '#' + COLORS.tree.getHexString(),
+        pieces: [canopy && { geometry: flat(canopySolid(canopy, 2 * SINK_M)) }],
+        featureMm: canopy ? canopy.spacing * mmPerUnit : undefined,
+      };
     })(),
     (() => {
       const g = show('trees') ? treesGeometry(editedTrees(data.osm.trees, edits, TREE_HEIGHT_M), at) : null;
@@ -229,7 +239,7 @@ export function buildPrintModel(
       }
       return out;
     };
-    parts.push({ name: group.name, color: group.color, triangles, solids: join(solidChunks), objects: join(objectChunks) });
+    parts.push({ name: group.name, color: group.color, triangles, solids: join(solidChunks), objects: join(objectChunks), featureMm: group.featureMm });
   }
   // The inverse of the conversion above: plan() is its own inverse, Z up becomes y up.
   const k = 1 / mmPerUnit;
@@ -240,6 +250,7 @@ export function buildPrintModel(
     sizeMm: [max[0] - min[0], max[1] - min[1], max[2] - min[2]],
     triangleCount: parts.reduce((n, p) => n + p.triangles.length / 9, 0),
     toScene,
+    crownMm: parts.find((p) => p.featureMm !== undefined)?.featureMm,
   };
 }
 
@@ -259,6 +270,14 @@ export function findThinObjects(model: PrintModel, nozzleMm: number): ThinObject
   const counts: [string, number][] = [];
   for (const part of model.parts) {
     if (part.name === TERRAIN) continue;
+    // Many like details: all of them too thin, or none.
+    if (part.featureMm !== undefined) {
+      if (part.featureMm < nozzleMm) {
+        objects.set(part, new Set(part.objects));
+        counts.push([part.name, new Set(part.objects).size]);
+      }
+      continue;
+    }
     const points = new Map<number, number[]>();
     const t = part.triangles;
     for (let tri = 0; tri < part.objects.length; tri++) {

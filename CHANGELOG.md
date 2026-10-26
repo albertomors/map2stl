@@ -27,12 +27,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Big selections are requested in parts sized by what's in them, not by their area: the
+  answer's size is predicted from everything in the quick tile data, and a part holds up to
+  about 30 MB and 100 km² (10 km² before, whatever was in it). Each request costs about
+  44 s of server queue, so sparse ground goes much faster: a 42 km² rectangle on the Isle
+  of Coll is one request instead of eight. A part the server gives up on ("too much data")
+  is split in two and asked again, instead of the fetch failing.
+- Once the detailed data is in, "Open 3D view" is the main button, right under the status
+  line, and fetching again is a secondary "Fetch again"; on the map the layer list folds
+  into a line of counts (it opens in the 3D view).
+- Opening the 3D view shows a bar with what it's building (the terrain, the buildings, the
+  trees), instead of a page that looks stuck on a big city.
+- Downloading an STL or 3MF shows its progress and the time left on the Download button.
+  The result says when small pieces are kept as separate parts (slicers handle that), and
+  why the file has more triangles than the preview.
+- The search box's placeholder fits: "Place, address or landmark…".
+- Search ranks the best-known place first: one mapped in many pieces, with an outline, or
+  tagged for tourists ("Preikestolen" finds the cliff, not a namesake hill), and a name
+  made only of the words typed ("Big Ben London": the clock, not a golf course). A landmark
+  is shown with a kilometer or two around it, not a close-up of its roof, and a pin stays
+  on the place picked. The button on each result says "Select area".
+- The download's progress says one thing at a time: the time left while there's an
+  estimate, otherwise the time so far; a busy server is "the map data server is busy",
+  its name in brackets. Once the detailed data is in, the caption says the terrain and the
+  sea floor are being finished.
+- The data panel's credit line names the sources actually used (national LiDAR, the sea
+  floor's source), terrain below sea level reads "from 370 m below to 705 m above sea
+  level", and where there's sea, it says to switch Water off to see the sea floor.
+- STL's description no longer promises a single solid: "everything that touches is joined
+  into one watertight solid". The GLB/glTF note says the height multipliers are in the
+  file, and to set them to ×1 for true heights.
+- The 3D view draws only when something changes (the camera, an edit, a layer), instead of
+  every frame: a big city no longer keeps the computer busy while you look at it. Its
+  first view aims at the middle of the terrain's heights, from above the highest point.
+- Water is carved into the print one step deep, like streets (it was two).
+- Forests print with crowns at a real crown's size, whatever the thinnest detail; when the
+  crowns come out narrower than the nozzle, the forest shows in red in the export preview,
+  and the warning says how wide they print, as for any object.
+- The download estimate learns from every part of a fetch, not only from fetches made of
+  one.
 - The download estimate starts over when a request is retried or moves to another
   server, instead of running out and saying "Taking longer than usual" for minutes. Its
   formula held up on 162 logged fetches (44 s plus 1.9 s per 1,000 buildings when the
   first server answers); what it missed were the failovers.
 - The overpass.private.coffee mirror is no longer used: it answered 1 request in 38, and
   let the rest run into the 100 s timeout before the next server was tried.
+
+### Fixed
+
+- The 3D view's camera can no longer go under the tile: drags pan along the ground (they
+  could move the orbit's center below it), the camera stays above the terrain under it, the
+  orbit's center stays inside the selection, and zooming stops short of the ground.
+- Bridge decks slope from one bank's height to the other's, instead of staying level with
+  the higher one: a bridge from a hillside to a low causeway (Rundebrua, Norway) no longer
+  ends in the air.
+- Flat strips sticking out from a free shape's edge, at the base (in the 3D view and the
+  print): points cut along the outline are now shared between neighboring grid triangles,
+  and the base follows the outline where it pinches through a grid cell.
 
 ## [0.7.0] - 2026-10-25
 

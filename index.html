@@ -17,7 +17,7 @@ nom<!doctype html>
       </header>
 
       <form id="search" class="map-only" role="search" autocomplete="off">
-        <input id="search-input" type="search" placeholder="Search a place, address or landmark…" aria-label="Search a place, address or landmark" />
+        <input id="search-input" type="search" placeholder="Place, address or landmark…" aria-label="Search a place, address or landmark" />
         <button type="submit" aria-label="Search">
           <svg viewBox="0 0 24 24" width="18" height="18"><circle cx="11" cy="11" r="7" /><path d="m20 20-4-4" /></svg>
         </button>
@@ -85,10 +85,20 @@ nom<!doctype html>
           </div>
         </div>
         <p id="data-status" class="hint" aria-live="polite"></p>
-        <ul id="data-layers"></ul>
-        <p id="data-terrain" class="hint"></p>
+        <!-- The next step once there's data: right under the status, not below the layers. -->
         <button id="open-3d" class="primary map-only" hidden>Open 3D view</button>
-        <p class="hint credit">© OpenStreetMap contributors · terrain: AWS Terrain Tiles</p>
+        <div class="progress" id="progress-3d" hidden>
+          <div class="progress-head"><span>3D view</span><span class="progress-text"></span></div>
+          <div class="bar"><div></div></div>
+          <p class="progress-note"></p>
+        </div>
+        <!-- Folded on the map (a line of counts), open in the 3D view. -->
+        <details id="data-details">
+          <summary id="data-summary"></summary>
+          <ul id="data-layers"></ul>
+          <p id="data-terrain" class="hint"></p>
+        </details>
+        <p id="data-credit" class="hint credit">© OpenStreetMap contributors · terrain: AWS Terrain Tiles</p>
       </section>
     </aside>
 

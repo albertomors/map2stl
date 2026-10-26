@@ -32,8 +32,10 @@ export interface GroundSolids {
 }
 
 // How deep each kind lies below the ground, in steps (its top), and how deep it's carved
-// (its fill's bottom edge sits there, overlapping the terrain a step more).
-const DEPTH = { flush: 0, streets: 1, water: 2 };
+// (its fill's bottom edge sits there, overlapping the terrain a step more). Water and streets
+// are one step down alike: where a street meets water they're one groove in a one-color
+// print (a 3MF tells them apart by color); bridges rise above both.
+const DEPTH = { flush: 0, streets: 1, water: 1 };
 // Ground this steep (as shown, with the terrain exaggeration) is rock: the middle of the 3D
 // view's blend from ground to rock (relief.ts).
 const ROCK_DEG = 37.5;

@@ -145,6 +145,13 @@ export class Viewer {
   private canopy: { mesh: Mesh; field: Canopy; colors: Float32Array } | null = null;
   // The terrain's top, with the painted map (exported with the relief baked in).
   private terrainTop: Mesh | null = null;
+  // How far above the ground the camera stays (scene units, from the tile's size), and the
+  // tile's outline (scene x, z), which the orbit's center stays inside.
+  private clearance = 2;
+  private disposed = false;
+  // Something changed since the last frame drawn.
+  private dirty = true;
+  private outline: [number, number][] = [];
   // Terrain height → scene height, as last built.
   private groundHeight: (h: number) => number = (h) => h;
   private layerObjects = new Map<Layer, Object3D[]>();
@@ -182,7 +189,10 @@ export class Viewer {
     // The map's controls: drag pans, right-drag (or Ctrl+drag) orbits.
     this.controls.mouseButtons = { LEFT: MOUSE.PAN, MIDDLE: MOUSE.DOLLY, RIGHT: MOUSE.ROTATE };
     this.controls.touches = { ONE: TOUCH.PAN, TWO: TOUCH.DOLLY_ROTATE };
-    // Never below the ground plane.
+    // Never below the ground plane: drags pan along it (in screen space they'd also move the
+    // orbit's center up and down, down under the tile), and the camera stays above the
+    // horizon of its center.
+    this.controls.screenSpacePanning = false;
     this.controls.maxPolarAngle = Math.PI * 0.47;
 
     let press: { x: number; y: number } | null = null;
@@ -196,13 +206,45 @@ export class Viewer {
     this.resize.observe(container);
     this.fit();
     const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
-    this.renderer.setAnimationLoop(() => {
+    // Drawn only when something changed: the camera moving (or still gliding), the selected
+    // object lifting, or a change the methods below flag. A big city takes long to draw, and
+    // drawing it every frame for nothing keeps the page (and the fan) busy. Once a second
+    // anyway, in case some change went unflagged.
+    let lastDrawn = 0;
+    this.renderer.setAnimationLoop((now) => {
       const target = this.liftKey ? this.liftHeight : 0;
       const y = this.highlight.position.y;
-      this.highlight.position.y = reducedMotion ? target : y + (target - y) * LIFT_EASE;
-      this.controls.update();
+      const lifting = Math.abs(target - y) > 1e-3;
+      this.highlight.position.y = reducedMotion || !lifting ? target : y + (target - y) * LIFT_EASE;
+      const moved = this.controls.update();
+      if (!moved && !lifting && !this.dirty && now - lastDrawn < 1000) return;
+      this.keepAboveGround();
       this.renderer.render(this.scene, this.camera);
+      this.dirty = false;
+      lastDrawn = now;
     });
+  }
+
+  // The orbit's center stays over the tile (dragging it off leaves an empty view, with no
+  // way back but Back to map); and zoomed in close over a mountain, the camera can be inside
+  // the ground under it: it's lifted to clear the terrain.
+  private keepAboveGround() {
+    if (!this.data || !this.placement || !this.outline.length) return;
+    const t = this.controls.target;
+    const [cx, cz] = pointInRing([t.x, t.z], this.outline) ? [t.x, t.z] : nearestOnRing([t.x, t.z], this.outline);
+    const [dx, dz] = [cx - t.x, cz - t.z];
+    if (dx || dz) {
+      t.x += dx;
+      t.z += dz;
+      this.camera.position.x += dx;
+      this.camera.position.z += dz;
+    }
+    const { x, y, z } = this.camera.position;
+    const [lng, lat] = this.placement.frame.toLngLat([x, z]);
+    const [w, s, e, n] = this.data.terrain.bbox;
+    if (lng < w || lng > e || lat < s || lat > n) return;
+    const floor = this.groundHeight(elevationAt(this.data.terrain, lng, lat)) * this.terrain.scale.y + this.clearance;
+    if (y < floor) this.camera.position.y = floor;
   }
 
   // Selecting needs the detailed data: tile buildings are split at tile seams and come
@@ -214,6 +256,7 @@ export class Viewer {
   // The model exactly as it will print, one color per part (or one for all: `mono`), objects
   // narrower than the nozzle in red; null goes back to the normal view.
   showPrint(model: PrintModel | null, thin?: ThinObjects, mono = this.printMono) {
+    this.dirty = true;
     this.printMono = mono;
     disposeChildren(this.print);
     if (model) this.select(null);
@@ -330,6 +373,7 @@ export class Viewer {
   }
 
   setPrintMonochrome(mono: boolean) {
+    this.dirty = true;
     this.printMono = mono;
     for (const mesh of this.print.children) this.paintPrint(mesh as Mesh);
   }
@@ -353,6 +397,7 @@ export class Viewer {
 
   // `keepCamera` when new data replaces what's shown (the full version after the quick one).
   show(data: AreaData, visible: Set<Layer>, scales: ViewScales, { keepCamera = false, edits = new Map() as Edits } = {}) {
+    this.dirty = true;
     this.data = data;
     this.edits = edits;
     this.clipped = null;
@@ -364,9 +409,36 @@ export class Viewer {
     this.onPick(null);
   }
 
+  // The same as show(), a stage per frame, so the page can say how far it got (a big city
+  // takes a while): `onStage` gets each stage's name and how many came before it out of
+  // BUILD_STAGES.
+  async showStaged(data: AreaData, visible: Set<Layer>, scales: ViewScales, edits: Edits, onStage: (name: string, done: number) => void) {
+    this.data = data;
+    this.edits = edits;
+    this.clipped = null;
+    this.ground?.dispose();
+    this.ground = null;
+    this.visible = new Set(visible);
+    this.selected = null;
+    let done = 0;
+    for (const stage of this.building(scales, true)) {
+      this.dirty = true;
+      onStage(stage, done++);
+      // A frame for the bar to show; a background tab gets no frames, so not longer than this.
+      await new Promise((resolve) => {
+        requestAnimationFrame(resolve);
+        setTimeout(resolve, 100);
+      });
+      // Closed meanwhile (a new selection): stop building.
+      if (this.disposed) return;
+    }
+    this.onPick(null);
+  }
+
   // While a multiplier slider moves: stretch what's built on the GPU, no rebuild. The terrain
   // scales as a whole; objects split each vertex into ground + height above it.
   previewScales(scales: ViewScales) {
+    this.dirty = true;
     if (!this.builtScales) return;
     const kTerrain = scales.terrain / this.builtScales.terrain;
     const kHeight = scales.heights / this.builtScales.heights;
@@ -387,6 +459,7 @@ export class Viewer {
 
   // The slider was released: rebuild for real (picking and shadows use the built geometry).
   setScales(scales: ViewScales) {
+    this.dirty = true;
     if (this.data) this.build(scales, false);
   }
 
@@ -395,6 +468,7 @@ export class Viewer {
   // only its lifted copy now; the rest of the scene catches up when the selection changes,
   // and until then the object is hidden there anyway.
   setEdits(edits: Edits, { selectedOnly = false } = {}) {
+    this.dirty = true;
     this.edits = edits;
     if (!this.data || !this.placement) return;
     // Streets and areas are painted on the ground: repaint it with the edits.
@@ -414,6 +488,7 @@ export class Viewer {
   // While an object's Size or Height slider moves: stretch its lifted copy from the center of
   // its base on the GPU, relative to the edit it was built with. No rebuild.
   previewEdit(edit: ObjectEdit | undefined) {
+    this.dirty = true;
     const built = this.liftEdit;
     const pivot = this.liftPivot;
     if (!built || !pivot) return;
@@ -423,6 +498,7 @@ export class Viewer {
   }
 
   select(key: string | null) {
+    this.dirty = true;
     this.selected = key;
     // Edits made while the last object was selected reach the merged meshes now.
     if (this.objectsStale && this.placement) {
@@ -472,6 +548,7 @@ export class Viewer {
   }
 
   setLayerVisible(layer: Layer, visible: boolean) {
+    this.dirty = true;
     if (visible) this.visible.add(layer);
     else this.visible.delete(layer);
     for (const o of this.layerObjects.get(layer) ?? []) o.visible = visible;
@@ -482,6 +559,7 @@ export class Viewer {
   }
 
   dispose() {
+    this.disposed = true;
     this.renderer.setAnimationLoop(null);
     this.resize.disconnect();
     for (const g of [this.terrain, this.objects, this.highlight, this.print]) disposeChildren(g);
@@ -493,6 +571,11 @@ export class Viewer {
   }
 
   private build(scales: ViewScales, frameCamera: boolean) {
+    drain(this.building(scales, frameCamera));
+  }
+
+  // The scene built stage by stage: each yield names the stage about to run.
+  private *building(scales: ViewScales, frameCamera: boolean): Generator<string> {
     this.builtScales = scales;
     this.stretch.uTerrainK.value = 1;
     this.stretch.uHeightK.value = 1;
@@ -509,10 +592,12 @@ export class Viewer {
     // Nothing may stick out past the tile edge.
     const osm = (this.clipped ??= clipToSelection(data.osm, ring));
 
+    yield 'Painting the map onto the ground';
     if (!this.ground) {
       this.ground = new GroundTexture(applyEdits(osm, this.edits), frame, bounds, this.renderer.capabilities.maxTextureSize);
       this.paintGround();
     }
+    yield 'Shaping the terrain';
     const tile = buildTerrain(terrain, ring, frame, bounds, groundHeight, BASE_DEPTH_M);
     // Rock on steep ground, darker hollows (relief.ts), over the painted map.
     addRelief(tile.top);
@@ -523,10 +608,12 @@ export class Viewer {
     const sides = new Mesh(tile.sides, new MeshLambertMaterial({ color: '#b9ab96', side: DoubleSide }));
     sides.name = 'terrain sides';
     this.terrain.add(top, sides);
-    this.buildObjects();
+    yield* this.placing();
 
     // Sun from the south-west, its shadow box sized to the tile.
     const radius = Math.max(bounds.maxX - bounds.minX, bounds.maxZ - bounds.minZ) / 2;
+    this.clearance = Math.max(2, radius / 200);
+    this.outline = ring.map((p) => frame.toLocal(p));
     const cam = this.sun.shadow.camera;
     cam.left = cam.bottom = -radius * 1.2;
     cam.right = cam.top = radius * 1.2;
@@ -543,15 +630,27 @@ export class Viewer {
     if (frameCamera) {
       this.camera.near = Math.max(0.5, radius / 2000);
       this.camera.far = radius * 30;
-      this.camera.position.set(0, radius * 1.1, radius * 1.6);
-      this.controls.target.set(0, 0, 0);
+      // Aimed at the middle of the terrain's heights and above its highest point: in the
+      // mountains, a camera aimed at sea level starts on a cliff face.
+      tile.top.computeBoundingBox();
+      const { min, max } = tile.top.boundingBox!;
+      const mid = Math.max(0, (min.y + max.y) / 2);
+      this.camera.position.set(0, mid + (max.y - mid) + radius * 1.1, radius * 1.6);
+      this.controls.target.set(0, mid, 0);
       this.controls.maxDistance = radius * 8;
+      // Not so close that a building fills the screen and the view seems empty.
+      this.controls.minDistance = radius / 100;
       this.fit();
     }
   }
 
-  // Edits first, then the cut at the tile edge: an enlarged landmark is still trimmed there.
   private buildObjects() {
+    drain(this.placing());
+  }
+
+  // Edits first, then the cut at the tile edge: an enlarged landmark is still trimmed there.
+  // Each yield names the stage about to run.
+  private *placing(): Generator<string> {
     // The old meshes go away, and the object hidden in them with them.
     this.unhide = null;
     disposeChildren(this.objects);
@@ -595,8 +694,10 @@ export class Viewer {
         },
       });
     };
+    yield 'Raising the buildings';
     solid(buildBuildings(edited.buildings, at), 'buildings');
     solid(buildModels(osm, this.edits, at, 'buildings'), 'buildings');
+    yield 'Adding bridges, walls and boats';
     solid(buildModels(osm, this.edits, at, 'bridges'), 'structures');
     solid(buildStructures({ ...osm, ...edited }, at), 'structures');
     solid(buildBridges(edited.roads, at, COLORS.road), 'roads', COLORS.road);
@@ -607,6 +708,7 @@ export class Viewer {
 
     // OSM's single trees, and the forests' (forest.ts): a canopy, with single trees along
     // its border.
+    yield 'Growing the trees and forests';
     const field = this.forestField();
     const trees = [
       ...editedTrees(osm.trees, this.edits, TREE_HEIGHT_M),
@@ -930,12 +1032,38 @@ export class Viewer {
   }
 
   private fit() {
+    this.dirty = true;
     const { clientWidth: w, clientHeight: h } = this.container;
     if (!w || !h) return;
     this.renderer.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
   }
+}
+
+// Stages of a build (see building()), for a progress bar.
+export const BUILD_STAGES = 5;
+
+// Runs a staged build to the end at once.
+function drain(stages: Generator<string>) {
+  while (!stages.next().done);
+}
+
+// The point of a closed ring (its last point repeats the first) nearest to p.
+function nearestOnRing(p: [number, number], ring: [number, number][]): [number, number] {
+  let best: [number, number] = ring[0];
+  let bestD = Infinity;
+  for (let i = 1; i < ring.length; i++) {
+    const [ax, az] = ring[i - 1];
+    const [bx, bz] = ring[i];
+    const [vx, vz] = [bx - ax, bz - az];
+    const len = vx * vx + vz * vz;
+    const f = len ? Math.min(1, Math.max(0, ((p[0] - ax) * vx + (p[1] - az) * vz) / len)) : 0;
+    const q: [number, number] = [ax + f * vx, az + f * vz];
+    const d = Math.hypot(p[0] - q[0], p[1] - q[1]);
+    if (d < bestD) [best, bestD] = [q, d];
+  }
+  return best;
 }
 
 function disposeChildren(group: Group) {

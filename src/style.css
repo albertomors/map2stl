@@ -298,6 +298,23 @@ button.secondary {
   font-size: 13px;
 }
 
+/* The data's layers, folded on the map behind a line of counts */
+
+#data-details summary {
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+#data-details[open] summary {
+  margin-bottom: 12px;
+}
+
+#progress-3d {
+  margin-top: 8px;
+}
+
 /* Tools */
 
 .tools {

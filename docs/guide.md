@@ -94,7 +94,8 @@ again is instant.
 | **Green areas** | Parks, gardens, grass, meadows, forests, scrub, cemeteries… |
 | **Sand, rock, glacier** | Beaches, sand, bare rock, scree, shingle, glaciers. |
 | **Trees** | Single mapped trees. |
-| **Terrain** | An elevation grid over the area, a few meters per sample. |
+| **Terrain** | An elevation grid over the area: national LiDAR (about 1–2.5 m) in Norway, the Netherlands, England and the US, worldwide tiles (about 10–30 m underneath) elsewhere. The panel names the source and spacing. |
+| **Sea floor** | Depths for areas with sea: EMODnet Bathymetry in European seas, NOAA ETOPO 2022 and its coastal models elsewhere. Shown when the Water layer is off. |
 
 How heights are decided:
 
@@ -111,33 +112,40 @@ How heights are decided:
 
 Press **Open 3D view**. Three.js loads the first time, which takes a moment.
 
-- **Left-drag:** orbit. **Right-drag:** pan. **Scroll:** zoom.
+- The same controls as the map: **drag** pans, **right-drag** or **Ctrl+drag** orbits and
+  tilts, **scroll** zooms. The camera stays above the ground and the orbit's center inside
+  the selection.
 - **Terrain height multiplier** (×1–5) exaggerates the terrain; **Object height
   multiplier** (×0.5–3) everything standing on it: buildings, bridges, towers, trees and
-  forests. Both rebuild the scene, which takes a moment on big areas (making them
-  instant is on the roadmap).
+  forests. Both show the change while you drag, and rebuild the scene when you let go.
 - The layer **checkboxes** work in 3D too.
 - **Back to map** returns to the map.
 
 What you see:
 
 - **The tile:** terrain cut exactly to your shape, with side walls and a flat base, the way
-  the print will be. Where the area touches the sea, the sea floor in the elevation data is
-  flattened to the water surface.
+  the print will be. Steep ground is shaded as rock, hollows a little darker.
+- **The sea:** with the Water layer on, the sea is flat at sea level. Switch Water off and
+  the sea floor appears at its real depths, the deepest point at the bottom of the model,
+  in the 3D view and in the print.
 - **Ground layers** (water, green areas, squares, sand, roads, rails) are painted onto the
   terrain, so they follow every slope.
 - **Buildings** stand on the lowest ground under them, with roofs from OSM: gabled, hipped,
   pyramidal, dome, onion and skillion (other shapes are approximated as hipped or gabled),
   and with OSM colors when tagged.
-- **Bridges** are decks level with their higher bank; **piers, walls and towers** are solid;
-  **trees** are cones.
+- **Bridges** are decks sloping from one bank's height to the other's; **piers, walls and
+  towers** are solid; single **trees** are cones; **forests** are one canopy of treetops
+  over the whole wood, at the height the LiDAR measured where there is a surface model
+  (Norway, the Netherlands, England), 15 m elsewhere; a few **boats** lie moored at piers.
+- **Official 3D buildings** (Switzerland, swissBUILDINGS3D): select a building and use its
+  official model, or use them for every building in the area at once.
 - **Everything is cut at the tile edge.** Buildings crossing it get a flat face and a flat
   roof there.
 
 ## 5. Editing objects
 
-In the 3D view, **click a building, tree, bridge or structure** (pier, wall, tower, mast…)
-to select it. It turns orange, and the panel shows its name, height (and whether it's
+In the 3D view, **click a building, tree, bridge or structure** (pier, wall, tower, mast…),
+or a street, railway, river or area on the ground, to select it. It turns orange, and the panel shows its name, height (and whether it's
 tagged, from floors or estimated), roof and number of parts. Click empty space or press
 **Esc** to deselect.
 
@@ -146,6 +154,8 @@ tagged, from floors or estimated), roof and number of parts. Click empty space o
 | **Delete** (or the Delete key) | Removes it | Everything |
 | **Size** ×1–4 | Enlarges it from the center of its base, all dimensions together | Buildings, trees, towers, piers |
 | **Height only** ×0.5–4 | Stretches it vertically, on top of Size | Buildings, trees, towers, piers, walls |
+| **Width** ×0.25–4 | Makes it wider or narrower | Streets, railways, rivers |
+| **Prints as** | Water, park, square or sand | Areas on the ground |
 | **Reset** | Puts this object back | Everything |
 
 - **Restore deleted** (under the 3D controls) brings back every deleted object.
@@ -154,8 +164,29 @@ tagged, from floors or estimated), roof and number of parts. Click empty space o
   under the name of the whole building.
 - Edits are applied before the cut at the tile edge, so an enlarged landmark is still
   trimmed there. They last until you fetch a new area; the export will use them.
+- **Delete** on a forest takes its trees only: the wood stays on the ground.
 - Selecting waits for the detailed data: the quick version's buildings are split at tile
   seams and have no parts, and their identities change when the detailed data arrives.
+
+### Replacing a landmark with a 3D model
+
+Select a building or a bridge, then:
+
+- **Find a 3D model online** searches openly licensed models of it on Wikimedia Commons
+  (its Wikidata model first, then files depicting it, then its name) and Sketchfab. Each
+  result shows its license, author, size and triangles; NonCommercial and ShareAlike
+  licenses are highlighted. Sketchfab downloads ask once for your Sketchfab API token (a
+  free account works), kept in this browser.
+- **Replace with a 3D model…** takes your own file: STL, OBJ, GLB, or glTF with its data
+  inside.
+
+The model is fitted to the footprint, turned upright and set on the ground; **Turn 90°**
+and **Stand up** fix a wrong guess, Size and Height still apply, and **Remove** brings the
+original back. The export credits the model's author.
+
+In Switzerland, **Use the official 3D model** swaps the building for swisstopo's measured
+model (swissBUILDINGS3D); **Use official models for every building in the area** does it
+for all of them at once.
 
 ## 6. Exporting
 
@@ -165,6 +196,11 @@ The **Export** card floats over the 3D view once the detailed data is in.
   press **Preview export** to see the model exactly as it will print, then download it as
   **STL** (one watertight solid) or **3MF** (one colored part per layer, for multi-color
   printers).
+- In the preview, anything narrower than the nozzle shows in **red**, with a warning that
+  counts it per part: make the model bigger, or enlarge or delete those objects. Forests
+  turn red when their crowns come out narrower than the nozzle.
+- Streets and water are carved one step (the thinnest detail) into the ground; parks,
+  squares and sand lie flush. Each is its own colored part in a 3MF.
 - **For other 3D software** (Blender, Unity, Unreal, Sketchfab, a web page): **GLB** or
   **glTF** saves the 3D view as it looks, not the print: the painted ground with its
   relief shading, the buildings, structures, trees and forests of the layers that are on,
@@ -189,7 +225,8 @@ your email app opens with the message. Attach the zip and send.
 - **Courtyard buildings** always get flat roofs.
 - **A selection that's entirely sea** comes out as land: the sea is built from coastlines,
   and there are none inside it.
-- **Terrain detail** is about 30 m in many places, even though the grid is finer.
+- **Terrain detail** is about 10–30 m outside the LiDAR countries (Norway, the Netherlands,
+  England, the US), even though the grid is finer.
 - **Busy servers:** the public Overpass servers are often overloaded. The quick version
   always works; for the detailed one, retry later.
 - **Large areas** (above ~10 km²) are slow to download and heavy in 3D.

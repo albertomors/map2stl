@@ -3,7 +3,7 @@
 // "Via Roma 12, Modena"), ranked by fame and then by closeness to where the map is. Also the
 // town a point is in (for searching a landmark's models by name and town).
 
-import type { Map } from 'maplibre-gl';
+import { Marker, type Map } from 'maplibre-gl';
 import { distance, type LngLat } from './geo';
 import type { Selection } from './selection';
 
@@ -48,6 +48,11 @@ interface Result {
   center: LngLat;
   // [minLng, minLat, maxLng, maxLat], when known.
   bounds?: [number, number, number, number];
+  // OSM's main key (tourism, natural…) and Photon's type (city, street…), for ranking.
+  osmKey?: string;
+  type?: string;
+  // How well known it looks (see fame()).
+  fame?: number;
 }
 
 const PLACE_TYPES = ['city', 'district', 'locality', 'county', 'state', 'country'];
@@ -58,9 +63,11 @@ const LANDMARK_AMENITIES = new Set([
   'arts_centre', 'marketplace', 'fountain', 'courthouse', 'monastery', 'grave_yard', 'clock', 'planetarium',
 ]);
 const NOISE_KEYS = new Set(['shop', 'craft', 'office', 'emergency', 'healthcare', 'public_transport']);
-// How close to fly in when a result has no extent, and how close at most when it has one.
-const ZOOM: Record<Kind, number> = { place: 13, street: 16.5, address: 17.5, landmark: 17 };
-const MAX_ZOOM: Record<Kind, number> = { place: 15, street: 17, address: 17.5, landmark: 17.5 };
+// How close to fly in when a result has no extent, and how close at most when it has one: a
+// landmark with a kilometer or two of what's around it (what a print of it holds), not a
+// close-up of its roof.
+const ZOOM: Record<Kind, number> = { place: 13, street: 16, address: 16.5, landmark: 15.5 };
+const MAX_ZOOM: Record<Kind, number> = { place: 15, street: 16, address: 16.5, landmark: 15.5 };
 // A selection dropped on a result: its extent and some ground around it, within limits.
 const MIN_HALF_M = 150;
 const MAX_HALF_M = 2500;
@@ -106,7 +113,7 @@ function toResult(f: PhotonFeature): Result | null {
   const parts = kind === 'place' ? [p.county, p.state, p.country] : [kind === 'street' ? p.district : undefined, town, p.state, p.country];
   const where = [...new Set(parts.filter((s): s is string => !!s && s !== title))].join(', ');
   const e = p.extent;
-  return { kind, title, label, where, center: f.geometry.coordinates, bounds: e && [e[0], e[3], e[2], e[1]] };
+  return { kind, title, label, where, center: f.geometry.coordinates, bounds: e && [e[0], e[3], e[2], e[1]], osmKey: p.osm_key, type: p.type };
 }
 
 const boundsOf = (r: Result): [number, number, number, number] => r.bounds ?? [r.center[0], r.center[1], r.center[0], r.center[1]];
@@ -125,7 +132,7 @@ function near(a: Result, b: Result): boolean {
 // (the Eiffel Tower), a road named after a landmark (the Golden Gate Bridge's motorway,
 // Rome's Piazza del Colosseo). Each group shows as its first landmark (or its first result
 // without one), spanning every piece of the same kind as that one.
-function merge(results: Result[]): Result[] {
+function merge(results: Result[], query: string): Result[] {
   const sameThing = (a: Result, b: Result) =>
     a.title === b.title && (near(a, b) || a.where === b.where) && (a.kind === b.kind || (a.kind !== 'place' && b.kind !== 'place'));
   // Grouped transitively: piece 1 touches piece 2, which touches piece 3.
@@ -147,9 +154,29 @@ function merge(results: Result[]): Result[] {
       Math.max(...pieces.map((b) => b[3])),
     ];
     const center: LngLat = pieces.length > 1 ? [(bounds[0] + bounds[2]) / 2, (bounds[1] + bounds[3]) / 2] : lead.center;
-    merged.push({ ...lead, center, bounds: lead.bounds || pieces.length > 1 ? bounds : undefined });
+    merged.push({ ...lead, center, bounds: lead.bounds || pieces.length > 1 ? bounds : undefined, fame: fame(members, lead, query) });
   });
-  return merged;
+  // Best known first; Photon's order (which favors what's near the map) breaks ties.
+  return merged.map((r, i) => ({ r, i })).sort((a, b) => b.r.fame! - a.r.fame! || a.i - b.i).map(({ r }) => r);
+}
+
+// Photon returns a famous place as many pieces (Preikestolen's cliff: seven, and a
+// viewpoint), mapped with an outline and tagged for tourists; a namesake hill is one bare
+// point. Towns and countries come first: they're what a search usually means. And a name
+// made only of words typed beats a looser match ("Big Ben London": the clock, not the
+// BigShots golf course).
+function fame(members: Result[], lead: Result, query: string): number {
+  let score = Math.min(members.length, 6);
+  const typed = new Set(words(query));
+  if (words(lead.title).every((w) => typed.has(w))) score += 4;
+  if (members.some((m) => m.bounds)) score += 2;
+  if (members.some((m) => m.osmKey === 'tourism' || m.osmKey === 'historic')) score += 3;
+  if (lead.kind === 'place' && ['city', 'county', 'state', 'country'].includes(lead.type ?? '')) score += 8;
+  return score;
+}
+
+function words(text: string): string[] {
+  return text.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').split(/[^\p{L}\p{N}]+/u).filter(Boolean);
 }
 
 // A rectangle around a result, facing north: its extent with some ground around it.
@@ -212,7 +239,7 @@ export function setupSearch(
           const select = document.createElement('button');
           select.type = 'button';
           select.className = 'secondary';
-          select.textContent = 'Select';
+          select.textContent = 'Select area';
           select.title = 'Go there and select the area around it';
           select.addEventListener('mousedown', (e) => {
             e.preventDefault();
@@ -227,11 +254,15 @@ export function setupSearch(
     list.hidden = results.length === 0;
   };
 
+  // A pin on the place picked, until the next search: zoomed out, it's easy to lose.
+  let pin: Marker | null = null;
   const go = (r: Result, select = false) => {
     input.value = r.title;
     results = [];
     render();
     input.blur();
+    pin?.remove();
+    pin = select ? null : new Marker({ color: '#ff6b2c' }).setLngLat(r.center).addTo(map);
     if (select) {
       const sel = selectionAround(r);
       onSelect(sel);
@@ -255,7 +286,7 @@ export function setupSearch(
     try {
       const res = await fetch(`${PHOTON_URL}&lang=${lang}${bias}&q=${encodeURIComponent(q)}`, { signal: controller.signal });
       const features: PhotonFeature[] = (await res.json()).features ?? [];
-      results = merge(features.map(toResult).filter((r): r is Result => r !== null)).slice(0, SHOWN);
+      results = merge(features.map(toResult).filter((r): r is Result => r !== null), q).slice(0, SHOWN);
       active = -1;
       render();
     } catch (err) {

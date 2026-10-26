@@ -6,19 +6,16 @@ Open work only: built items move to the README and CHANGELOG.
 
 What the app needs before strangers use it, all without a server of our own.
 
-### Request parts sized by what's in them, not by area
+### Fit the request-size prediction on real use
 
-Big selections are fetched in parts of at most 10 km² and 25,000 buildings, one after
-another, and each part costs about 44 s of server queue whatever its size: 4 parts take
-about 3 minutes. The logged fetches show the time follows how much comes back (6.4 km²
-with 1,600 buildings: 38 s; 5.8 km² with none: 48 s), so the area cap mostly adds queue
-waits where there's little to download (remote islands, mountains, farmland). Plan the
-parts from a predicted answer size instead: every feature in the quick tile data
-(buildings, roads, water, woods, landuse), not just buildings, with a cap per part a
-single request handles well (well under the server's 180 s and 512 MB), and a much higher
-area limit. To make bigger parts safe: when one comes back "too much data" or times out,
-split it in two and ask again, instead of failing. First log each part's timing and size
-(today's log only times whole fetches), to fit the prediction.
+Requests are now planned by the answer's predicted size (about 1 KB per building, 3 KB per
+road, 0.5 KB per other feature in the quick tile data), up to 30 MB and 100 km² each, and
+a request the server gives up on is split in two and asked again. The weights are a first
+fit on whole fetches, and run low on sparse ground (the Isle of Coll: 261 KB predicted,
+745 KB received, likely the coastline and sea). The dev server now logs every request with
+its prediction (debug/parts.jsonl): once there are enough, refit the weights (maybe a fixed
+cost per request, the sea and big polygons counted by size) and the 30 MB and 100 km²
+limits.
 
 ### A gallery in the README
 

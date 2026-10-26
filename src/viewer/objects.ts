@@ -4,7 +4,7 @@
 
 import { Color, ConeGeometry, InstancedMesh, Matrix4, MeshLambertMaterial, ShapeUtils, Vector2, type BufferGeometry } from 'three';
 import { BOAT_PAINTS, type Boat } from '../boats';
-import type { LngLat } from '../geo';
+import { distance, type LngLat } from '../geo';
 import type { LocalFrame } from '../local';
 import { editKey, type EditedTree } from '../edits';
 import type { Building, Line, OsmData, StructureArea, Tower } from '../osm';
@@ -168,10 +168,17 @@ export function buildBridges(lines: Line[], at: Placement, color: Color): Pickab
     if (!l.bridge) continue;
     m.owner = keys.push(l.id) - 1;
     const [first, last] = l.ends ?? [l.path[0], l.path[l.path.length - 1]];
-    const ends = [at.elevation(first), at.elevation(last)];
-    m.ground = Math.max(...ends) * at.terrainScale;
-    const top = m.ground + BRIDGE_CLEARANCE_M * at.heightScale;
-    ribbon(m, l.path, at, Math.max(l.width, at.minWidth ?? 0), top - BRIDGE_DECK_M * at.heightScale, top, color);
+    // The deck runs from one bank's height to the other's, by how far along it each point is:
+    // a bridge from a hillside to a low causeway (Rundebrua, Norway) slopes down to the
+    // causeway instead of ending in the air above it.
+    const [h0, h1] = [at.elevation(first), at.elevation(last)].map((h) => h * at.terrainScale);
+    const rise = l.path.map((p) => {
+      const [a, b] = [distance(p, first), distance(p, last)];
+      return a + b > 0 ? ((h1 - h0) * a) / (a + b) : 0;
+    });
+    m.ground = h0;
+    const top = h0 + BRIDGE_CLEARANCE_M * at.heightScale;
+    ribbon(m, l.path, at, Math.max(l.width, at.minWidth ?? 0), top - BRIDGE_DECK_M * at.heightScale, top, color, rise);
   }
   return m.empty ? null : { geometry: m.build(), owners: m.owners, keys };
 }
@@ -241,7 +248,8 @@ function tower(m: MeshBuilder, t: Tower, at: Placement, color: Color) {
 }
 
 // A path widened to `width` meters, as a solid from `bottom` to `top`.
-function ribbon(m: MeshBuilder, path: LngLat[], at: Placement, width: number, bottom: number, top: number, color: Color) {
+// `rise`: per path point, how much higher than `bottom`/`top` it is there (a sloping deck).
+function ribbon(m: MeshBuilder, path: LngLat[], at: Placement, width: number, bottom: number, top: number, color: Color, rise?: number[]) {
   const pts = path.map((p) => at.frame.toLocal(p));
   const half = width / 2;
   for (let i = 1; i < pts.length; i++) {
@@ -252,21 +260,39 @@ function ribbon(m: MeshBuilder, path: LngLat[], at: Placement, width: number, bo
     const nx = (-(z1 - z0) / len) * half;
     const nz = ((x1 - x0) / len) * half;
     const box: P[] = [[x0 + nx, z0 + nz], [x1 + nx, z1 + nz], [x1 - nx, z1 - nz], [x0 - nx, z0 - nz]];
-    walls(m, box, bottom, top, color);
-    flatCap(m, box, [], top, color);
-    flatCap(m, box, [], bottom, color, 'down');
+    if (!rise) {
+      walls(m, box, bottom, top, color);
+      flatCap(m, box, [], top, color);
+      flatCap(m, box, [], bottom, color, 'down');
+      continue;
+    }
+    // Sloping: the start corners at this point's rise, the end corners at the next one's.
+    const r = [rise[i - 1], rise[i], rise[i], rise[i - 1]];
+    const lows = r.map((v) => bottom + v);
+    const highs = r.map((v) => top + v);
+    walls(m, box, lows, highs, color);
+    const corner = (k: number, y: number[]): Vec3 => [box[k][0], y[k], box[k][1]];
+    m.quad(corner(0, highs), corner(1, highs), corner(2, highs), corner(3, highs), color, 'up');
+    m.quad(corner(0, lows), corner(1, lows), corner(2, lows), corner(3, lows), color, 'down');
   }
 }
 
-// Faces point away from the solid: outer rings go one way round, holes the other.
-function walls(m: MeshBuilder, ring: P[], bottom: number, top: number, color: Color, hole = false) {
-  if (top - bottom < 1e-3) return;
+// Faces point away from the solid: outer rings go one way round, holes the other. Heights
+// are one for the whole ring, or one per ring point (a sloping deck).
+function walls(m: MeshBuilder, ring: P[], bottom: number | number[], top: number | number[], color: Color, hole = false) {
+  const n = ring.length;
+  const lows = typeof bottom === 'number' ? Array<number>(n).fill(bottom) : bottom;
+  const highs = typeof top === 'number' ? Array<number>(n).fill(top) : top;
+  if (highs.every((h, i) => h - lows[i] < 1e-3)) return;
   // In plan (x east, z south) a negative signed area makes these quads face outward.
-  if ((signedArea(ring) < 0) === hole) ring = [...ring].reverse();
-  for (let i = 0; i < ring.length; i++) {
+  const order = ring.map((_, i) => i);
+  if ((signedArea(ring) < 0) === hole) order.reverse();
+  for (let k = 0; k < n; k++) {
+    const i = order[k];
+    const j = order[(k + 1) % n];
     const [x0, z0] = ring[i];
-    const [x1, z1] = ring[(i + 1) % ring.length];
-    m.quad([x0, bottom, z0], [x1, bottom, z1], [x1, top, z1], [x0, top, z0], color);
+    const [x1, z1] = ring[j];
+    m.quad([x0, lows[i], z0], [x1, lows[j], z1], [x1, highs[j], z1], [x0, highs[i], z0], color);
   }
 }
 
