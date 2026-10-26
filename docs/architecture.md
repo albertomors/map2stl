@@ -97,6 +97,8 @@ search / map ──► Selection ──► fetchAreaData ──┬─► quick: 
 | `src/viewer/gltf.ts` | The 3D view as GLB / glTF: relief baked into the texture, trees as one mesh |
 | `src/bug-report.ts` | The "?" bug report: message, context, screenshot, recent errors, zipped |
 | `src/dev-log.ts` | Dev server only: records from real use (each request's size and time) to `debug/*.jsonl` |
+| `src/flatten.ts` | Takes big buildings' bumps out of the worldwide terrain tiles |
+| `src/viewer/scene-objects.ts`, `src/viewer/objects-worker.ts` | The 3D view's objects built in a worker, as arrays |
 | `src/credits.ts` | Credits a model's sources ask for (3MF, glTF, the export card) |
 | `src/viewer/mesh.ts` | Triangle collector with per-triangle owners, OSM color parsing |
 

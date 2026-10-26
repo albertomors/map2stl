@@ -5,42 +5,26 @@
 Want your fav city on the shelf? Or on the wall? Maybe a real-world map for your next board
 game or tabletop campaign? Pick a place, select the area, customize it, and 3D-print it.
 
-Buildings with their real heights and roofs, terrain from national LiDAR where there is
-some, forests, rivers and the sea floor, all from open data, in your browser. Out come an
-STL or a multi-color 3MF for your slicer, or a GLB for Blender.
-
 ![St. Peter's Square and Basilica in the 3D view: the colonnades, the dome, the Vatican gardens and the streets of Rome around them, cut to a printable tile](docs/screenshots/hero-vatican-3d.png)
 
-No account, no API key, nothing to install: open data straight from public servers (only
-Sketchfab downloads ask for your own free token).
+Buildings with their real heights and roofs, terrain and mountains from national LiDAR where
+available, forests, rivers and the sea floor, all from open data, in your browser. Export to
+STL/3MF or glTF. No API key, nothing to install: open data straight from public servers.
 
-[How it works](#how-it-works) · [Features](#features) · [Data sources](#data-sources) ·
-[Credits](#credits-and-licenses) · [Run it](#run-it) · [User guide](docs/guide.md)
+[Quick start](#quick-start) · [Features](#features) · [How it works](#how-it-works) ·
+[Data sources](#data-sources) · [User guide](docs/guide.md)
 
-## How it works
+## Quick start
 
-<table>
-<tr>
-<td width="38%"><b>1. Find the place.</b><br>Type a town, a street, an address or a landmark. <b>Select area</b> on a result draws a rectangle around it.</td>
-<td><img src="docs/screenshots/step-1-search.png" alt="The search box with suggestions for Colosseum: the archaeological site in Rome first, each with its kind and place"></td>
-</tr>
-<tr>
-<td><b>2. Select the area.</b><br>A rectangle, hexagon, circle or free shape. Move it, resize it, turn it.</td>
-<td><img src="docs/screenshots/step-2-select.png" alt="A 1.2 km by 800 m rectangle over the Colosseum, the Roman Forum and the Palatine on the map"></td>
-</tr>
-<tr>
-<td><b>3. Fetch the 3D data.</b><br>A quick version from the map's tiles in a second or two, then the full OpenStreetMap data in 30–90 seconds, with the terrain.</td>
-<td><img src="docs/screenshots/step-3-fetch.png" alt="The fetched buildings, roads, parks and trees colored on the map, with the Open 3D view button"></td>
-</tr>
-<tr>
-<td><b>4. Shape it in 3D.</b><br>Delete what you don't want, make your favorite building stand out, put in a real 3D model of it.</td>
-<td><img src="docs/screenshots/step-4-edit.png" alt="The Colosseum selected in the 3D view, enlarged 1.5 times, with its edit card"></td>
-</tr>
-<tr>
-<td><b>5. Export.</b><br>Preview the model exactly as it prints, then download STL or 3MF. Or GLB / glTF for other 3D software.</td>
-<td><img src="docs/screenshots/step-5-export.png" alt="The export preview in 3MF colors: buildings, parks, streets, and the objects too thin for the nozzle in red"></td>
-</tr>
-</table>
+```sh
+git clone https://github.com/albertomors/map2stl.git
+cd map2stl
+npm install
+npm run dev     # http://localhost:5173
+```
+
+Needs [Node.js](https://nodejs.org) 20.19+ or 22.12+. `npm run build` type-checks and
+builds a static site into `dist/`: it needs no server of its own.
 
 ## Features
 
@@ -71,20 +55,28 @@ Sketchfab downloads ask for your own free token).
 
 <table>
 <tr>
-<td width="50%"><img src="docs/screenshots/lidar-geiranger.png" alt="A hexagon of Geirangerfjord, Norway, from Kartverket's LiDAR: steep mountainsides, the fjord, the village and its hairpin road"></td>
-<td width="50%"><img src="docs/screenshots/adnoy-01-lidar-forests.png" alt="Store Ådnøy, Norway: LiDAR terrain with rock outcrops, forests at their measured height, lakes and the fjord"></td>
+<td width="50%"><img src="docs/screenshots/gallery-yosemite.png" alt="Half Dome above Yosemite Valley, California: the sheer granite face, forests on the slopes, the Merced River and the valley's roads"></td>
+<td width="50%"><img src="docs/screenshots/gallery-geiranger.png" alt="A hexagon of Geirangerfjord, Norway, from Kartverket's LiDAR: steep mountainsides covered in forest, the fjord, the village and its hairpin road"></td>
 </tr>
 <tr>
-<td>Geirangerfjord, Norway: Kartverket's LiDAR at 2.2 m, in a hexagon.</td>
-<td>Store Ådnøy, Norway: forests at their measured height, bare rock in between.</td>
+<td>Half Dome and Yosemite Valley, California: USGS's 3D Elevation Program at 3.8 m.</td>
+<td>Geirangerfjord, Norway: Kartverket's LiDAR at 2.2 m, forests at their measured height.</td>
 </tr>
 <tr>
-<td><img src="docs/screenshots/sea-floor-geiranger.png" alt="The same Geiranger hexagon with the Water layer off: the fjord's floor at its real depth below the shore"></td>
-<td><img src="docs/screenshots/zurich-01-swissbuildings3d.png" alt="Zurich's old town with swisstopo's official 3D buildings: the Grossmünster, roofs with dormers, the river and tram lines"></td>
+<td><img src="docs/screenshots/gallery-portofino.png" alt="Portofino with the Water layer off: the village, its hairpin road and the forested headland, the coast sloping down to the floor of the bay and the open sea"></td>
+<td><img src="docs/screenshots/gallery-zurich.png" alt="Zurich's old town with swisstopo's official 3D buildings: the Grossmünster, roofs with dormers, the river and tram lines"></td>
 </tr>
 <tr>
-<td>Water off: the fjord's floor at its real depth, down to 65 m (EMODnet).</td>
-<td>Zurich with swisstopo's official 3D buildings.</td>
+<td>Portofino, Italy, Water off: the sea floor down to 92 m (EMODnet).</td>
+<td>Zurich's old town with swisstopo's official 3D buildings.</td>
+</tr>
+<tr>
+<td><img src="docs/screenshots/gallery-manhattan.png" alt="Midtown Manhattan: the Empire State Building with its spire, One Vanderbilt and the towers around them, each at its height and color"></td>
+<td><img src="docs/screenshots/gallery-golden-gate.png" alt="The Golden Gate Bridge across the strait, its two red towers, and the hills of the Marin Headlands at the far end"></td>
+</tr>
+<tr>
+<td>Midtown Manhattan: heights, shapes and colors from OpenStreetMap.</td>
+<td>The Golden Gate Bridge and the Marin Headlands (USGS 3DEP terrain).</td>
 </tr>
 </table>
 
@@ -117,13 +109,30 @@ Sketchfab downloads ask for your own free token).
 
 <sub>The Roman Forum at 80 mm with a 0.8 mm nozzle: what won't print shows in red, and the warning says why.</sub>
 
-### Found a bug?
+## How it works
 
-The **?** at the top of the panel opens a short form. Send saves a zip with your message, a
-screenshot and what's needed to reproduce it (the selection, the view, your edits and
-settings, the browser, recent errors; nothing else), and opens a message to attach it to.
-
-<img src="docs/screenshots/bug-report.png" alt="The Found a bug? Report it dialog with a message typed in" width="480">
+<table>
+<tr>
+<td width="38%"><b>1. Find the place.</b><br>Type a town, a street, an address or a landmark. <b>Select area</b> on a result draws a rectangle around it.</td>
+<td><img src="docs/screenshots/step-1-search.png" alt="The search box with suggestions for Colosseum: the archaeological site in Rome first, each with its kind and place"></td>
+</tr>
+<tr>
+<td><b>2. Select the area.</b><br>A rectangle, hexagon, circle or free shape. Move it, resize it, turn it.</td>
+<td><img src="docs/screenshots/step-2-select.png" alt="A 1.2 km by 800 m rectangle over the Colosseum, the Roman Forum and the Palatine on the map"></td>
+</tr>
+<tr>
+<td><b>3. Fetch the 3D data.</b><br>A quick version from the map's tiles in a second or two, then the full OpenStreetMap data in 30–90 seconds, with the terrain.</td>
+<td><img src="docs/screenshots/step-3-fetch.png" alt="The fetched buildings, roads, parks and trees colored on the map, with the Open 3D view button"></td>
+</tr>
+<tr>
+<td><b>4. Shape it in 3D.</b><br>Delete what you don't want, make your favorite building stand out, put in a real 3D model of it.</td>
+<td><img src="docs/screenshots/step-4-edit.png" alt="The Colosseum selected in the 3D view, enlarged 1.5 times, with its edit card"></td>
+</tr>
+<tr>
+<td><b>5. Export.</b><br>Preview the model exactly as it prints, then download STL or 3MF. Or GLB / glTF for other 3D software.</td>
+<td><img src="docs/screenshots/step-5-export.png" alt="The export preview in 3MF colors: buildings, parks, streets, and the objects too thin for the nozzle in red"></td>
+</tr>
+</table>
 
 ## Data sources
 
@@ -168,32 +177,11 @@ fill in.
 | [Wikimedia Commons](https://commons.wikimedia.org) and [Wikidata](https://www.wikidata.org) | Any landmark with a model | STL files: the landmark's Wikidata model, files depicting it, a name search | Per file (CC0, CC BY and the like), shown with each result |
 | [Sketchfab](https://sketchfab.com) | Any landmark with a model | Downloadable models; downloads need your own (free) Sketchfab API token | Per model, mostly Creative Commons, shown with each result |
 
-## Credits and licenses
+## License
 
-Map data © [OpenStreetMap](https://www.openstreetmap.org/copyright) contributors, under the
-ODbL. **Prints and files made with map2stl must credit them:** "© OpenStreetMap
-contributors". The STL and 3MF carry the credit, and so do GLB and glTF files.
-
-Besides OpenStreetMap, an export credits what it used: the national LiDAR terrain
-(Kartverket, AHN, the Environment Agency, USGS), the sea depths when the sea floor shows
-(EMODnet, NOAA), swisstopo's buildings, and any 3D model by its author and license. The
-export card shows the full credit line after a download, ready to copy.
-
-Tiles by [OpenFreeMap](https://openfreemap.org), search by [Photon](https://photon.komoot.io),
-built with [MapLibre GL JS](https://maplibre.org), [Three.js](https://threejs.org) and
-[manifold-3d](https://github.com/elalish/manifold).
-
-## Run it
-
-```sh
-git clone https://github.com/albertomors/map2stl.git
-cd map2stl
-npm install
-npm run dev     # http://localhost:5173
-```
-
-Needs [Node.js](https://nodejs.org) 20.19+ or 22.12+. `npm run build` type-checks and
-builds a static site into `dist/`: it needs no server of its own.
+map2stl's code is under the [MIT License](LICENSE). The data keeps its own licenses (see
+[Data sources](#data-sources)); prints and files made from OpenStreetMap data must credit
+"© OpenStreetMap contributors" (every export carries the credit).
 
 ## More
 

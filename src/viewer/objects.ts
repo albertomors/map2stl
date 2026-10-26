@@ -186,9 +186,7 @@ export function buildBridges(lines: Line[], at: Placement, color: Color): Pickab
 // One cone per tree, sized by its edit; instance i is trees[i].
 export function buildTrees(trees: EditedTree[], at: Placement, color = COLORS.tree): InstancedMesh | null {
   if (!trees.length) return null;
-  // A unit cone standing on y = 0, stretched per tree.
-  const cone = new ConeGeometry(1, 1, 7).translate(0, 0.5, 0);
-  const mesh = new InstancedMesh(cone, new MeshLambertMaterial({ color }), trees.length);
+  const mesh = treeInstances(trees.length, color);
   const matrix = new Matrix4();
   const scale = new Matrix4();
   trees.forEach((t, i) => {
@@ -197,6 +195,17 @@ export function buildTrees(trees: EditedTree[], at: Placement, color = COLORS.tr
     matrix.makeTranslation(x, at.elevation(t.at) * at.terrainScale, z);
     mesh.setMatrixAt(i, matrix.multiply(scale.makeScale(r, t.height * at.heightScale, r)));
   });
+  mesh.castShadow = true;
+  return mesh;
+}
+
+// `count` cones, each placed by its instance matrix (from buildTrees, or `matrices` built in
+// a worker).
+export function treeInstances(count: number, color = COLORS.tree, matrices?: Float32Array): InstancedMesh {
+  // A unit cone standing on y = 0, stretched per tree.
+  const cone = new ConeGeometry(1, 1, 7).translate(0, 0.5, 0);
+  const mesh = new InstancedMesh(cone, new MeshLambertMaterial({ color }), count);
+  if (matrices) mesh.instanceMatrix.array.set(matrices);
   mesh.castShadow = true;
   return mesh;
 }

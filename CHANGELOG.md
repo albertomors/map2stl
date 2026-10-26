@@ -57,6 +57,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - STL's description no longer promises a single solid: "everything that touches is joined
   into one watertight solid". The GLB/glTF note says the height multipliers are in the
   file, and to set them to ×1 for true heights.
+- The 3D view's objects (buildings, structures, bridges, boats, trees, forests) are built in
+  a background worker: opening a big city and every edit after it (a delete, a resize) no
+  longer freeze the page. Central Paris (10,000 buildings): an edit froze the page 2.9 s,
+  now at most 0.4 s.
+- Files are named after the place: the landmark searched for, if it's in the area, and the
+  town ("map2stl-colosseum-roma.stl"), not coordinates.
+- The "?" is a help menu: the user guide, or a bug report.
+- The large-area warning says how long the download takes and how wide the narrowest
+  printable detail is at the print's size.
+- Where a selected building overlaps others (the London Eye and its supports), "Delete all"
+  deletes them together; the layer counts follow deletes and restores.
+- A click a few pixels off a thin object (a mast, a wheel's rim) still selects it.
+- The data panel says how far apart the sea depths are measured, and that harbour basins
+  narrower than that come out flat.
+- The official 3D model choice is two buttons, this building or every building here, with
+  a progress bar while the models load.
 - The 3D view draws only when something changes (the camera, an edit, a layer), instead of
   every frame: a big city no longer keeps the computer busy while you look at it. Its
   first view aims at the middle of the terrain's heights, from above the highest point.
@@ -74,6 +90,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   let the rest run into the 100 s timeout before the next server was tried.
 
 ### Fixed
+
+- Big landmarks no longer stand in hills of their own shape: the worldwide terrain tiles
+  take the top of a large building for the ground (the Colosseum's arena filled up, St.
+  Peter's buried to the drum). Under each big building the ground now goes down to the
+  level around it (national LiDAR, bare ground already, is left as it is).
+- Multipolygons with their rings mistagged (the Colosseum's outer wall: two "outer" rings)
+  are read as map renderers draw them: a ring inside another is a hole.
+- The sea floor eases from the coastline down to its depth over one depth cell, instead of
+  dropping in a wall at the coast; no more thin fins along the tile's edge with Water off.
+- The map's preview of the fetched data is cut to the selection, like the 3D view.
+- The selected object's card no longer slides under the export card: the column scrolls.
+- Very tall terrain (a fjord, a mountain) opens far enough back to show the whole tile.
 
 - The 3D view's camera can no longer go under the tile: drags pan along the ground (they
   could move the orbit's center below it), the camera stays above the terrain under it, the

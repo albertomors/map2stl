@@ -65,15 +65,56 @@ header {
 
 /* Bug reports (bug-report.ts) */
 
-.bug-open {
+.help-menu {
   position: absolute;
   top: 0;
   right: 0;
+  z-index: 5;
+}
+
+.help-menu summary {
+  list-style: none;
+  display: grid;
+  place-items: center;
   width: 28px;
   height: 28px;
-  padding: 0;
+  border: 1px solid var(--border);
   border-radius: 50%;
+  background: var(--surface);
   font-weight: 600;
+  cursor: pointer;
+}
+
+.help-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.help-items {
+  position: absolute;
+  top: 34px;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 10px 12px;
+  white-space: nowrap;
+  font-size: 14px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
+.help-items a,
+.help-items button.link {
+  color: var(--fg);
+  text-decoration: none;
+}
+
+.help-items a:hover,
+.help-items button.link:hover {
+  color: var(--accent);
 }
 
 .bug-dialog {
@@ -757,6 +798,33 @@ body.mode-3d .map-only {
   margin: 12px 0 4px;
 }
 
+.official-model {
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.official-model .hint {
+  margin: 0 0 6px;
+}
+
+.official-buttons {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+#official-progress {
+  margin-top: 8px;
+}
+
+.official-buttons button {
+  font-size: 13px;
+  padding: 6px 8px;
+}
+
 #object-model-find,
 #object-model-upload {
   width: 100%;
@@ -922,6 +990,12 @@ button.link:disabled {
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+/* The cards keep their height: the column scrolls, instead of a long card being squeezed and
+   cut off under the export card. */
+.overlay-right > * {
+  flex-shrink: 0;
 }
 
 .overlay-hint {

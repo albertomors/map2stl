@@ -2,6 +2,7 @@
   "name": "map2stl",
   "version": "0.7.0",
   "private": true,
+  "license": "MIT",
   "description": "Pick any place on Earth and turn it into a 3D-printable model (STL / 3MF)",
   "repository": {
     "type": "git",

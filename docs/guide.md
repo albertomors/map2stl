@@ -214,12 +214,13 @@ share what you made.
 
 ## Reporting a bug
 
-The **?** at the top right of the panel opens **Found a bug? Report it**. Describe what you
-did, what you expected and what happened, then **Send**: a zip is saved with your message,
-a screenshot, and what's needed to reproduce it (your selection, the view and its
-settings, your edits, your browser and graphics card, recent errors; nothing else), and
-your email app (or, in builds without a report address, a new GitHub issue) opens with
-the message. Attach the zip and send.
+The **?** at the top right of the panel opens a small menu: the **User guide** (this
+page), or **Found a bug? Report it**, which opens a window. Describe what you did, what
+you expected and what happened, then **Send**: a zip is saved with your message, a
+screenshot, and what's needed to reproduce it (your selection, the view and its settings,
+your edits, your browser and graphics card, recent errors; nothing else), and your email
+app (or, in builds without a report address, a new GitHub issue) opens with the message.
+Attach the zip and send.
 
 ## Known limits
 

@@ -440,17 +440,36 @@ function addAreas(out: Area[], el: OverpassElement, kind: string, ring: LngLat[]
 }
 
 // A closed way is one polygon; a multipolygon relation is any number, assembled from its
-// member ways, which OSM splits wherever it likes.
+// member ways, which OSM splits wherever it likes. Rings nest even-odd, as map renderers
+// draw them, whatever their roles say: a ring inside one ring is a hole, inside two an
+// island in it. Roles get mistagged: the Colosseum's 48.5 m outer wall is two "outer"
+// rings, and taken at their word the arena would fill up to the top of the wall.
 function polygons(el: OverpassElement): Polygon[] {
   if (el.type === 'way') {
     const outer = coords(el.geometry);
     return outer.length >= 4 && same(outer[0], outer[outer.length - 1]) ? [{ outer, holes: [] }] : [];
   }
-  const members = el.members ?? [];
-  const outers = joinRings(members.filter((m) => m.role !== 'inner').map((m) => coords(m.geometry)));
-  const inners = joinRings(members.filter((m) => m.role === 'inner').map((m) => coords(m.geometry)));
-  const result = outers.map((outer) => ({ outer, holes: [] as LngLat[][] }));
-  for (const hole of inners) result.find((p) => pointInRing(hole[0], p.outer))?.holes.push(hole);
+  const rings = joinRings((el.members ?? []).map((m) => coords(m.geometry)));
+  // Inside: two of its points (a ring touching another at one point stays outside it).
+  const inside = (a: LngLat[], b: LngLat[]) => a !== b && pointInRing(a[0], b) && pointInRing(a[a.length >> 1], b);
+  const containers = rings.map((r) => rings.filter((o) => inside(r, o)));
+  const result: { outer: LngLat[]; holes: LngLat[][] }[] = [];
+  const outerOf = new Map<LngLat[], { outer: LngLat[]; holes: LngLat[][] }>();
+  rings.forEach((r, i) => {
+    if (containers[i].length % 2 === 0) {
+      const poly = { outer: r, holes: [] as LngLat[][] };
+      result.push(poly);
+      outerOf.set(r, poly);
+    }
+  });
+  rings.forEach((r, i) => {
+    if (containers[i].length % 2 === 0) return;
+    // A hole of the innermost outer ring around it: the one with the most containers itself.
+    const around = containers[i]
+      .filter((o) => outerOf.has(o))
+      .sort((a, b) => containers[rings.indexOf(b)].length - containers[rings.indexOf(a)].length)[0];
+    if (around) outerOf.get(around)!.holes.push(r);
+  });
   return result;
 }
 

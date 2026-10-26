@@ -17,14 +17,11 @@ its prediction (debug/parts.jsonl): once there are enough, refit the weights (ma
 cost per request, the sea and big polygons counted by size) and the 30 MB and 100 km²
 limits.
 
-### A gallery in the README
+### Downloads for the README's gallery
 
-A set of famous places, each shown twice side by side: the 3D view, and its export preview
-(the model exactly as it prints). Chosen to show what the app does well: a landmark
-(the Colosseum, the Eiffel Tower), a dense old town (Venice), a mountain (the Matterhorn,
-with LiDAR terrain), a harbor with the sea floor (Sydney), a bridge (the Golden Gate). Each
-with its selection, so anyone can make the same one, and the GLB to download. Made with the
-app itself (a script driving it), so it can be redone after each release.
+The README shows six places (Yosemite, Geiranger, Portofino, Zurich, Manhattan, the Golden
+Gate). Next: each with its selection as a link that opens it in the app, and its GLB to
+download, made by a script driving the app so it can be redone after each release.
 
 ### General improvements from agents trying the app
 

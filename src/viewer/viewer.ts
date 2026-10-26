@@ -35,13 +35,15 @@ import type { PrintModel, ThinObjects } from '../export';
 import { clipObjects, clipToSelection } from '../clip';
 import { applyEdits, editedTrees, editKey, type Edits, type GroundKind, type ObjectEdit } from '../edits';
 import { centroid, pointInRing, ringArea, type LngLat } from '../geo';
-import { canopySampler, elevationAt } from '../terrain';
+import { elevationAt } from '../terrain';
 import { isSea, type Area, type Building, type Line, type OsmData } from '../osm';
-import { boatInside, mooredBoats, type Boat } from '../boats';
-import { buildCanopy, canopySurface, FOREST, forestAreas, type Canopy } from '../forest';
+import type { Boat } from '../boats';
+import { FOREST, forestAreas, type Canopy } from '../forest';
 import { GroundTexture } from './ground';
 import { groundAt } from './ground-pick';
-import { buildBoats, buildBridges, buildBuildings, buildStructures, buildTrees, COLORS, TREE_HEIGHT_M, type PickableMesh, type Placement } from './objects';
+import { buildBoats, buildBridges, buildBuildings, buildStructures, buildTrees, COLORS, TREE_HEIGHT_M, treeInstances, type PickableMesh, type Placement } from './objects';
+import type { ObjectsReply, ObjectsRequest } from './objects-worker';
+import type { SceneObjects, SolidArrays } from './scene-objects';
 import { modelAssets, type Axis, type ModelAsset } from '../model-assets';
 import { buildModels, fittedHeight, footprints } from './models';
 import { addRelief, reliefMaterial } from './relief';
@@ -91,6 +93,8 @@ const LIFT_EASE = 0.18;
 const TINT = new Color('#ffd5b8');
 const TINT_GLOW = new Color('#ff6b2c').multiplyScalar(0.12);
 // A press and release closer than this is a click (select), not an orbit.
+// How far off a click may land and still pick a thin object.
+const PICK_SLACK_PX = 5;
 const CLICK_PX = 5;
 // Print preview: objects narrower than the nozzle.
 const THIN = new Color('#e5322d');
@@ -149,6 +153,11 @@ export class Viewer {
   // tile's outline (scene x, z), which the orbit's center stays inside.
   private clearance = 2;
   private disposed = false;
+  // The objects' worker (placeObjects), the latest request to it, and what it already holds.
+  private objectsWorker: Worker | null = null;
+  private objectsJob = 0;
+  private sentData: AreaData | null = null;
+  private sentModels = new Set<string>();
   // Something changed since the last frame drawn.
   private dirty = true;
   private outline: [number, number][] = [];
@@ -423,6 +432,12 @@ export class Viewer {
     let done = 0;
     for (const stage of this.building(scales, true)) {
       this.dirty = true;
+      // The objects, from the worker: waited for, the page responsive meanwhile.
+      if (typeof stage !== 'string') {
+        await stage;
+        if (this.disposed) return;
+        continue;
+      }
       onStage(stage, done++);
       // A frame for the bar to show; a background tab gets no frames, so not longer than this.
       await new Promise((resolve) => {
@@ -560,6 +575,7 @@ export class Viewer {
 
   dispose() {
     this.disposed = true;
+    this.objectsWorker?.terminate();
     this.renderer.setAnimationLoop(null);
     this.resize.disconnect();
     for (const g of [this.terrain, this.objects, this.highlight, this.print]) disposeChildren(g);
@@ -575,7 +591,7 @@ export class Viewer {
   }
 
   // The scene built stage by stage: each yield names the stage about to run.
-  private *building(scales: ViewScales, frameCamera: boolean): Generator<string> {
+  private *building(scales: ViewScales, frameCamera: boolean): Generator<string | Promise<void>> {
     this.builtScales = scales;
     this.stretch.uTerrainK.value = 1;
     this.stretch.uHeightK.value = 1;
@@ -608,7 +624,8 @@ export class Viewer {
     const sides = new Mesh(tile.sides, new MeshLambertMaterial({ color: '#b9ab96', side: DoubleSide }));
     sides.name = 'terrain sides';
     this.terrain.add(top, sides);
-    yield* this.placing();
+    yield 'Raising the buildings, bridges and trees';
+    yield this.placeObjects();
 
     // Sun from the south-west, its shadow box sized to the tile.
     const radius = Math.max(bounds.maxX - bounds.minX, bounds.maxZ - bounds.minZ) / 2;
@@ -630,12 +647,14 @@ export class Viewer {
     if (frameCamera) {
       this.camera.near = Math.max(0.5, radius / 2000);
       this.camera.far = radius * 30;
-      // Aimed at the middle of the terrain's heights and above its highest point: in the
-      // mountains, a camera aimed at sea level starts on a cliff face.
+      // Aimed at the middle of the terrain's heights, and further back the taller it stands:
+      // in the mountains, a camera framed for a flat tile starts on a cliff face, the peaks
+      // off the screen.
       tile.top.computeBoundingBox();
       const { min, max } = tile.top.boundingBox!;
       const mid = Math.max(0, (min.y + max.y) / 2);
-      this.camera.position.set(0, mid + (max.y - mid) + radius * 1.1, radius * 1.6);
+      const back = 1 + (max.y - min.y) / (2 * radius);
+      this.camera.position.set(0, mid + radius * 1.1 * back, radius * 1.6 * back);
       this.controls.target.set(0, mid, 0);
       this.controls.maxDistance = radius * 8;
       // Not so close that a building fills the screen and the view seems empty.
@@ -645,136 +664,137 @@ export class Viewer {
   }
 
   private buildObjects() {
-    drain(this.placing());
+    void this.placeObjects();
   }
 
-  // Edits first, then the cut at the tile edge: an enlarged landmark is still trimmed there.
-  // Each yield names the stage about to run.
-  private *placing(): Generator<string> {
+  // The objects (buildings, structures, bridges, boats, trees, forests) are built in a worker
+  // (scene-objects.ts): a big city takes seconds, on opening and on every edit, and the page
+  // would freeze meanwhile. Until they arrive the old ones stay; a newer request makes an
+  // older answer obsolete. Edits first, then the cut at the tile edge (an enlarged landmark
+  // is still trimmed there): the worker does both.
+  private placeObjects(): Promise<void> {
+    const id = ++this.objectsJob;
+    const data = this.data!;
+    this.objectsWorker ??= new Worker(new URL('./objects-worker.ts', import.meta.url), { type: 'module' });
+    const worker = this.objectsWorker;
+    // Only the models the worker hasn't been sent yet (official ones come by the hundred).
+    const models = [...this.edits.values()].flatMap((e) => {
+      const asset = e.model && modelAssets.get(e.model.asset);
+      return asset && !this.sentModels.has(asset.id) ? [asset] : [];
+    });
+    for (const m of models) this.sentModels.add(m.id);
+    const request: ObjectsRequest = {
+      id,
+      job: { scales: this.builtScales!, seaFloor: !this.visible.has('water'), edits: this.edits },
+      models,
+      // The data travels once per area: copying a city's takes a moment.
+      ...(data !== this.sentData ? { data } : {}),
+    };
+    this.sentData = data;
+    return new Promise((resolve) => {
+      const reply = (e: MessageEvent<ObjectsReply>) => {
+        if (e.data.id !== id) return;
+        worker.removeEventListener('message', reply);
+        if (id === this.objectsJob && !this.disposed) {
+          if (e.data.ok) this.showObjects(e.data.objects);
+          else console.error('Building the 3D objects failed', e.data.message);
+        }
+        resolve();
+      };
+      worker.addEventListener('message', reply);
+      worker.postMessage(request);
+    });
+  }
+
+  private showObjects(o: SceneObjects) {
     // The old meshes go away, and the object hidden in them with them.
     this.unhide = null;
     disposeChildren(this.objects);
     for (const layer of ['buildings', 'structures', 'roads', 'railways', 'trees', 'water'] as Layer[]) this.layerObjects.delete(layer);
     this.pickables = [];
-    const at = this.placement!;
-    const osm = this.data!.osm;
-    const edited = clipObjects(applyEdits(osm, this.edits), this.ring);
-
-    const solid = (result: PickableMesh | null, layer: Layer, color?: Color) => {
-      if (!result) return;
-      const material = this.stretchable(new MeshLambertMaterial(color ? { color, side: DoubleSide } : { vertexColors: true, side: DoubleSide }));
-      const mesh = new Mesh(result.geometry, material);
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      mesh.customDepthMaterial = this.depthMaterial();
-      this.add(layer, mesh);
-      this.pickables.push({
-        object: mesh,
-        keyAt: (face) => (face === undefined ? undefined : result.keys[result.owners[face]]),
-        // Collapse the object's triangles to a point; keep the originals to put them back.
-        hide: (key) => {
-          const pos = mesh.geometry.getAttribute('position') as BufferAttribute;
-          const array = pos.array as Float32Array;
-          const saved: [number, Float32Array][] = [];
-          result.owners.forEach((owner, tri) => {
-            if (result.keys[owner] !== key) return;
-            saved.push([tri * 9, array.slice(tri * 9, tri * 9 + 9)]);
-            array.fill(0, tri * 9, tri * 9 + 9);
-          });
-          if (!saved.length) return null;
-          pos.needsUpdate = true;
-          // Picking caches the mesh's bounds: computed now, with the object collapsed, they'd
-          // miss it forever after (a model alone in its mesh would never be clickable again).
-          mesh.geometry.boundingSphere = mesh.geometry.boundingBox = null;
-          return () => {
-            for (const [at, values] of saved) array.set(values, at);
-            pos.needsUpdate = true;
-            mesh.geometry.boundingSphere = mesh.geometry.boundingBox = null;
-          };
-        },
-      });
-    };
-    yield 'Raising the buildings';
-    solid(buildBuildings(edited.buildings, at), 'buildings');
-    solid(buildModels(osm, this.edits, at, 'buildings'), 'buildings');
-    yield 'Adding bridges, walls and boats';
-    solid(buildModels(osm, this.edits, at, 'bridges'), 'structures');
-    solid(buildStructures({ ...osm, ...edited }, at), 'structures');
-    solid(buildBridges(edited.roads, at, COLORS.road), 'roads', COLORS.road);
-    solid(buildBridges(edited.railways, at, COLORS.rail), 'railways', COLORS.rail);
-    // Boats at the (edited) piers, inside the selection; they float on the water layer.
-    this.boats = mooredBoats({ ...osm, ...edited }).filter((b) => boatInside(b, this.ring) && !this.edits.get(b.key)?.deleted);
-    solid(buildBoats(this.boats, at), 'water');
-
-    // OSM's single trees, and the forests' (forest.ts): a canopy, with single trees along
-    // its border.
-    yield 'Growing the trees and forests';
-    const field = this.forestField();
-    const trees = [
-      ...editedTrees(osm.trees, this.edits, TREE_HEIGHT_M),
-      ...(field?.border ?? []).map((t) => ({ key: t.key, at: at.frame.toLngLat([t.x, t.z]), size: t.size, height: t.height })),
-    ];
-    const treeMesh = buildTrees(trees, at);
-    this.trees = treeMesh ? { mesh: treeMesh, built: (treeMesh.instanceMatrix.array as Float32Array).slice() } : null;
-    if (treeMesh) {
-      this.add('trees', treeMesh);
-      this.pickables.push({
-        object: treeMesh,
-        // A forest's tree isn't an object of its own: the click goes to its wood (below).
-        keyAt: (_face, instance) => {
-          const key = instance === undefined ? undefined : trees[instance]?.key;
-          return key?.startsWith('forest/') ? undefined : key;
-        },
-        hide: (key) => {
-          const i = trees.findIndex((t) => t.key === key);
-          if (i < 0) return null;
-          const saved = new Matrix4();
-          treeMesh.getMatrixAt(i, saved);
-          treeMesh.setMatrixAt(i, new Matrix4().makeScale(0, 0, 0));
-          treeMesh.instanceMatrix.needsUpdate = true;
-          return () => {
-            treeMesh.setMatrixAt(i, saved);
-            treeMesh.instanceMatrix.needsUpdate = true;
-          };
-        },
-      });
-    }
-    this.buildForests(field);
+    for (const s of o.solids) this.showSolid(s);
+    this.boats = o.boats;
+    this.showTrees(o.trees);
+    this.showCanopy(o.canopy);
     this.drawHighlight();
+    this.dirty = true;
   }
 
-  // The forests, from the edited woods: a wood deleted, printed as something else or with its
-  // trees deleted has none.
-  private forestField(): Canopy | null {
-    const at = this.placement!;
-    const t = this.data!.terrain;
-    const groundAt = (x: number, z: number) => {
-      const [lng, lat] = at.frame.toLngLat([x, z]);
-      return this.groundHeight(elevationAt(t, lng, lat));
-    };
-    return buildCanopy(applyEdits(this.clipped ?? this.data!.osm, this.edits), this.ring, at.frame, groundAt, {
-      heightScale: at.heightScale,
-      bare: (id) => !!this.edits.get(id)?.noTrees,
-      borderTrees: true,
-      treeHeight: canopySampler(t, at.frame) ?? undefined,
+  private showSolid(s: SolidArrays) {
+    const g = new BufferGeometry();
+    g.setAttribute('position', new BufferAttribute(s.positions, 3));
+    g.setAttribute('normal', new BufferAttribute(s.normals, 3));
+    g.setAttribute('color', new BufferAttribute(s.colors, 3));
+    g.setAttribute('groundY', new BufferAttribute(s.grounds, 1));
+    const color = s.color === undefined ? undefined : new Color(s.color);
+    const material = this.stretchable(new MeshLambertMaterial(color ? { color, side: DoubleSide } : { vertexColors: true, side: DoubleSide }));
+    const mesh = new Mesh(g, material);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    mesh.customDepthMaterial = this.depthMaterial();
+    this.add(s.layer, mesh);
+    this.pickables.push({
+      object: mesh,
+      keyAt: (face) => (face === undefined ? undefined : s.keys[s.owners[face]]),
+      // Collapse the object's triangles to a point; keep the originals to put them back.
+      hide: (key) => {
+        const pos = mesh.geometry.getAttribute('position') as BufferAttribute;
+        const array = pos.array as Float32Array;
+        const saved: [number, Float32Array][] = [];
+        s.owners.forEach((owner, tri) => {
+          if (s.keys[owner] !== key) return;
+          saved.push([tri * 9, array.slice(tri * 9, tri * 9 + 9)]);
+          array.fill(0, tri * 9, tri * 9 + 9);
+        });
+        if (!saved.length) return null;
+        pos.needsUpdate = true;
+        // Picking caches the mesh's bounds: computed now, with the object collapsed, they'd
+        // miss it forever after (a model alone in its mesh would never be clickable again).
+        mesh.geometry.boundingSphere = mesh.geometry.boundingBox = null;
+        return () => {
+          for (const [at, values] of saved) array.set(values, at);
+          pos.needsUpdate = true;
+          mesh.geometry.boundingSphere = mesh.geometry.boundingBox = null;
+        };
+      },
     });
   }
 
-  // The canopy's mesh.
-  private buildForests(field: Canopy | null) {
+  // OSM's single trees and the forests' border trees, one cone each.
+  private showTrees(trees: SceneObjects['trees']) {
+    this.trees = null;
+    if (!trees || !trees.keys.length) return;
+    const { keys, matrices } = trees;
+    const treeMesh = treeInstances(keys.length, COLORS.tree, matrices);
+    this.trees = { mesh: treeMesh, built: matrices.slice() };
+    this.add('trees', treeMesh);
+    this.pickables.push({
+      object: treeMesh,
+      // A forest's tree isn't an object of its own: the click goes to its wood (pickAt).
+      keyAt: (_face, instance) => {
+        const key = instance === undefined ? undefined : keys[instance];
+        return key?.startsWith('forest/') ? undefined : key;
+      },
+      hide: (key) => {
+        const i = keys.indexOf(key);
+        if (i < 0) return null;
+        const saved = new Matrix4();
+        treeMesh.getMatrixAt(i, saved);
+        treeMesh.setMatrixAt(i, new Matrix4().makeScale(0, 0, 0));
+        treeMesh.instanceMatrix.needsUpdate = true;
+        return () => {
+          treeMesh.setMatrixAt(i, saved);
+          treeMesh.instanceMatrix.needsUpdate = true;
+        };
+      },
+    });
+  }
+
+  // The forests' canopy.
+  private showCanopy(canopy: SceneObjects['canopy']) {
     this.canopy = null;
-    if (!field) return;
-    const { positions, grounds, index } = canopySurface(field);
-    if (!index.length) return;
-    // Darker down between the crowns, lighter at their tips: depth from above.
-    const colors = new Float32Array(positions.length);
-    const base = COLORS.tree;
-    for (let k = 0; k < field.above.length; k++) {
-      const shade = 0.55 + 0.6 * Math.min(1, Math.max(0, field.above[k] / field.top));
-      colors[k * 3] = base.r * shade;
-      colors[k * 3 + 1] = base.g * shade;
-      colors[k * 3 + 2] = base.b * shade;
-    }
+    if (!canopy) return;
+    const { field, positions, grounds, index, colors } = canopy;
     const g = new BufferGeometry();
     g.setAttribute('position', new BufferAttribute(positions, 3));
     g.setAttribute('groundY', new Float32BufferAttribute(grounds, 1));
@@ -799,10 +819,19 @@ export class Viewer {
     // A click on the lifted object itself keeps it selected.
     if (this.liftKey && this.highlight.visible && ray.intersectObjects(this.highlight.children, true).length) return;
     const visible = this.pickables.filter((p) => p.object.visible);
-    const hit = ray.intersectObjects(visible.map((p) => p.object), false)[0];
-    const pickable = hit && visible.find((p) => p.object === hit.object);
-    const key = pickable?.keyAt(hit.faceIndex ?? undefined, hit.instanceId);
-    if (key) return this.select(key);
+    const objectAt = (dx: number, dy: number): string | undefined => {
+      const probe = new Raycaster();
+      probe.setFromCamera(new Vector2(ndc.x + (dx * 2) / rect.width, ndc.y - (dy * 2) / rect.height), this.camera);
+      const hit = probe.intersectObjects(visible.map((p) => p.object), false)[0];
+      return hit && visible.find((p) => p.object === hit.object)?.keyAt(hit.faceIndex ?? undefined, hit.instanceId);
+    };
+    // Thin things (a mast, the London Eye's rim) are hard to hit to the pixel: a near miss
+    // still finds them.
+    const near = Array.from({ length: 8 }, (_, k) => [Math.cos((k * Math.PI) / 4) * PICK_SLACK_PX, Math.sin((k * Math.PI) / 4) * PICK_SLACK_PX]);
+    for (const [dx, dy] of [[0, 0], ...near]) {
+      const key = objectAt(dx, dy);
+      if (key) return this.select(key);
+    }
     // No object: a forest's canopy (its wood), or the street, river or area painted on the
     // ground there, if any.
     const top = this.terrain.children[0];
@@ -1042,10 +1071,10 @@ export class Viewer {
 }
 
 // Stages of a build (see building()), for a progress bar.
-export const BUILD_STAGES = 5;
+export const BUILD_STAGES = 3;
 
-// Runs a staged build to the end at once.
-function drain(stages: Generator<string>) {
+// Runs a staged build to the end at once (the objects follow from the worker).
+function drain(stages: Generator<string | Promise<void>>) {
   while (!stages.next().done);
 }
 

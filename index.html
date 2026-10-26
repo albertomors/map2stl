@@ -11,7 +11,14 @@ nom<!doctype html>
 
     <aside id="panel">
       <header>
-        <button id="bug-open" class="bug-open" title="Found a bug? Report it" aria-label="Found a bug? Report it">?</button>
+        <!-- Help: the guide, or a bug report. -->
+        <details id="help-menu" class="help-menu">
+          <summary title="Help" aria-label="Help">?</summary>
+          <div class="help-items">
+            <a href="https://github.com/albertomors/map2stl/blob/main/docs/guide.md" target="_blank" rel="noopener">User guide</a>
+            <button id="bug-open" type="button" class="link">Found a bug? Report it</button>
+          </div>
+        </details>
         <h1>map2stl</h1>
         <p>Any place on Earth, ready to 3D print.</p>
       </header>
@@ -148,9 +155,18 @@ nom<!doctype html>
           </select>
         </label>
         <div id="object-model" class="model-box" hidden>
-          <div id="object-official" hidden>
-            <button id="object-official-one"></button>
-            <button id="object-official-all" class="link"></button>
+          <!-- An official model where a national source covers the area: this building, or all. -->
+          <div id="object-official" class="official-model" hidden>
+            <p class="hint">Official 3D model: <span id="object-official-source"></span></p>
+            <div class="official-buttons">
+              <button id="object-official-one" title="Replace this building with its official model">This building</button>
+              <button id="object-official-all" title="Replace every building in the area with its official model">Every building here</button>
+            </div>
+            <div class="progress" id="official-progress" hidden>
+              <div class="progress-head"><span class="progress-label">Loading</span><span class="progress-text"></span></div>
+              <div class="bar"><div></div></div>
+              <p class="progress-note"></p>
+            </div>
           </div>
           <button id="object-model-find">Find a 3D model online</button>
           <form id="model-search-form" class="model-search" role="search" hidden>

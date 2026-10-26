@@ -210,6 +210,8 @@ export function setupSearch(
   input: HTMLInputElement,
   list: HTMLUListElement,
   onSelect: (sel: Selection) => void,
+  // Every place picked (files get named after it).
+  onPick: (title: string, at: LngLat) => void,
 ) {
   let timer: number | undefined;
   let controller: AbortController | undefined;
@@ -261,6 +263,7 @@ export function setupSearch(
     results = [];
     render();
     input.blur();
+    onPick(r.title, r.center);
     pin?.remove();
     pin = select ? null : new Marker({ color: '#ff6b2c' }).setLngLat(r.center).addTo(map);
     if (select) {

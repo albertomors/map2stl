@@ -6,11 +6,11 @@ import { fetchAreaData, summarize, type AreaData, type ChunkPlan, type ChunkResu
 import { devLog } from './dev-log';
 import { DrawController } from './draw';
 import { countBuildings, estimateSeconds, recordSample, type EtaInput } from './eta';
-import { distance } from './geo';
+import { distance, pointInRing, type LngLat } from './geo';
 import { setupNavigation } from './nav';
 import { DataPreview, LAYER_COLORS } from './preview';
 import { recordConsole, setupBugReport } from './bug-report';
-import { setupSearch } from './search';
+import { setupSearch, townAt } from './search';
 import { describe, loadSelection, saveSelection, type Selection, type ShapeKind } from './selection';
 import type { CommonsModel } from './commons';
 import type { SketchfabModel } from './sketchfab';
@@ -18,7 +18,7 @@ import { modelAssets, type ModelAsset, type ModelChoice, type ModelSource } from
 import { sourceCredits } from './credits';
 import type { ModelJob, ModelResult } from './model-worker';
 import type { ObjectPick, Viewer, ViewScales } from './viewer/viewer';
-import { editKey, type Edits, type GroundKind } from './edits';
+import { applyEdits, editKey, type Edits, type GroundKind } from './edits';
 import { officialSourceAt } from './official-sources';
 import type { PrintModel, ThinObjects } from './export';
 import type { PrintJob, PrintProgress, PrintResult } from './print-worker';
@@ -56,7 +56,18 @@ setupNavigation(map);
 map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left');
 
 // A result's "Select" button draws a selection around it, as if drawn by hand.
-setupSearch(map, $('search'), $('search-input'), $('search-results'), (sel) => draw?.select(sel));
+setupSearch(
+  map,
+  $('search'),
+  $('search-input'),
+  $('search-results'),
+  (sel) => draw?.select(sel),
+  (title, at) => (searchedPlace = { title, at }),
+);
+// The place a search picked last, and the town the fetched area is in (asked once per
+// fetch): files are named after them.
+let searchedPlace: { title: string; at: LngLat } | null = null;
+let areaTown: { selection: Selection; name?: string } | null = null;
 
 setupBugReport(bugContext, bugScreenshot);
 
@@ -218,7 +229,6 @@ async function searchModels(key: string, by: { landmark: { wikidata?: string; na
   // A local name with no Wikidata item goes with its town: "Cattedrale di Santa Maria
   // Assunta" alone finds Atri's as readily as Pisa's.
   if ('landmark' in by && !landmark.wikidata && landmark.name && areaData) {
-    const { townAt } = await import('./search');
     landmark.town = await townAt(areaData.selection.center, search.signal).catch(() => undefined);
   }
   // Sketchfab by name: the English one first (from Wikidata), then the local one from OSM
@@ -410,7 +420,15 @@ function showSelection(sel: Selection | null) {
       return [dt, dd];
     }),
   );
-  $('selection-warning').hidden = info.areaM2 <= LARGE_AREA_M2;
+  // Large: say how slow and how coarse, in numbers, so it's clear whether to shrink it.
+  const warning = $('selection-warning');
+  warning.hidden = info.areaM2 <= LARGE_AREA_M2;
+  if (!warning.hidden) {
+    const seconds = estimateSeconds({ km2: info.areaM2 / 1e6, buildings: countBuildings(map, info.ring) });
+    const sizeMm = Number($<HTMLInputElement>('print-size').value) || 150;
+    const detailM = (0.4 * Math.max(info.widthM, info.heightM)) / sizeMm;
+    warning.textContent = `Large area: the detailed data takes about ${formatDuration(seconds)} to download, and printed ${sizeMm} mm across, anything narrower than ${Math.round(detailM)} m (a 0.4 mm nozzle line) won't print as more than a blob. Under ${LARGE_AREA_M2 / 1e6} km² is quicker and finer.`;
+  }
 }
 
 function formatLength(m: number): string {
@@ -428,6 +446,12 @@ async function fetchData(sel: Selection) {
   resetData();
   const controller = new AbortController();
   loading = controller;
+  // The town, for naming files; nothing lost if the search service doesn't answer.
+  const town: { selection: Selection; name?: string } = { selection: sel };
+  areaTown = town;
+  townAt(sel.center, controller.signal)
+    .then((name) => (town.name = name))
+    .catch(() => {});
   setFetchButton('cancel');
   $('data').hidden = false;
   const status = $('data-status');
@@ -523,6 +547,7 @@ function showData(data: AreaData) {
   $('data-layers').replaceChildren(
     ...summarize(data).map(({ layer, label, count, detail }) => {
       const li = document.createElement('li');
+      li.dataset.layer = layer;
       li.classList.toggle('empty', count === 0);
       const box = document.createElement('input');
       box.type = 'checkbox';
@@ -565,7 +590,12 @@ function showData(data: AreaData) {
   const deepest = data.bathymetry ? data.bathymetry.heights.reduce((low, h) => (Number.isFinite(h) && h < low ? h : low), 0) : 0;
   // The sea floor shows only with the Water layer off (with it on, the water's surface is
   // what's printed): say so, or a harbour looks flat with no clue why.
-  const sea = deepest < 0 ? ` Sea down to ${Math.round(-deepest)} m (${data.bathymetry!.source.name}): switch Water off to see the sea floor and print it.` : '';
+  // And how coarse the depths are: a harbour basin narrower than that comes out flat.
+  const seaSource = data.bathymetry?.source;
+  const sea =
+    deepest < 0 && seaSource
+      ? ` Sea down to ${Math.round(-deepest)} m (${seaSource.name}, a depth about every ${seaSource.resolutionM} m: harbour basins and channels narrower than that come out flat): switch Water off to see the sea floor and print it.`
+      : '';
   // Which heights: national LiDAR where there is some, else the worldwide tiles.
   const from = t.source ? `${t.source.name}, ≈${t.source.resolutionM.toFixed(1)} m` : `AWS Terrain Tiles, ≈${spacing.toFixed(0)} m`;
   // Forests as tall as they really are, where the LiDAR has the surface too.
@@ -813,10 +843,12 @@ function showScales() {
   $('height-scale-value').textContent = `×${heights.toFixed(1)}`;
 }
 
-function deletePicked() {
+// `others`: more objects to delete with it (the ones overlapping it).
+function deletePicked(others: string[] = []) {
   if (!picked) return;
   // The other edits stay, for Restore deleted. A wood loses its trees, not itself.
   edits.set(picked.key, { ...edits.get(picked.key), ...(picked.forest ? { noTrees: true } : { deleted: true }) });
+  for (const key of others) edits.set(key, { ...edits.get(key), deleted: true });
   viewer?.setEdits(edits);
   viewer?.select(null);
   showEditsSummary();
@@ -858,6 +890,13 @@ function showPick(pick: ObjectPick | null) {
       link.addEventListener('click', () => viewer?.select(o.key));
       also.append(...(i ? [', ', link] : [link]));
     });
+    // Deleting a landmark mapped in several overlapping pieces (the London Eye and its
+    // supports) takes them all in one go.
+    const all = document.createElement('button');
+    all.className = 'link';
+    all.textContent = pick.alsoHere.length === 1 ? 'Delete both' : `Delete all ${pick.alsoHere.length + 1}`;
+    all.addEventListener('click', () => deletePicked(pick.alsoHere!.map((o) => o.key)));
+    also.append(' · ', all);
   }
   $('object-delete').textContent = pick.forest ? 'Delete trees' : 'Delete';
   $('object-width-row').hidden = !pick.canWidth;
@@ -869,8 +908,7 @@ function showPick(pick: ObjectPick | null) {
   const official = areaData && pick.canModel && areaData.osm.buildings.some((b) => editKey(b) === pick.key) ? officialSourceAt(areaData.selection.center) : undefined;
   $('object-official').hidden = !official;
   if (official) {
-    $('object-official-one').textContent = `Use the official 3D model (${official.name})`;
-    $('object-official-all').textContent = 'Use official models for every building in the area';
+    $('object-official-source').textContent = official.name;
   }
   $('object-model-current').hidden = !pick.model;
   $('object-model-name').textContent = pick.model ?? '';
@@ -1104,10 +1142,19 @@ async function useOfficialModels(keys: string[]) {
     footprints.set(k, [...(footprints.get(k) ?? []), { outer: b.outer, holes: b.holes }]);
   }
   say(`Reading ${source.name}…`);
+  // A bar under the buttons, filling tile by tile; the buttons wait meanwhile.
+  const buttons = [$<HTMLButtonElement>('object-official-one'), $<HTMLButtonElement>('object-official-all')];
+  for (const b of buttons) b.disabled = true;
+  $('official-progress').hidden = false;
+  $('official-progress').querySelector('.progress-label')!.textContent = source.name;
+  setBar('official-progress', 'Starting…', null, '');
   try {
     const { fetchOfficialModels } = await import('./official3d');
     const { describe } = await import('./selection');
-    const models = await fetchOfficialModels(source, footprints, describe(data.selection).ring, load.signal, (done, total) => say(`Reading ${source.name}: ${done} of ${total} tiles…`));
+    const models = await fetchOfficialModels(source, footprints, describe(data.selection).ring, load.signal, (done, total) => {
+      say(`Reading ${source.name}: ${done} of ${total} tiles…`);
+      setBar('official-progress', `${done} of ${total} tiles`, total ? done / total : null, '');
+    });
     if (load.signal.aborted) return;
     for (const [k, asset] of models) {
       modelAssets.set(asset.id, asset);
@@ -1129,7 +1176,11 @@ async function useOfficialModels(keys: string[]) {
   } catch (err) {
     if (!load.signal.aborted) say(`Couldn't read ${source.name}: ${(err as Error).message}`);
   } finally {
-    if (officialLoad === load) officialLoad = null;
+    if (officialLoad === load) {
+      officialLoad = null;
+      $('official-progress').hidden = true;
+      for (const b of buttons) b.disabled = false;
+    }
   }
 }
 $('object-official-one').addEventListener('click', () => picked && useOfficialModels([picked.key]));
@@ -1195,6 +1246,18 @@ function showPickValues() {
   $('object-width-value').textContent = `×${Number($<HTMLInputElement>('object-width').value).toFixed(2)}`;
 }
 
+// The layer counts with the edits applied: a deleted building no longer counts.
+function showLayerCounts() {
+  if (!areaData) return;
+  for (const { layer, count, detail } of summarize({ ...areaData, osm: applyEdits(areaData.osm, edits) })) {
+    const li = document.querySelector<HTMLElement>(`#data-layers li[data-layer="${layer}"]`);
+    if (!li) continue;
+    li.querySelector('.count')!.textContent = count.toLocaleString();
+    const sub = li.querySelector('.detail');
+    if (sub && detail) sub.textContent = detail;
+  }
+}
+
 function showEditsSummary() {
   let deleted = 0;
   let changed = 0;
@@ -1208,6 +1271,7 @@ function showEditsSummary() {
   }
   const parts = [deleted && `${deleted} deleted`, changed && `${changed} changed`, models && `${models} with a 3D model`].filter(Boolean);
   $('edits-count').textContent = parts.length ? parts.join(', ') : 'No edits';
+  showLayerCounts();
   $<HTMLButtonElement>('restore-deleted').disabled = !deleted;
   const defaults = scales().terrain === 1.5 && scales().heights === 1;
   $<HTMLButtonElement>('reset-all').disabled = !edits.size && defaults;
@@ -1261,9 +1325,8 @@ function runPrintJob(
     minFeatureMm: printNumber('print-min', 'Thinnest detail', 0.01),
   };
   const nozzleMm = printNumber('print-nozzle', 'Nozzle', 0.1);
-  const [lng, lat] = data.selection.center;
   const models = usedModels();
-  const job: PrintJob = { kind, data, edits, scales: scales(), visible: [...visibleLayers], options, nozzleMm, name: printName(lat, lng), models, previewed };
+  const job: PrintJob = { kind, data, edits, scales: scales(), visible: [...visibleLayers], options, nozzleMm, name: printName(data), models, previewed };
   const worker = new Worker(new URL('./print-worker.ts', import.meta.url), { type: 'module' });
   own?.(worker);
   const bar = printProgress.start(worker);
@@ -1335,8 +1398,20 @@ const printProgress = (() => {
   };
 })();
 
-function printName(lat: number, lng: number): string {
-  return `map2stl-${lat.toFixed(4)}-${lng.toFixed(4)}`;
+// "map2stl-colosseum-rome": the landmark searched for, if it's inside the area, and the
+// town; coordinates when neither is known ("map2stl-37.8199N-122.4783W").
+function printName(data: AreaData): string {
+  const ring = describe(data.selection).ring;
+  const named = [
+    searchedPlace && pointInRing(searchedPlace.at, ring) ? searchedPlace.title : null,
+    areaTown?.selection === data.selection ? areaTown.name : null,
+  ];
+  const slug = (s: string) =>
+    s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-|-$/g, '');
+  const name = [...new Set(named.filter((s): s is string => !!s).map(slug))].filter(Boolean).join('-');
+  if (name) return `map2stl-${name}`;
+  const [lng, lat] = data.selection.center;
+  return `map2stl-${Math.abs(lat).toFixed(4)}${lat < 0 ? 'S' : 'N'}-${Math.abs(lng).toFixed(4)}${lng < 0 ? 'W' : 'E'}`;
 }
 
 // What in the model is too thin for the nozzle, under the Preview button.
@@ -1480,12 +1555,11 @@ async function downloadScene(binary: boolean) {
   }
 }
 
-// Downloads a file named after the selection's center.
+// Downloads a file named after the place (printName).
 function saveFile(file: Blob, extension: string) {
-  const [lng, lat] = areaData!.selection.center;
   const a = document.createElement('a');
   a.href = URL.createObjectURL(file);
-  a.download = `${printName(lat, lng)}.${extension}`;
+  a.download = `${printName(areaData!)}.${extension}`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
 }

@@ -13,9 +13,13 @@ const NOAA = 'https://gis.ngdc.noaa.gov/arcgis/rest/services/DEM_mosaics/DEM_glo
 export interface BathymetrySource {
   name: string;
   credit: string;
+  // About how far apart its depths are measured (meters): basins and channels narrower than
+  // this come out flat.
+  resolutionM: number;
 }
-const EMODNET: BathymetrySource = { name: 'EMODnet Bathymetry, CC BY 4.0', credit: 'Sea depths: EMODnet Bathymetry Consortium (CC BY 4.0)' };
-const ETOPO: BathymetrySource = { name: 'NOAA ETOPO 2022, public domain', credit: 'Sea depths: NOAA NCEI, ETOPO 2022 and coastal DEMs (public domain)' };
+const EMODNET: BathymetrySource = { name: 'EMODnet Bathymetry, CC BY 4.0', credit: 'Sea depths: EMODnet Bathymetry Consortium (CC BY 4.0)', resolutionM: 115 };
+// ETOPO's 15 arc-seconds; NOAA's coastal models are finer where there are some.
+const ETOPO: BathymetrySource = { name: 'NOAA ETOPO 2022, public domain', credit: 'Sea depths: NOAA NCEI, ETOPO 2022 and coastal DEMs (public domain)', resolutionM: 450 };
 // NOAA's grid: about this spacing (its finest coastal models are finer, ETOPO coarser), at
 // most this many cells a side.
 const NOAA_SPACING_M = 100;

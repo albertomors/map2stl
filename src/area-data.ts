@@ -8,6 +8,7 @@ import { centroid, distance, intersectsRing, pathLength, ringArea, type LngLat }
 import { buildQuery, isSea, parse, type Area, type OsmData } from './osm';
 import { overpass, TooMuchData, type OverpassElement, type OverpassResponse } from './overpass';
 import { describe, type Selection } from './selection';
+import { withoutBuildingBumps } from './flatten';
 import { fetchLidarTerrain } from './lidar';
 import { fetchTerrain, lngLatPixel, pixelLngLat, type Terrain } from './terrain';
 import { fetchTileData } from './vector-tiles';
@@ -32,14 +33,20 @@ export interface AreaData {
 // about 115 m wide: interpolated, the floor shows their facets, and where the cells end
 // short of the coast it drops off a ledge; so the whole sea floor is smoothed over about a
 // cell, from sea points only (land doesn't drag the coast up, and stays as it was).
-function withSeaFloor(t: Terrain, b: Bathymetry, seaAreas: Area[]): Terrain {
+// `box`: the selection's bounding box, where the sea areas are built (from coastlines cut to
+// it). Past it, the grid goes on a little for the tile's edge to be cut from: there, the
+// tiles' own sea level marks the sea, or the edge would climb from the floor back up to
+// zero in a thin fin.
+function withSeaFloor(t: Terrain, b: Bathymetry, seaAreas: Area[], [w, s, e, n]: [number, number, number, number]): Terrain {
   const heights = Float32Array.from(t.heights);
   const sea = seaMask(t, seaAreas);
   for (let row = 0; row < t.height; row++) {
     for (let col = 0; col < t.width; col++) {
       const i = row * t.width + col;
-      if (!sea[i]) continue;
       const [lng, lat] = pixelLngLat(t, col, row);
+      const past = lng < w || lng > e || lat < s || lat > n;
+      if (!sea[i] && !(past && heights[i] <= 0.5)) continue;
+      sea[i] = 1;
       const depth = depthAt(b, lng, lat);
       heights[i] = depth > 0 ? -depth : Math.min(heights[i], 0);
     }
@@ -49,12 +56,44 @@ function withSeaFloor(t: Terrain, b: Bathymetry, seaAreas: Area[]): Terrain {
   const metersPerPx = (156_543.03 * Math.cos((lat * Math.PI) / 180)) / 2 ** t.zoom;
   const cellPx = (b.dx * 111_320 * Math.cos((lat * Math.PI) / 180)) / metersPerPx;
   smoothMasked(heights, sea, t.width, t.height, Math.max(1, Math.round(cellPx)));
+  // The depths are a cell apart: a cell's depth starts right at the coastline, a sheer wall
+  // the data doesn't show. Eased in instead, from 0 at the coast to full depth a cell out.
+  const fromLand = distanceToUnmasked(sea, t.width, t.height);
+  for (let i = 0; i < heights.length; i++) {
+    if (sea[i] && heights[i] < 0) heights[i] *= Math.min(1, fromLand[i] / Math.max(1, cellPx));
+  }
   let [min, max] = [Infinity, -Infinity];
   for (const h of heights) {
     min = Math.min(min, h);
     max = Math.max(max, h);
   }
   return { ...t, heights, min, max };
+}
+
+// For each masked pixel, how far (in pixels) the nearest unmasked one is: two chamfer passes.
+function distanceToUnmasked(mask: Uint8Array, w: number, h: number): Float32Array {
+  const d = new Float32Array(mask.length);
+  for (let i = 0; i < d.length; i++) d[i] = mask[i] ? Infinity : 0;
+  const diag = Math.SQRT2;
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (!d[i]) continue;
+      if (x > 0) d[i] = Math.min(d[i], d[i - 1] + 1);
+      if (y > 0) d[i] = Math.min(d[i], d[i - w] + 1, x > 0 ? d[i - w - 1] + diag : Infinity, x < w - 1 ? d[i - w + 1] + diag : Infinity);
+    }
+  }
+  for (let y = h - 1; y >= 0; y--) {
+    for (let x = w - 1; x >= 0; x--) {
+      const i = y * w + x;
+      if (!d[i]) continue;
+      if (x < w - 1) d[i] = Math.min(d[i], d[i + 1] + 1);
+      if (y < h - 1) d[i] = Math.min(d[i], d[i + w] + 1, x < w - 1 ? d[i + w + 1] + diag : Infinity, x > 0 ? d[i + w - 1] + diag : Infinity);
+    }
+  }
+  // A grid all sea has no land to measure from: no easing.
+  for (let i = 0; i < d.length; i++) if (d[i] === Infinity) d[i] = 1e9;
+  return d;
 }
 
 // Which terrain pixels are sea: the areas drawn on a canvas the grid's size.
@@ -194,7 +233,7 @@ export async function fetchAreaData(
     return null;
   });
   let fullArrived = false;
-  if (quick) terrain.then((t) => fullArrived || onQuick({ selection, osm: quick, terrain: t, detail: 'tiles' })).catch(() => {});
+  if (quick) terrain.then((t) => fullArrived || onQuick({ selection, osm: quick, terrain: withoutBuildingBumps(t, quick.buildings), detail: 'tiles' })).catch(() => {});
 
   const features = quick ? weighFeatures(quick) : null;
   const chunks = planChunks(bbox, ring, features);
@@ -238,9 +277,10 @@ export async function fetchAreaData(
   // Sea depths, only for areas with sea; without them the sea prints at its usual depth.
   const sea = osm.waterAreas.some(isSea);
   const bathymetry = sea ? await fetchBathymetry(bbox, signal).catch(() => null) : null;
-  // LiDAR terrain where there is some, then the sea floor in it.
-  const ground = await sharper;
-  return { selection, osm, terrain: bathymetry ? withSeaFloor(ground, bathymetry, osm.waterAreas.filter(isSea)) : ground, detail: 'full', bathymetry };
+  // LiDAR terrain where there is some (else the tiles, with big buildings' bumps taken out),
+  // then the sea floor in it.
+  const ground = withoutBuildingBumps(await sharper, osm.buildings);
+  return { selection, osm, terrain: bathymetry ? withSeaFloor(ground, bathymetry, osm.waterAreas.filter(isSea), bbox) : ground, detail: 'full', bathymetry };
 }
 
 // Whether a chunk's box and the selection overlap. Edges count: the selection's corners lie

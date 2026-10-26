@@ -2,6 +2,8 @@
 // contents can be checked before the 3D viewer exists. Buildings are extruded with the
 // heights the model will use; the base map's own buildings are hidden meanwhile.
 
+import { clipToSelection } from './clip';
+import { describe } from './selection';
 import type { ExpressionSpecification, Map } from 'maplibre-gl';
 import type { AreaData, Layer } from './area-data';
 import type { Area, Line, Polygon } from './osm';
@@ -48,7 +50,9 @@ export class DataPreview {
 
   show(data: AreaData) {
     this.clear();
-    const { osm } = data;
+    // Cut to the selection, as the 3D view and the print are: what touches it comes whole
+    // from the servers, and drawn whole it spills past the outline as if the area had grown.
+    const osm = clipToSelection(data.osm, describe(data.selection).ring);
     const sources: Record<Layer, GeoJSON.Feature[]> = {
       buildings: osm.buildings.map((b) => polygon(b, { height: b.height, base: b.minHeight })),
       roads: osm.roads.map(line),
