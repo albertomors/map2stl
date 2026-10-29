@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-29
+
+Ready to share: search for any street, address or landmark, export to GLB and glTF for
+Blender and the web, bug reports with everything needed to reproduce them, big areas
+requested in parts sized by what's in them, a 3D view that no longer freezes on a big
+city, and the sea wherever the map has it. National LiDAR is gone: its seams made the
+ground worse, not better.
+
 ### Added
 
 - The search box finds streets, addresses and landmarks, not just towns: "Baker Street",

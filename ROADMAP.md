@@ -2,27 +2,6 @@
 
 Open work only: built items move to the README and CHANGELOG.
 
-## Milestone 0.8: ready to share
-
-What the app needs before strangers use it, all without a server of our own.
-
-### Downloads for the README's gallery
-
-The README shows six places (Yosemite, Geiranger, Portofino, Zurich, Manhattan, the Golden
-Gate). Next: each with its selection as a link that opens it in the app, and its GLB to
-download, made by a script driving the app so it can be redone after each release.
-
-### General improvements from agents trying the app
-
-A suite of agents that run the app in a real browser (Playwright) the way a newcomer
-would, each with a task and no instructions: "print the Colosseum", "a 5 km hexagon of
-your hometown", "export a mountain for Blender", "delete a building and restore it",
-"a model of a harbor with the sea floor". Each one reports, with screenshots, where it
-hesitated, what it misread, what failed or took too long, and what it expected to find
-and didn't. A last agent ranks the findings across runs (what several agents tripped on
-first), and the fixes become this milestone's general improvements: wording, layout,
-defaults, error messages, missing feedback. Rerun after the fixes, and before each release.
-
 ## More official 3D buildings
 
 Ongoing, added to as sources turn up: swapping the OSM approximation for something
