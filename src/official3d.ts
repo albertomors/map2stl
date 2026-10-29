@@ -212,14 +212,11 @@ function readB3dm(data: ArrayBuffer): { glb: ArrayBuffer; center: [number, numbe
   return { glb: data.slice(28 + ftJson + ftBin + btJson + btBin), center: ft.RTC_CENTER ?? [0, 0, 0] };
 }
 
-// The glTF reader, with Draco (the tiles' meshes are compressed): its decoder is served from
-// public/draco.
+// The glTF reader, with Draco (the tiles' meshes are compressed): three's loader brings its
+// own decoder, bundled from three/examples/jsm/libs/draco.
 let loader: GLTFLoader | null = null;
 function gltfLoader(): GLTFLoader {
-  if (!loader) {
-    const draco = new DRACOLoader().setDecoderPath(`${import.meta.env.BASE_URL}draco/`);
-    loader = new GLTFLoader().setDRACOLoader(draco);
-  }
+  if (!loader) loader = new GLTFLoader().setDRACOLoader(new DRACOLoader());
   return loader;
 }
 

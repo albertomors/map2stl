@@ -15,8 +15,7 @@ npm run preview  # serve dist/
 ```
 search / map ──► Selection ──► fetchAreaData ──┬─► quick: vector tiles (1–3 s) ──────┐
  (draw.ts)      (center, size,                 ├─► full: Overpass, in parts (30–90 s) ┤
-                 rotation[, points])           ├─► terrain: Terrarium tiles,         │
-                                               │     then national LiDAR if any ──────┤
+                 rotation[, points])           ├─► terrain: Terrarium tiles ──────────┤
                                                └─► sea depths (areas with sea) ───────┤
                                                                                       ▼
                                               AreaData { osm, terrain, bathymetry, detail }
@@ -35,8 +34,7 @@ search / map ──► Selection ──► fetchAreaData ──┬─► quick: 
 2. **Fetching** (`area-data.ts`): terrain, the quick tile data and the Overpass query start
    together. The quick version is handed over as soon as it's ready; the function resolves
    with the full one. Overpass is asked in parts sized by the answer predicted from the
-   quick data; the terrain is upgraded to national LiDAR where `lidar.ts` has a source, and
-   sea depths come from `bathymetry.ts` when the area has sea.
+   quick data, and sea depths come from `bathymetry.ts` when the area has sea.
 3. **OsmData** (`osm.ts`): the common format both sources produce: buildings, roads,
    railways, water areas and lines, green areas, trees, structures, surfaces, paved areas.
    Coordinates are `[lng, lat]`; widths and heights in meters.
@@ -61,9 +59,8 @@ search / map ──► Selection ──► fetchAreaData ──┬─► quick: 
 | `src/vector-tiles.ts` | Quick data from OpenMapTiles vector tiles |
 | `src/overpass.ts` | Overpass client: mirrors, retries, per-server timeout, browser cache |
 | `src/osm.ts` | Overpass query, sorting into categories, multipolygons, heights |
-| `src/coast.ts` | Sea polygons rebuilt from coastline lines |
+| `src/coast.ts` | Sea polygons rebuilt from coastline lines, or the tiles' ocean where they can't tell |
 | `src/terrain.ts` | Terrarium tiles → elevation grid, sampling |
-| `src/lidar.ts` | National LiDAR terrain (and surface, for canopy heights): Norway, the Netherlands, England, the US |
 | `src/bathymetry.ts` | Sea depths: EMODnet in European seas, NOAA ETOPO 2022 and coastal DEMs elsewhere |
 | `src/official-sources.ts` | Where official 3D buildings exist (swissBUILDINGS3D), free of three.js |
 | `src/official3d.ts` | Reads official 3D buildings from 3D Tiles (b3dm, Draco) and matches them to OSM buildings |
@@ -81,7 +78,7 @@ search / map ──► Selection ──► fetchAreaData ──┬─► quick: 
 | `src/viewer/terrain-mesh.ts` | Terrain tile: grid cut exactly to the outline, walls, base |
 | `src/viewer/ground.ts` | Flat layers painted into the terrain texture |
 | `src/viewer/objects.ts` | Buildings, structures, bridges, trees |
-| `src/forest.ts` | Forests as one canopy of treetops, at LiDAR-measured heights where known |
+| `src/forest.ts` | Forests as one canopy of treetops |
 | `src/boats.ts` | Boats moored along piers |
 | `src/viewer/models.ts` | 3D models fitted in place of buildings and bridges |
 | `src/viewer/relief.ts` | Relief shading: steep ground as rock, hollows darker |

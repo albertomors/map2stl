@@ -9,9 +9,7 @@ export function sourceCredits(data: AreaData, models: ModelAsset[], visible: Lay
   // Models found online came with a license asking for credit.
   // Once each: official models come one per building, all with the same credit.
   const credits = [...new Set(models.flatMap((m) => (m.source.kind !== 'upload' ? [`3D model "${m.source.title}" by ${m.source.author}, ${m.source.license}, ${m.source.url}`] : [])))];
-  // So did the terrain, where it's national LiDAR, and the sea floor (shown only with
-  // water off).
-  if (data.terrain.source?.credit) credits.push(data.terrain.source.credit);
+  // So did the sea floor (shown only with water off).
   if (data.bathymetry && !visible.includes('water') && data.osm.waterAreas.some(isSea)) credits.push(data.bathymetry.source.credit);
   return credits;
 }

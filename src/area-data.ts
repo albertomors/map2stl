@@ -9,7 +9,6 @@ import { buildQuery, isSea, parse, type Area, type OsmData } from './osm';
 import { overpass, TooMuchData, type OverpassElement, type OverpassResponse } from './overpass';
 import { describe, type Selection } from './selection';
 import { withoutBuildingBumps } from './flatten';
-import { fetchLidarTerrain } from './lidar';
 import { fetchTerrain, lngLatPixel, pixelLngLat, type Terrain } from './terrain';
 import { fetchTileData } from './vector-tiles';
 
@@ -192,12 +191,16 @@ export interface ChunkResult {
 // comes back, which follows how much is in the area, not its size (logged October 2026: 5.8
 // km² with no buildings, 0.05 MB; 5.9 km² with 26,800, 47 MB). So chunks are planned by the
 // answer's predicted size: sparse ground (islands, mountains, farmland) goes in a few big
-// requests instead of many small ones. Fitted on the same fetches: per feature in the quick
-// tile data, a building about 1 KB, a road about 3 KB (its nodes and tags), anything else
-// about 0.5 KB.
-const KB_PER_BUILDING = 1;
-const KB_PER_ROAD = 3;
-const KB_PER_OTHER = 0.5;
+// requests instead of many small ones. Refitted on 47 requests logged with their prediction
+// (debug/parts.jsonl, October 2026): per feature in the quick tile data, a building about
+// 0.8 KB, a road about 2.5 KB (its nodes and tags), anything else about 0.4 KB; and 14 KB per
+// km² whatever is in it (coastlines, big landuse and water polygons the tiles count as one
+// feature), without which sparse ground came out 2–4 times low. Median error 15% (21% with
+// the first fit); Venice's lagoon still comes out 10 times low.
+const KB_PER_BUILDING = 0.8;
+const KB_PER_ROAD = 2.5;
+const KB_PER_OTHER = 0.4;
+const KB_PER_KM2 = 14;
 // A chunk holds at most this much: well under the server's limits (120 s, 512 MB), where the
 // biggest request logged (47 MB) took 41 s of queue and 62 s of download.
 const CHUNK_MAX_KB = 30_000;
@@ -223,9 +226,6 @@ export async function fetchAreaData(
   const report = (change: Partial<FetchProgress>) => onProgress(Object.assign(progress, change));
 
   const terrain = fetchTerrain(bbox, signal, () => {});
-  // LiDAR where a country publishes it (lidar.ts), in the background: the quick version uses
-  // the tiles, the detailed one the sharper heights.
-  const sharper = terrain.then(async (tiles) => (await fetchLidarTerrain(tiles, signal)) ?? tiles);
   // The quick data also tells how dense each part of the area is, to plan the chunks.
   const quick = await fetchTileData(bbox, ring, signal).catch((err) => {
     if (signal.aborted) throw err;
@@ -272,14 +272,13 @@ export async function fetchAreaData(
     }
   }
   report({ osmDone: true, osmWaitS: undefined });
-  const osm = parse(elements, ring);
+  const osm = parse(elements, ring, quick?.waterAreas.filter((a) => a.kind === 'sea'));
   fullArrived = true;
   // Sea depths, only for areas with sea; without them the sea prints at its usual depth.
   const sea = osm.waterAreas.some(isSea);
   const bathymetry = sea ? await fetchBathymetry(bbox, signal).catch(() => null) : null;
-  // LiDAR terrain where there is some (else the tiles, with big buildings' bumps taken out),
-  // then the sea floor in it.
-  const ground = withoutBuildingBumps(await sharper, osm.buildings);
+  // The tiles with big buildings' bumps taken out, then the sea floor in it.
+  const ground = withoutBuildingBumps(await terrain, osm.buildings);
   return { selection, osm, terrain: bathymetry ? withSeaFloor(ground, bathymetry, osm.waterAreas.filter(isSea), bbox) : ground, detail: 'full', bathymetry };
 }
 
@@ -328,7 +327,7 @@ function planChunks(
     const wide = distance([w, (s + n) / 2], [e, (s + n) / 2]);
     const tall = distance([(w + e) / 2, s], [(w + e) / 2, n]);
     const km2 = (wide * tall) / 1e6;
-    const kb = inside ? inside.reduce((sum, f) => sum + f.kb, 0) : null;
+    const kb = inside ? inside.reduce((sum, f) => sum + f.kb, KB_PER_KM2 * km2) : null;
     if (!force && km2 <= maxKm2 && (kb === null || kb <= CHUNK_MAX_KB)) {
       const buildings = inside ? inside.filter((f) => f.building).length : null;
       if (touches(box, ring)) out.push({ bbox: box, km2, buildings, kb });

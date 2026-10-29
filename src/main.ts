@@ -596,15 +596,11 @@ function showData(data: AreaData) {
     deepest < 0 && seaSource
       ? ` Sea down to ${Math.round(-deepest)} m (${seaSource.name}, a depth about every ${seaSource.resolutionM} m: harbour basins and channels narrower than that come out flat): switch Water off to see the sea floor and print it.`
       : '';
-  // Which heights: national LiDAR where there is some, else the worldwide tiles.
-  const from = t.source ? `${t.source.name}, ≈${t.source.resolutionM.toFixed(1)} m` : `AWS Terrain Tiles, ≈${spacing.toFixed(0)} m`;
-  // Forests as tall as they really are, where the LiDAR has the surface too.
-  const trees = t.canopy ? ' Forest heights measured by the same LiDAR.' : '';
   const [low, high] = [Math.round(t.min), Math.round(t.max)];
   const range = low < 0 ? `from ${-low} m below to ${high} m above sea level` : `${low}–${high} m above sea level`;
-  $('data-terrain').textContent = `Terrain ${range}, ${t.width}×${t.height} grid (${from}).${trees}${sea}`;
+  $('data-terrain').textContent = `Terrain ${range}, ${t.width}×${t.height} grid (AWS Terrain Tiles, ≈${spacing.toFixed(0)} m).${sea}`;
   // The credit line names the sources actually used, not the defaults.
-  $('data-credit').textContent = ['© OpenStreetMap contributors', `terrain: ${t.source?.name ?? 'AWS Terrain Tiles'}`, deepest < 0 ? `sea floor: ${data.bathymetry!.source.name}` : '']
+  $('data-credit').textContent = ['© OpenStreetMap contributors', 'terrain: AWS Terrain Tiles', deepest < 0 ? `sea floor: ${data.bathymetry!.source.name}` : '']
     .filter(Boolean)
     .join(' · ');
   // Folded: the two biggest counts, and how many more layers there are.
@@ -800,7 +796,7 @@ function bugContext(): Record<string, unknown> {
       detail: areaData.detail,
       status: $('data-status').textContent,
       layers: summarize(areaData).map(({ layer, count, detail }) => ({ layer, count, detail })),
-      terrain: { source: t!.source?.name ?? 'AWS Terrain Tiles', min: t!.min, max: t!.max, grid: [t!.width, t!.height], zoom: t!.zoom },
+      terrain: { source: 'AWS Terrain Tiles', min: t!.min, max: t!.max, grid: [t!.width, t!.height], zoom: t!.zoom },
       seaFloor: areaData.bathymetry?.source ?? null,
     },
     layers: [...visibleLayers],
@@ -1150,7 +1146,6 @@ async function useOfficialModels(keys: string[]) {
   setBar('official-progress', 'Starting…', null, '');
   try {
     const { fetchOfficialModels } = await import('./official3d');
-    const { describe } = await import('./selection');
     const models = await fetchOfficialModels(source, footprints, describe(data.selection).ring, load.signal, (done, total) => {
       say(`Reading ${source.name}: ${done} of ${total} tiles…`);
       setBar('official-progress', `${done} of ${total} tiles`, total ? done / total : null, '');

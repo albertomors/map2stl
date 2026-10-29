@@ -78,8 +78,6 @@ export function setupBugReport(context: () => Record<string, unknown>, screensho
   let shot: Promise<Blob | null> = Promise.resolve(null);
 
   document.getElementById('bug-open')!.addEventListener('click', () => {
-    // It's in the help menu: close the menu behind the window.
-    document.getElementById('help-menu')?.removeAttribute('open');
     shot = screenshot().catch(() => null);
     status.textContent = '';
     send.disabled = false;

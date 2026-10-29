@@ -6,17 +6,6 @@ Open work only: built items move to the README and CHANGELOG.
 
 What the app needs before strangers use it, all without a server of our own.
 
-### Fit the request-size prediction on real use
-
-Requests are now planned by the answer's predicted size (about 1 KB per building, 3 KB per
-road, 0.5 KB per other feature in the quick tile data), up to 30 MB and 100 km² each, and
-a request the server gives up on is split in two and asked again. The weights are a first
-fit on whole fetches, and run low on sparse ground (the Isle of Coll: 261 KB predicted,
-745 KB received, likely the coastline and sea). The dev server now logs every request with
-its prediction (debug/parts.jsonl): once there are enough, refit the weights (maybe a fixed
-cost per request, the sea and big polygons counted by size) and the 30 MB and 100 km²
-limits.
-
 ### Downloads for the README's gallery
 
 The README shows six places (Yosemite, Geiranger, Portofino, Zurich, Manhattan, the Golden
@@ -34,23 +23,14 @@ and didn't. A last agent ranks the findings across runs (what several agents tri
 first), and the fixes become this milestone's general improvements: wording, layout,
 defaults, error messages, missing feedback. Rerun after the fixes, and before each release.
 
-## More countries
+## More official 3D buildings
 
 Ongoing, added to as sources turn up: swapping the OSM approximation for something
-better. Google's photorealistic tiles can't be used (their terms forbid extracting them),
-and no open worldwide photogrammetry exists, so:
-
-- **Better terrain in more countries:** national LiDAR terrain models (about 1 m), country by
-  country where the service lets a browser load it, as for the four countries in the README.
-  Next: Switzerland (swissALTI3D: only per-kilometer files in the Swiss grid, no service
-  cutting out an area), Denmark (needs an access token), and others as found. Not
-  Copernicus GLO-30: it's a surface model, with buildings and tree canopy in its heights, so
-  the ground would bump up under every city block. FABDEM (GLO-30 cleaned of them) is non-commercial only, and
-  served as archives a browser can't read.
-- **More official 3D buildings,** as swissBUILDINGS3D in Switzerland: next the
-  Netherlands' 3DBAG (its servers didn't answer when this was built), Japan's PLATEAU,
-  German states, New York, Helsinki, Vienna, Zurich's city model; where a source isn't 3D
-  Tiles, a CityJSON reader. Per source: an endpoint a browser can load, and the license.
+better, as swissBUILDINGS3D in Switzerland. Google's photorealistic tiles can't be used
+(their terms forbid extracting them), and no open worldwide photogrammetry exists. Next:
+the Netherlands' 3DBAG (its servers didn't answer when this was built), Japan's PLATEAU,
+German states, New York, Helsinki, Vienna, Zurich's city model; where a source isn't 3D
+Tiles, a CityJSON reader. Per source: an endpoint a browser can load, and the license.
 
 ## Faster, more reliable data
 
@@ -72,7 +52,3 @@ What going public needs.
   receives the report's zip and forwards it to the maintainer, instead of the user
   attaching it to an email themselves.
 - Deploy as a public site.
-
-## Later
-
-- Sea when the selection is entirely water, or the coast is broken near it (today: land).

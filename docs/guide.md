@@ -96,7 +96,7 @@ again is instant.
 | **Green areas** | Parks, gardens, grass, meadows, forests, scrub, cemeteries… |
 | **Sand, rock, glacier** | Beaches, sand, bare rock, scree, shingle, glaciers. |
 | **Trees** | Single mapped trees. |
-| **Terrain** | An elevation grid over the area: national LiDAR (about 1–2.5 m) in Norway, the Netherlands, England and the US, worldwide tiles (about 10–30 m underneath) elsewhere. The panel names the source and spacing. |
+| **Terrain** | An elevation grid over the area from worldwide tiles (about 10–30 m underneath). The panel names the source and spacing. |
 | **Sea floor** | Depths for areas with sea: EMODnet Bathymetry in European seas, NOAA ETOPO 2022 and its coastal models elsewhere. Shown when the Water layer is off. |
 
 How heights are decided:
@@ -137,8 +137,7 @@ What you see:
   and with OSM colors when tagged.
 - **Bridges** are decks sloping from one bank's height to the other's; **piers, walls and
   towers** are solid; single **trees** are cones; **forests** are one canopy of treetops
-  over the whole wood, at the height the LiDAR measured where there is a surface model
-  (Norway, the Netherlands, England), 15 m elsewhere; a few **boats** lie moored at piers.
+  over the whole wood, 15 m tall; a few **boats** lie moored at piers.
 - **Official 3D buildings** (Switzerland, swissBUILDINGS3D): select a building and use its
   official model, or use them for every building in the area at once.
 - **Everything is cut at the tile edge.** Buildings crossing it get a flat face and a flat
@@ -214,23 +213,22 @@ share what you made.
 
 ## Reporting a bug
 
-The **?** at the top right of the panel opens a small menu: the **User guide** (this
-page), or **Found a bug? Report it**, which opens a window. Describe what you did, what
-you expected and what happened, then **Send**: a zip is saved with your message, a
-screenshot, and what's needed to reproduce it (your selection, the view and its settings,
-your edits, your browser and graphics card, recent errors; nothing else), and your email
-app (or, in builds without a report address, a new GitHub issue) opens with the message.
-Attach the zip and send.
+The **?** at the top right of the panel opens **Found a bug? Report it**. Describe what
+you did, what you expected and what happened, then **Send**: a zip is saved with your
+message, a screenshot, and what's needed to reproduce it (your selection, the view and its
+settings, your edits, your browser and graphics card, recent errors; nothing else), and
+your email app (or, in builds without a report address, a new GitHub issue) opens with the
+message. Attach the zip and send.
 
 ## Known limits
 
 - **Gabled and hipped roofs are exact only on rectangular footprints.** On L-shapes and
   other irregular outlines they're approximations.
 - **Courtyard buildings** always get flat roofs.
-- **A selection that's entirely sea** comes out as land: the sea is built from coastlines,
-  and there are none inside it.
-- **Terrain detail** is about 10–30 m outside the LiDAR countries (Norway, the Netherlands,
-  England, the US), even though the grid is finer.
+- **Terrain detail** is about 10–30 m, even though the grid is finer.
+- **The sea** is built from OSM's coastlines; out at sea, or where the coastline has a gap,
+  from the base map's ocean instead, which needs the quick data (selections up to a couple of
+  hundred km²). Larger selections with no coastline in them come out as land.
 - **Busy servers:** the public Overpass servers are often overloaded. The quick version
   always works; for the detailed one, retry later.
 - **Large areas** (above ~10 km²) are slow to download and heavy in 3D.

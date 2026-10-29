@@ -92,6 +92,8 @@ const LIFT_SHARE = 0.12;
 const LIFT_EASE = 0.18;
 const TINT = new Color('#ffd5b8');
 const TINT_GLOW = new Color('#ff6b2c').multiplyScalar(0.12);
+// How much of the way to the ground under it the orbit's center goes each frame.
+const FOLLOW_EASE = 0.2;
 // A press and release closer than this is a click (select), not an orbit.
 // How far off a click may land and still pick a thin object.
 const PICK_SLACK_PX = 5;
@@ -248,12 +250,29 @@ export class Viewer {
       this.camera.position.x += dx;
       this.camera.position.z += dz;
     }
+    // The orbit's center rides on the ground under it, the camera with it: dragged into a
+    // fjord, zooming heads for the water there, not for a point in mid-air at the height it
+    // started at. Eased, so crossing a cliff doesn't jump the view.
+    const ground = this.groundUnder(t.x, t.z);
+    if (ground !== null) {
+      const dy = (ground - t.y) * FOLLOW_EASE;
+      if (Math.abs(dy) > 0.01) {
+        t.y += dy;
+        this.camera.position.y += dy;
+        this.dirty = true;
+      }
+    }
     const { x, y, z } = this.camera.position;
-    const [lng, lat] = this.placement.frame.toLngLat([x, z]);
-    const [w, s, e, n] = this.data.terrain.bbox;
-    if (lng < w || lng > e || lat < s || lat > n) return;
-    const floor = this.groundHeight(elevationAt(this.data.terrain, lng, lat)) * this.terrain.scale.y + this.clearance;
-    if (y < floor) this.camera.position.y = floor;
+    const below = this.groundUnder(x, z);
+    if (below !== null && y < below + this.clearance) this.camera.position.y = below + this.clearance;
+  }
+
+  // The scene height of the terrain at a scene point, or null outside its grid.
+  private groundUnder(x: number, z: number): number | null {
+    const [lng, lat] = this.placement!.frame.toLngLat([x, z]);
+    const [w, s, e, n] = this.data!.terrain.bbox;
+    if (lng < w || lng > e || lat < s || lat > n) return null;
+    return this.groundHeight(elevationAt(this.data!.terrain, lng, lat)) * this.terrain.scale.y;
   }
 
   // Selecting needs the detailed data: tile buildings are split at tile seams and come
@@ -647,15 +666,16 @@ export class Viewer {
     if (frameCamera) {
       this.camera.near = Math.max(0.5, radius / 2000);
       this.camera.far = radius * 30;
-      // Aimed at the middle of the terrain's heights, and further back the taller it stands:
-      // in the mountains, a camera framed for a flat tile starts on a cliff face, the peaks
-      // off the screen.
+      // Aimed at the ground in the middle (the orbit's center rides on the ground from there:
+      // keepAboveGround), and further back the taller the terrain stands above it: in the
+      // mountains, a camera framed for a flat tile starts on a cliff face, the peaks off the
+      // screen.
       tile.top.computeBoundingBox();
       const { min, max } = tile.top.boundingBox!;
-      const mid = Math.max(0, (min.y + max.y) / 2);
-      const back = 1 + (max.y - min.y) / (2 * radius);
-      this.camera.position.set(0, mid + radius * 1.1 * back, radius * 1.6 * back);
-      this.controls.target.set(0, mid, 0);
+      const ground = this.groundUnder(0, 0) ?? 0;
+      const back = 1 + (max.y - Math.min(ground, min.y + (max.y - min.y) / 2)) / (2 * radius);
+      this.camera.position.set(0, ground + radius * 1.1 * back, radius * 1.6 * back);
+      this.controls.target.set(0, ground, 0);
       this.controls.maxDistance = radius * 8;
       // Not so close that a building fills the screen and the view seems empty.
       this.controls.minDistance = radius / 100;

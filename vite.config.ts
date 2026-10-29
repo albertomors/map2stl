@@ -34,4 +34,15 @@ export default defineConfig({
   // The app's version, for bug reports.
   define: { __APP_VERSION__: JSON.stringify(version) },
   plugins: [devLog()],
+  build: {
+    rolldownOptions: {
+      output: {
+        // MapLibre (about 1 MB) in a chunk of its own: it changes less often than the app,
+        // so browsers keep it cached across releases.
+        codeSplitting: { groups: [{ name: 'maplibre', test: /node_modules[\\/]maplibre-gl/ }] },
+      },
+    },
+    // MapLibre (1.06 MB minified, 285 kB gzipped) comes as it is: past the 500 kB default.
+    chunkSizeWarningLimit: 1100,
+  },
 });

@@ -2,7 +2,11 @@
 // with the land on the left and the water on the right. Inside a box that is enough to
 // rebuild the water: cut the coast to the box, then walk each piece and the box edge
 // between pieces, always keeping the water on the right.
+//
+// Where the coast can't say (none in the box, or broken), the base map's ocean is used
+// instead (seaFromTiles): it's built from coastlines repaired worldwide.
 
+import polygonClipping, { type MultiPolygon as PcMultiPolygon, type Polygon as PcPolygon } from 'polygon-clipping';
 import type { LngLat } from './geo';
 import { pointInRing } from './geo';
 import type { Polygon } from './osm';
@@ -11,7 +15,10 @@ type Box = [number, number, number, number];
 
 const EPS = 1e-9;
 
-export function seaPolygons(coastWays: LngLat[][], box: Box): Polygon[] {
+// The sea in the box, or null when the coast can't tell: none crosses it (all land or all
+// sea), or a piece stops inside it (a gap in the coastline), which leaves no side for the
+// water.
+export function seaPolygons(coastWays: LngLat[][], box: Box): Polygon[] | null {
   const pieces: LngLat[][] = [];
   // Coastline loops wholly inside the box: islands, drawn counterclockwise (land inside).
   const islands: LngLat[][] = [];
@@ -23,8 +30,8 @@ export function seaPolygons(coastWays: LngLat[][], box: Box): Polygon[] {
       islands.push(parts[0]);
       continue;
     }
-    // A broken coast that stops inside the box can't say where the water is: skip it.
-    pieces.push(...parts.filter((p) => onEdge(p[0], box) && onEdge(p[p.length - 1], box)));
+    if (parts.some((p) => !onEdge(p[0], box) || !onEdge(p[p.length - 1], box))) return null;
+    pieces.push(...parts);
   }
 
   let seas: LngLat[][] = [];
@@ -34,12 +41,22 @@ export function seaPolygons(coastWays: LngLat[][], box: Box): Polygon[] {
     // Only islands: the coast never crosses the box, so everything around them is sea.
     const [w, s, e, n] = box;
     seas = [[[w, n], [e, n], [e, s], [w, s], [w, n]]];
+  } else {
+    return null;
   }
-  // No coast at all: the box is all land (or all sea, which a city selection never is).
 
   const result = seas.map((outer) => ({ outer, holes: [] as LngLat[][] }));
   for (const island of islands) result.find((p) => pointInRing(island[0], p.outer))?.holes.push(island);
   return result;
+}
+
+// The base map's ocean (one polygon per tile) joined across the tiles' seams and cut to the box.
+export function seaFromTiles(tileSea: Polygon[], [w, s, e, n]: Box): Polygon[] {
+  if (!tileSea.length) return [];
+  const boxPoly: PcPolygon = [[[w, s], [e, s], [e, n], [w, n], [w, s]]];
+  const joined = polygonClipping.union(...(tileSea.map((p) => [p.outer, ...p.holes]) as [PcPolygon, ...PcPolygon[]]));
+  const cut: PcMultiPolygon = polygonClipping.intersection(joined, boxPoly);
+  return cut.map(([outer, ...holes]) => ({ outer: outer as LngLat[], holes: holes as LngLat[][] }));
 }
 
 // Join ways end to start (direction matters: it says which side is water).

@@ -1,8 +1,7 @@
 // The worldwide terrain tiles are partly built from radar surface models (SRTM), which take
 // the top of a big building for the ground: the Colosseum and St. Peter's stand in smooth
 // hills of their own shape, the arena filled up, the nave buried to the drum. Under each big
-// building, the ground goes down to the level measured just around it. National LiDAR is
-// bare ground already and stays as it is.
+// building, the ground goes down to the level measured just around it.
 
 import { distance, pointInRing, ringArea, type LngLat } from './geo';
 import type { Building } from './osm';
@@ -22,7 +21,6 @@ const GROUND_PERCENTILE = 0.2;
 const MIN_BUMP_M = 4;
 
 export function withoutBuildingBumps(t: Terrain, buildings: Building[]): Terrain {
-  if (t.source) return t;
   // A building in parts is one bump: its parts together.
   const groups = new Map<string, LngLat[][]>();
   for (const b of buildings) {

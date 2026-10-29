@@ -9,7 +9,7 @@ import { clipObjects } from '../clip';
 import { applyEdits, editedTrees, type Edits } from '../edits';
 import { buildCanopy, canopySurface, type Canopy } from '../forest';
 import type { OsmData } from '../osm';
-import { canopySampler, elevationAt } from '../terrain';
+import { elevationAt } from '../terrain';
 import { buildModels } from './models';
 import { buildBoats, buildBridges, buildBuildings, buildStructures, buildTrees, COLORS, TREE_HEIGHT_M, type PickableMesh } from './objects';
 import { prepareScene } from './scene';
@@ -76,7 +76,7 @@ export function buildSceneObjects(data: AreaData, clipped: OsmData, job: Objects
       const [lng, lat] = at.frame.toLngLat([x, z]);
       return groundHeight(elevationAt(t, lng, lat));
     },
-    { heightScale: at.heightScale, bare: (id) => !!edits.get(id)?.noTrees, borderTrees: true, treeHeight: canopySampler(t, at.frame) ?? undefined },
+    { heightScale: at.heightScale, bare: (id) => !!edits.get(id)?.noTrees, borderTrees: true },
   );
   const trees = [
     ...editedTrees(osm.trees, edits, TREE_HEIGHT_M),

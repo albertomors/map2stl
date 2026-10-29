@@ -44,8 +44,6 @@ const BORDER_OUTER_DENSITY = 0.1;
 const BORDER_HEIGHT_M = [11, 17];
 const BORDER_SIZE = [0.7, 1.1];
 const CANOPY_FROM = 0.5;
-// With real heights (LiDAR): lower than this all around a point, it's a clearing, not forest.
-const OPEN_M = 2;
 // Roads and water cut the canopy this much wider than they are: a forest road is a clearing.
 const CLEARANCE_M = 2;
 // Outside the forest the surface tucks just under the ground, so its edge never floats.
@@ -86,14 +84,11 @@ export function buildCanopy(
     pointsPerCrown = POINTS_PER_CROWN,
     bare = () => false,
     borderTrees = false,
-    treeHeight,
   }: {
     heightScale: number;
     pointsPerCrown?: number;
     bare?: (id: string) => boolean;
     borderTrees?: boolean;
-    // The trees' real height at a scene point (meters), where it's known (terrain.ts canopyAt).
-    treeHeight?: (x: number, z: number) => number | undefined;
   },
 ): Canopy | null {
   const woods = forestAreas(osm, bare);
@@ -144,26 +139,10 @@ export function buildCanopy(
   }
   const pixels = ctx.getImageData(0, 0, cols, rows).data;
 
-  // The tallest real height around a point (half a crown spacing each way), or undefined.
-  const tallest = treeHeight
-    ? (x: number, z: number) => {
-        let h: number | undefined;
-        for (const [dx, dz] of [[0, 0], [-0.5, 0], [0.5, 0], [0, -0.5], [0, 0.5]]) {
-          const v = treeHeight(x + dx * spacing, z + dz * spacing);
-          if (v !== undefined) h = Math.max(h ?? 0, v);
-        }
-        return h;
-      }
-    : undefined;
   // Each point's distance into the forest, and into the selection (scene meters; 0
-  // outside). Clearings the real heights show (nothing as tall as a tree around) are outside
-  // the forest: their edges slope and get border trees like the woods' outlines.
+  // outside).
   const n = cols * rows;
-  const clearing = (k: number) => {
-    const h = tallest?.(x0 + (k % cols) * cell, z0 + Math.floor(k / cols) * cell);
-    return h !== undefined && h < OPEN_M;
-  };
-  const dist = distances(cols, rows, cell, (k) => pixels[k * 4] > 127 && !clearing(k));
+  const dist = distances(cols, rows, cell, (k) => pixels[k * 4] > 127);
   const inside = distances(cols, rows, cell, (k) => pixels[k * 4 + 1] > 127);
 
   const scale = TREE_M * heightScale;
@@ -171,12 +150,7 @@ export function buildCanopy(
   const ragged = (x: number, z: number) => RAGGED_CROWNS * spacing * valueNoise(x / (3 * spacing), z / (3 * spacing), 7);
   const band = BORDER_M * (spacing / CROWN_SPACING_M);
   const [gx0, gy0] = [Math.floor(x0 / spacing) - 1, Math.floor(z0 / spacing) - 1];
-  // Crown heights as a fraction of TREE_M: the real one where known.
-  const real = tallest && ((cx: number, cz: number) => {
-    const h = tallest(cx * spacing, cz * spacing);
-    return h === undefined ? undefined : h / TREE_M;
-  });
-  const crowns = crownField(x0 / spacing, z0 / spacing, 1 / pointsPerCrown, gx0, gy0, Math.ceil((cols * cell) / spacing) + 3, Math.ceil((rows * cell) / spacing) + 3, real);
+  const crowns = crownField(x0 / spacing, z0 / spacing, 1 / pointsPerCrown, gx0, gy0, Math.ceil((cols * cell) / spacing) + 3, Math.ceil((rows * cell) / spacing) + 3);
   const above = new Float32Array(n);
   const ground = new Float32Array(n);
   for (let j = 0; j < rows; j++) {
@@ -210,13 +184,11 @@ export function buildCanopy(
         if (k < 0 || k >= n || !dist[k] || inside[k] < 1.5 * cell) continue;
         const d = (dist[k] + ragged(x, z)) / band;
         if (d <= 0 || d >= 1 || r[2] > BORDER_OUTER_DENSITY + (BORDER_INNER_DENSITY - BORDER_OUTER_DENSITY) * d) continue;
-        const measured = tallest?.(x, z);
-        if (measured !== undefined && measured < OPEN_M) continue;
         border.push({
           x,
           z,
           key: `forest/${gx},${gz}`,
-          height: measured ?? BORDER_HEIGHT_M[0] + (BORDER_HEIGHT_M[1] - BORDER_HEIGHT_M[0]) * r[3],
+          height: BORDER_HEIGHT_M[0] + (BORDER_HEIGHT_M[1] - BORDER_HEIGHT_M[0]) * r[3],
           size: BORDER_SIZE[0] + (BORDER_SIZE[1] - BORDER_SIZE[0]) * r[4],
         });
       }
@@ -325,7 +297,6 @@ function crownField(
   gy0: number,
   nx: number,
   ny: number,
-  real?: (x: number, y: number) => number | undefined,
 ): (x: number, y: number) => number {
   const n = nx * ny;
   const [cxs, cys, radii, heights] = [new Float64Array(n), new Float64Array(n), new Float64Array(n), new Float64Array(n)];
@@ -336,8 +307,7 @@ function crownField(
       cxs[k] = snap(cx + 0.15 + 0.7 * hash(cx, cy, 1), ox);
       cys[k] = snap(cy + 0.15 + 0.7 * hash(cx, cy, 2), oy);
       radii[k] = 0.45 + 0.2 * hash(cx, cy, 3);
-      const measured = real?.(cxs[k], cys[k]);
-      heights[k] = measured === undefined ? 0.75 + 0.4 * hash(cx, cy, 4) : Math.max(BETWEEN, measured);
+      heights[k] = 0.75 + 0.4 * hash(cx, cy, 4);
     }
   }
   return (x, y) => {

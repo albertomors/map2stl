@@ -2,7 +2,7 @@
 // from. Buildings and structures get a height in meters (from tags, or estimated); lines get
 // a width.
 
-import { seaPolygons } from './coast';
+import { seaFromTiles, seaPolygons } from './coast';
 import { bbox, centroid, intersectsRing, pointInRing, ringArea, type LngLat } from './geo';
 import type { OverpassElement } from './overpass';
 
@@ -145,7 +145,8 @@ export function buildQuery([w, s, e, n]: [number, number, number, number]): stri
 out geom qt;`;
 }
 
-export function parse(elements: OverpassElement[], ring: LngLat[]): OsmData {
+// `tileSea`: the base map's ocean over the selection, for where the coastlines can't tell.
+export function parse(elements: OverpassElement[], ring: LngLat[], tileSea: Polygon[] = []): OsmData {
   const data: OsmData = {
     buildings: [], roads: [], railways: [], waterAreas: [], waterways: [], green: [], trees: [],
     structureLines: [], structureAreas: [], towers: [], surfaces: [], pavedAreas: [], pavedLines: [],
@@ -279,7 +280,8 @@ export function parse(elements: OverpassElement[], ring: LngLat[]): OsmData {
   fillUnderFloatingParts(parts);
   data.buildings = [...outlines.filter((o) => !covered.has(o)), ...parts];
 
-  for (const sea of seaPolygons(coast, bbox(ring))) {
+  const box = bbox(ring);
+  for (const sea of seaPolygons(coast, box) ?? seaFromTiles(tileSea, box)) {
     if (intersectsRing(sea.outer, ring, true)) data.waterAreas.push({ ...sea, id: 'sea', kind: 'sea' });
   }
   return data;

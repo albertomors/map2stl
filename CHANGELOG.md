@@ -32,7 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   about 30 MB and 100 km² (10 km² before, whatever was in it). Each request costs about
   44 s of server queue, so sparse ground goes much faster: a 42 km² rectangle on the Isle
   of Coll is one request instead of eight. A part the server gives up on ("too much data")
-  is split in two and asked again, instead of the fetch failing.
+  is split in two and asked again, instead of the fetch failing. The prediction is fitted
+  on 47 logged requests: about 0.8 KB per building, 2.5 KB per road, 0.4 KB per other
+  feature, and 14 KB per km² (coastlines and big polygons, which sparse ground came out 2–4
+  times low without); median error 15%.
 - Once the detailed data is in, "Open 3D view" is the main button, right under the status
   line, and fetching again is a secondary "Fetch again"; on the map the layer list folds
   into a line of counts (it opens in the 3D view).
@@ -51,8 +54,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   estimate, otherwise the time so far; a busy server is "the map data server is busy",
   its name in brackets. Once the detailed data is in, the caption says the terrain and the
   sea floor are being finished.
-- The data panel's credit line names the sources actually used (national LiDAR, the sea
-  floor's source), terrain below sea level reads "from 370 m below to 705 m above sea
+- The data panel's credit line names the sources actually used (the sea floor's
+  source), terrain below sea level reads "from 370 m below to 705 m above sea
   level", and where there's sea, it says to switch Water off to see the sea floor.
 - STL's description no longer promises a single solid: "everything that touches is joined
   into one watertight solid". The GLB/glTF note says the height multipliers are in the
@@ -63,7 +66,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   now at most 0.4 s.
 - Files are named after the place: the landmark searched for, if it's in the area, and the
   town ("map2stl-colosseum-roma.stl"), not coordinates.
-- The "?" is a help menu: the user guide, or a bug report.
 - The large-area warning says how long the download takes and how wide the narrowest
   printable detail is at the print's size.
 - Where a selected building overlaps others (the London Eye and its supports), "Delete all"
@@ -89,12 +91,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The overpass.private.coffee mirror is no longer used: it answered 1 request in 38, and
   let the rest run into the 100 s timeout before the next server was tried.
 
+### Removed
+
+- National LiDAR terrain (Norway, the Netherlands, England, the US) and the forest heights
+  measured with it: where its blocks were flown at different times, or left gaps (lakes
+  give no echo), the ground came out in steps and walls the worldwide tiles don't have.
+  The terrain is the worldwide tiles everywhere, forests 15 m tall.
+
 ### Fixed
 
+- A selection out at sea, or where the coastline has a gap near it, is sea, not land:
+  where the coastlines can't say which side the water is on, the sea is the base map's
+  ocean (from coastlines repaired worldwide).
 - Big landmarks no longer stand in hills of their own shape: the worldwide terrain tiles
   take the top of a large building for the ground (the Colosseum's arena filled up, St.
   Peter's buried to the drum). Under each big building the ground now goes down to the
-  level around it (national LiDAR, bare ground already, is left as it is).
+  level around it.
 - Multipolygons with their rings mistagged (the Colosseum's outer wall: two "outer" rings)
   are read as map renderers draw them: a ring inside another is a hole.
 - The sea floor eases from the coastline down to its depth over one depth cell, instead of

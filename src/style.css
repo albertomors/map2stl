@@ -65,56 +65,15 @@ header {
 
 /* Bug reports (bug-report.ts) */
 
-.help-menu {
+.bug-open {
   position: absolute;
   top: 0;
   right: 0;
-  z-index: 5;
-}
-
-.help-menu summary {
-  list-style: none;
-  display: grid;
-  place-items: center;
   width: 28px;
   height: 28px;
-  border: 1px solid var(--border);
+  padding: 0;
   border-radius: 50%;
-  background: var(--surface);
   font-weight: 600;
-  cursor: pointer;
-}
-
-.help-menu summary::-webkit-details-marker {
-  display: none;
-}
-
-.help-items {
-  position: absolute;
-  top: 34px;
-  right: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-  padding: 10px 12px;
-  white-space: nowrap;
-  font-size: 14px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: var(--shadow);
-}
-
-.help-items a,
-.help-items button.link {
-  color: var(--fg);
-  text-decoration: none;
-}
-
-.help-items a:hover,
-.help-items button.link:hover {
-  color: var(--accent);
 }
 
 .bug-dialog {

@@ -7,8 +7,8 @@ game or tabletop campaign? Pick a place, select the area, customize it, and 3D-p
 
 ![St. Peter's Square and Basilica in the 3D view: the colonnades, the dome, the Vatican gardens and the streets of Rome around them, cut to a printable tile](docs/screenshots/hero-vatican-3d.png)
 
-Buildings with their real heights and roofs, terrain and mountains from national LiDAR where
-available, forests, rivers and the sea floor, all from open data, in your browser. Export to
+Buildings with their real heights and roofs, terrain and mountains, forests, rivers and the
+sea floor, all from open data, in your browser. Export to
 STL/3MF or glTF. No API key, nothing to install: open data straight from public servers.
 
 [Quick start](#quick-start) · [Features](#features) · [How it works](#how-it-works) ·
@@ -43,12 +43,10 @@ builds a static site into `dist/`: it needs no server of its own.
 
 - **Buildings** with their height, roof shape and colors from OpenStreetMap; multi-part
   landmarks (a cathedral's nave, towers and spires) as one building.
-- **Terrain** everywhere, and **national LiDAR** (about 1 m measured, fetched at 1–2.5 m) in
-  Norway, the Netherlands, England and the US: ridges, gullies and rock faces come out sharp.
-- **Forests** as one canopy of treetops, as tall as the LiDAR measured them where there's a
-  surface model (Norway, the Netherlands, England), with clearings where nothing stands.
-- **Water and the sea floor:** rivers, lakes, the sea rebuilt from coastlines, harbors
-  and bays. Switch the Water layer off and the sea floor shows at its real depths.
+- **Terrain** everywhere, with the bumps big buildings leave in it taken out.
+- **Forests** as one canopy of treetops, with single trees along their edges.
+- **Water and the sea floor:** rivers, lakes, the sea rebuilt from coastlines (or from the
+  base map's ocean, out at sea or where the coastline has a gap), harbors and bays. Switch the Water layer off and the sea floor shows at its real depths.
 - **Official 3D buildings** in Switzerland (swisstopo's swissBUILDINGS3D): measured roofs,
   dormers and towers, for one building or the whole area.
 - Bridges sloping from bank to bank, piers, walls, towers, single trees, boats at the piers.
@@ -56,11 +54,11 @@ builds a static site into `dist/`: it needs no server of its own.
 <table>
 <tr>
 <td width="50%"><img src="docs/screenshots/gallery-yosemite.png" alt="Half Dome above Yosemite Valley, California: the sheer granite face, forests on the slopes, the Merced River and the valley's roads"></td>
-<td width="50%"><img src="docs/screenshots/gallery-geiranger.png" alt="A hexagon of Geirangerfjord, Norway, from Kartverket's LiDAR: steep mountainsides covered in forest, the fjord, the village and its hairpin road"></td>
+<td width="50%"><img src="docs/screenshots/gallery-geiranger.png" alt="A hexagon of Geirangerfjord, Norway: steep mountainsides covered in forest, the fjord, the village and its hairpin road"></td>
 </tr>
 <tr>
-<td>Half Dome and Yosemite Valley, California: USGS's 3D Elevation Program at 3.8 m.</td>
-<td>Geirangerfjord, Norway: Kartverket's LiDAR at 2.2 m, forests at their measured height.</td>
+<td>Half Dome and Yosemite Valley, California.</td>
+<td>Geirangerfjord, Norway: the fjord, the village and its hairpin road.</td>
 </tr>
 <tr>
 <td><img src="docs/screenshots/gallery-portofino.png" alt="Portofino with the Water layer off: the village, its hairpin road and the forested headland, the coast sloping down to the floor of the bay and the open sea"></td>
@@ -76,7 +74,7 @@ builds a static site into `dist/`: it needs no server of its own.
 </tr>
 <tr>
 <td>Midtown Manhattan: heights, shapes and colors from OpenStreetMap.</td>
-<td>The Golden Gate Bridge and the Marin Headlands (USGS 3DEP terrain).</td>
+<td>The Golden Gate Bridge and the Marin Headlands.</td>
 </tr>
 </table>
 
@@ -150,17 +148,11 @@ sources whose licenses ask for it.
 
 ### Terrain
 
-| Source | Coverage | Spacing | Forest heights | License |
-|---|---|---|---|---|
-| [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) (Terrarium) | Worldwide, wherever nothing better covers | about 10–30 m underneath (zoom 14 grid) | no (15 m canopy) | see the [registry page](https://registry.opendata.aws/terrain-tiles/) |
-| [Kartverket](https://www.kartverket.no), national height model (NHM) | Norway | about 1 m | yes (surface model) | CC BY 4.0 |
-| [AHN](https://www.ahn.nl), Rijkswaterstaat via PDOK | The Netherlands | 0.5 m | yes (surface model) | CC0 |
-| [Environment Agency](https://environment.data.gov.uk) LiDAR composite | England | 1 m | yes (first-return surface model) | Open Government Licence v3.0 |
-| [USGS 3D Elevation Program](https://www.usgs.gov/3d-elevation-program) | The US | 1 m LiDAR over most of it, coarser elsewhere | no (15 m canopy) | Public domain |
+| Source | Coverage | Spacing | License |
+|---|---|---|---|
+| [AWS Terrain Tiles](https://registry.opendata.aws/terrain-tiles/) (Terrarium) | Worldwide | about 10–30 m underneath (zoom 14 grid) | see the [registry page](https://registry.opendata.aws/terrain-tiles/) |
 
-LiDAR is asked for at the detail the print can use: 1 m for areas up to about 1 km across,
-2–2.5 m for a 3 km tile. Where it has gaps (the sea, across a border), the worldwide tiles
-fill in.
+Forests are 15 m tall.
 
 ### Sea floor
 
