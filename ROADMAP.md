@@ -2,21 +2,105 @@
 
 Open work only: built items move to the README and CHANGELOG.
 
-## More official 3D buildings
+## Milestone 0.9: bigger prints, better buildings
 
-Ongoing, added to as sources turn up: swapping the OSM approximation for something
-better, as swissBUILDINGS3D in Switzerland. Google's photorealistic tiles can't be used
-(their terms forbid extracting them), and no open worldwide photogrammetry exists. Next:
-the Netherlands' 3DBAG (its servers didn't answer when this was built), Japan's PLATEAU,
-German states, New York, Helsinki, Vienna, Zurich's city model; where a source isn't 3D
-Tiles, a CityJSON reader. Per source: an endpoint a browser can load, and the license.
+### More official 3D buildings
 
-## Faster, more reliable data
+Swapping the OSM approximation for measured models. Google's photorealistic tiles can't be
+used (their terms forbid extracting them), and no open worldwide photogrammetry exists.
+Per source: an endpoint a browser can load (CORS), and the license.
 
-Overpass is the most complete OSM source but the slowest part of the app (40–100 s for a
-city center, and the public servers are often busy).
+Fit the reader as it is, to add next:
 
-- Overture Maps buildings to fill gaps in OSM heights (cloud GeoParquet, no API).
+- **Luxembourg** (ACT, the whole country, LoD2.2, CC0): its tiles are found over the
+  capital.
+- **Zaragoza** (the city's LoD2, b3dm): to be tried again, its server dropped the
+  connection.
+- **Auvergne-Rhône-Alpes** (CRAIG, Licence Ouverte 2.0): about 15 urban areas (Clermont,
+  Saint-Étienne, Valence, Vichy, the Isère…), each its own tileset with no common root: a
+  source holding a list of tilesets.
+- **Slovenia** (GURS): fits, but it's the public viewer's own API, not a published
+  service, and how much of the country it covers is unclear.
+
+An I3S reader: many cities publish their official models only as Esri scene layers (I3S
+1.7+: JSON node pages, oriented boxes in lon/lat or Web Mercator, Draco meshes with a
+feature index per vertex), keyless and open to browsers. One reader unlocks about 12:
+
+- Estonia (the whole country, LoD2; EPSG:3301 coordinates, CC BY 4.0), Riga, Vilnius,
+  Zagreb (one layer per district, open licence), Prague (IPR's own layer on ArcGIS Online,
+  `Budovy_3D_WSL1`, CC BY), Vienna (SynerGIS's copy of the city's LoD2; license to be
+  confirmed, the city's own is CC BY 4.0), Munich (Esri Deutschland's, from the Bavarian
+  survey's LoD2, CC BY 4.0).
+- Washington DC (2024, CC BY 4.0), Ottawa (2026, LoD2), Hong Kong (Esri China's copy of
+  LandsD's buildings), Wellington (per suburb or ward, CC BY 4.0), Adelaide (the CBD), Perth.
+- Calgary (the whole city): its open-data terms and the scene layer's "all rights
+  reserved" disagree; to be cleared first. Licenses for Ottawa, Adelaide and Perth to be
+  checked too.
+
+A CityGML reader: some publish their models only as CityGML files per square kilometer or
+county, large and in projected coordinates, read in a worker and cut to the selection:
+
+- Berlin (LoD2 per km², EPSG:25833, dl-de/zero-2-0; its server lets a browser in),
+  North Rhine-Westphalia (LoD2 per km², EPSG:25832, plain GML a browser can read in ranges;
+  56 MB for a km² of central Cologne), Montreal (LoD2 tiles, CC BY 4.0), Brussels (UrbIS 3D,
+  also GeoJSON), Poland (LoD2 in 10 voivodeships, LoD1 nationwide, zipped per county).
+- Their servers' CORS to be checked one by one (Berlin's and NRW's answer; the others
+  untested), and zips need unpacking in the browser (fflate, already used for bug reports).
+
+Flat-roofed blocks: where there's no roof model, footprints with measured heights are still
+better than OSM's guesses; extruded like OSM buildings, as their height:
+
+- France (IGN's BD TOPO buildings on the Géoplateforme WFS, `BDTOPO_V3:batiment`: height
+  and ground altitude, CORS open, Licence Ouverte), New York (NYC Open Data's building
+  footprints, roof height in feet, CORS open), Vienna
+  (the city's WFS of building bodies, top and ground heights, CORS open, CC BY 4.0), Toronto
+  (3D massing, zipped shapefiles), Flanders (3D GRB LoD1, download only), Overture (heights
+  worldwide, one PMTiles file a browser can read in pieces; for OSM buildings that have
+  none).
+
+Later, once their owners say yes: France's LoD2 (IGN's Bâtiments 3D: its server lets only
+IGN's site in, and its terms ask for IGN's agreement; to ask on forum.geocommuns.fr),
+Vienna's and Bavaria's own servers (no CORS), Germany's basemap.de (its license allows only
+testing).
+
+- **A key for Hong Kong:** its 3D Spatial Data works without a key today, but the API
+  documents one (`?key=`), free on request by email to 3dmap@landsd.gov.hk. Ask for one,
+  and confirm in the same email that a public web page may use it and that printing the
+  buildings is fine, so the app doesn't depend on access that could close.
+
+### Print in pieces
+
+A big map doesn't fit the printer's bed: the export splits it into pieces, each printed on
+its own and put back together. One control for every shape: an n × m grid (1×3, 2×3,
+3×3…) centered on the selection and turned with it, each cell an equal share of its
+bounding box; a piece is the shape inside a cell, and cells it doesn't reach are dropped.
+A hexagon in 2×2 is four equal quarters, a circle in 3×3 has corner pieces about 60% of a
+full one. With the bed's size set (or a printer picked), the export proposes the smallest
+grid whose pieces fit, and the user can change it.
+
+Each piece's size in mm is shown, with a red mark on any that doesn't fit the bed, and a
+warning on slivers (a piece under about 15% of a cell, at a free shape's odd corner), with
+the option to merge one into its neighbor. The 3D view shows the pieces pulled apart (an
+exploded view, eased in), and the download is one 3MF with a plate per piece, or a zip of
+STLs named by row and column.
+
+Each piece is cut from the solid with planes (manifold-3d's trimByPlane: the library
+already joins the print's solids), so cut faces are flat and watertight; the few parts
+manifold-3d won't take (not closed) are cut by their triangles, without a closed face.
+
+Joints in the base, so the pieces line up: along every cut between two pieces, the base
+grows tabs on one side and the neighbor gets matching pockets, 0.1 mm wider all round (a
+setting: printers differ). Always tabs toward +x and +y, pockets toward −x and −y, so any
+grid assembles row by row. A tab is in the lower part of the base (its top stays under the
+terrain), slightly tapered to center itself; its pocket is open at the bottom and at the
+cut face, closed on top by the terrain above, so the pieces slide together sideways and
+print without supports (the pocket's roof is a short bridge). One tab per about 40 mm of
+cut, at least one; a cut too short for one (a piece's corner at the shape's edge) gets
+none. They align, they don't lock: glue holds them. A locking option: bowtie keys, a
+dovetail pocket open at the bottom on each side of the cut and a small key printed apart,
+pushed in from below.
+
+Later: cut lines nudged to run along streets rather than through buildings.
 
 ## Publishing
 

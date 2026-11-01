@@ -46,9 +46,11 @@ builds a static site into `dist/`: it needs no server of its own.
 - **Terrain** everywhere, with the bumps big buildings leave in it taken out.
 - **Forests** as one canopy of treetops, with single trees along their edges.
 - **Water and the sea floor:** rivers, lakes, the sea rebuilt from coastlines (or from the
-  base map's ocean, out at sea or where the coastline has a gap), harbors and bays. Switch the Water layer off and the sea floor shows at its real depths.
-- **Official 3D buildings** in Switzerland (swisstopo's swissBUILDINGS3D): measured roofs,
-  dormers and towers, for one building or the whole area.
+  base map's ocean, out at sea or where the coastline has a gap), harbors and bays. Switch
+  the Water layer off and the sea floor shows at its real depths.
+- **Official 3D buildings** in Switzerland (swissBUILDINGS3D), the Netherlands (3DBAG),
+  Japan's cities (PLATEAU), Hamburg, Helsinki and Hong Kong: measured roofs, dormers and
+  towers, for one building or the whole area.
 - Bridges sloping from bank to bank, piers, walls, towers, single trees, boats at the piers.
 
 <table>
@@ -166,6 +168,11 @@ Forests are 15 m tall.
 | Source | Coverage | What | License |
 |---|---|---|---|
 | [swisstopo swissBUILDINGS3D](https://www.swisstopo.admin.ch/en/landscape-model-swissbuildings3d-3-0-beta) | Switzerland | Official measured 3D buildings, read from swisstopo's 3D Tiles | Free use (swisstopo open data) |
+| [3DBAG](https://3dbag.nl) by tudelft3d and 3DGI | The Netherlands | Every building at LoD2.2, from the BAG footprints and AHN LiDAR, read from 3DBAG's 3D Tiles | CC BY 4.0 |
+| [Project PLATEAU](https://www.mlit.go.jp/plateau/) (MLIT Japan) | 265 Japanese cities with LoD2 | Official 3D city models, read from PLATEAU's 3D Tiles | Public Data License 1.0 (compatible with CC BY 4.0) |
+| [Hamburg LoD2](https://www.hamburg.de/bsw/landesbetrieb-geoinformation-und-vermessung/) (LGV) | Hamburg | The city's LoD2 buildings, read from its 3D Tiles | dl-de/by-2-0 |
+| [Helsinki 3D city model](https://kartta.hel.fi/3d/) | Helsinki | The city's LoD2 buildings, read from its 3D Tiles | CC BY 4.0 |
+| [Hong Kong 3D Spatial Data](https://portal.csdi.gov.hk/csdi-webpage/apidoc/3d-spatial-data-api) (Lands Department, CSDI Portal) | Hong Kong | Every building, read from the Lands Department's 3D Tiles | CSDI Portal terms (free use, with credit) |
 | [Wikimedia Commons](https://commons.wikimedia.org) and [Wikidata](https://www.wikidata.org) | Any landmark with a model | STL files: the landmark's Wikidata model, files depicting it, a name search | Per file (CC0, CC BY and the like), shown with each result |
 | [Sketchfab](https://sketchfab.com) | Any landmark with a model | Downloadable models; downloads need your own (free) Sketchfab API token | Per model, mostly Creative Commons, shown with each result |
 

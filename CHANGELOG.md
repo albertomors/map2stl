@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- "Use detailed buildings from …" in the 3D view, wherever an official source covers some of
+  the area: every building takes its measured model, without picking one first, with
+  progress and Stop. Once every building has been looked for, it becomes "Remove detailed
+  buildings", which puts OpenStreetMap's back.
+- Official 3D buildings in the Netherlands (3DBAG: every building, LoD2.2), Japan's cities
+  (PLATEAU: 265 cities with LoD2), Hamburg and Helsinki (their LoD2 city models) and Hong
+  Kong (the Lands Department's), as in
+  Switzerland: one building or every building in the area takes its measured model. The
+  reader now takes 3D Tiles 1.1 (glb, meshopt, oriented-box volumes) besides 1.0, and
+  tilesets that refine by replacing (only their finest tiles are read).
+
+### Fixed
+
+- A building mapped as a relation of its outline and parts is one building again, its
+  parts where the relation says, not wherever their corners fall: Atlantis The Royal
+  (Dubai) came apart in three, a podium under one tower and the sky bridge each taking some
+  of its blocks. Those blocks, cut off from the cores they hang on, were then filled down to
+  the podium, and the tower stood as a solid wall; they float as mapped now. Without a
+  relation, an outline holds only parts within its heights (a 13 m podium, not a block from
+  24 to 41 m).
+- Buildings tagged with what they're made of (glass, brick, concrete…) and no color take the
+  map tiles' color for it, so the detailed version looks like the quick one.
+- Official 3D buildings for a big area no longer crash the browser (Firefox gave up on 3 ×
+  3 km of Zurich: 524 tiles, 10.6 million triangles, held all at once). They're read in a
+  worker a few tiles at a time, nearest the middle first, and the buildings switch over
+  batch by batch, until every building that has a model has it. The 3D view rebuilds one
+  batch at a time instead of queueing a rebuild per batch (the last buildings showed seconds
+  after the load said it was done), and the load says it's done once they're all in view.
+- Official buildings over a big area no longer vanish from the 3D view (5 km of Zurich, 15
+  million triangles: a 1.8 GB mesh no graphics card held). The 3D view draws models with
+  each corner stored once, no normals (the graphics card shades each face flat) and one
+  color, about a sixth of the memory, in pieces of a million triangles; the print still
+  gets every triangle as it is. And they're held once, not twice: the page hands them to
+  the 3D view's worker (which now lasts as long as the page, so Back to map keeps them) and
+  borrows them back for a highlight or a print.
+
 ## [0.8.0] - 2026-10-29
 
 Ready to share: search for any street, address or landmark, export to GLB and glTF for

@@ -62,8 +62,8 @@ search / map ──► Selection ──► fetchAreaData ──┬─► quick: 
 | `src/coast.ts` | Sea polygons rebuilt from coastline lines, or the tiles' ocean where they can't tell |
 | `src/terrain.ts` | Terrarium tiles → elevation grid, sampling |
 | `src/bathymetry.ts` | Sea depths: EMODnet in European seas, NOAA ETOPO 2022 and coastal DEMs elsewhere |
-| `src/official-sources.ts` | Where official 3D buildings exist (swissBUILDINGS3D), free of three.js |
-| `src/official3d.ts` | Reads official 3D buildings from 3D Tiles (b3dm, Draco) and matches them to OSM buildings |
+| `src/official-sources.ts` | Where official 3D buildings exist (swissBUILDINGS3D, 3DBAG, PLATEAU, Hamburg, Helsinki, Hong Kong), free of three.js |
+| `src/official3d.ts` | Reads official 3D buildings from 3D Tiles (1.0 b3dm and 1.1 glb; Draco, meshopt) and matches them to OSM buildings |
 | `src/commons.ts` | Openly licensed 3D models on Wikimedia Commons (Wikidata model, depicts, name) |
 | `src/sketchfab.ts` | Downloadable 3D models on Sketchfab: search, and download with the user's token |
 | `src/model-assets.ts` | The 3D models standing in for buildings: what each is and where it came from |

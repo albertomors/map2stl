@@ -45,6 +45,7 @@ import { buildBoats, buildBridges, buildBuildings, buildStructures, buildTrees, 
 import type { ObjectsReply, ObjectsRequest } from './objects-worker';
 import type { SceneObjects, SolidArrays } from './scene-objects';
 import { modelAssets, type Axis, type ModelAsset } from '../model-assets';
+import { objectsWorker, sent, withTriangles } from './objects-host';
 import { buildModels, fittedHeight, footprints } from './models';
 import { addRelief, reliefMaterial } from './relief';
 import { prepareScene } from './scene';
@@ -156,10 +157,7 @@ export class Viewer {
   private clearance = 2;
   private disposed = false;
   // The objects' worker (placeObjects), the latest request to it, and what it already holds.
-  private objectsWorker: Worker | null = null;
   private objectsJob = 0;
-  private sentData: AreaData | null = null;
-  private sentModels = new Set<string>();
   // Something changed since the last frame drawn.
   private dirty = true;
   private outline: [number, number][] = [];
@@ -501,10 +499,11 @@ export class Viewer {
   // `selectedOnly`: the edit touched just the selected object (its size sliders). Rebuild
   // only its lifted copy now; the rest of the scene catches up when the selection changes,
   // and until then the object is hidden there anyway.
-  setEdits(edits: Edits, { selectedOnly = false } = {}) {
+  // Resolves once the 3D view shows them.
+  setEdits(edits: Edits, { selectedOnly = false } = {}): Promise<void> {
     this.dirty = true;
     this.edits = edits;
-    if (!this.data || !this.placement) return;
+    if (!this.data || !this.placement) return Promise.resolve();
     // Streets and areas are painted on the ground: repaint it with the edits.
     if (this.ground && this.clipped) {
       this.ground.setData(applyEdits(this.clipped, edits));
@@ -513,10 +512,10 @@ export class Viewer {
     if (selectedOnly && this.selected) {
       this.objectsStale = true;
       this.drawHighlight();
-    } else {
-      this.objectsStale = false;
-      this.buildObjects();
+      return Promise.resolve();
     }
+    this.objectsStale = false;
+    return this.buildObjects();
   }
 
   // While an object's Size or Height slider moves: stretch its lifted copy from the center of
@@ -594,7 +593,6 @@ export class Viewer {
 
   dispose() {
     this.disposed = true;
-    this.objectsWorker?.terminate();
     this.renderer.setAnimationLoop(null);
     this.resize.disconnect();
     for (const g of [this.terrain, this.objects, this.highlight, this.print]) disposeChildren(g);
@@ -683,8 +681,21 @@ export class Viewer {
     }
   }
 
-  private buildObjects() {
-    void this.placeObjects();
+  // One build at a time: a big city takes seconds, and edits coming faster (official models
+  // arriving in batches) would queue builds the worker makes only to throw away, the last one
+  // showing long after. Edits made meanwhile wait for the running build, then go in one.
+  private objectsRunning: Promise<void> | null = null;
+  private objectsQueued: Promise<void> | null = null;
+  private buildObjects(): Promise<void> {
+    if (!this.objectsRunning) {
+      this.objectsRunning = this.placeObjects().finally(() => (this.objectsRunning = null));
+      return this.objectsRunning;
+    }
+    this.objectsQueued ??= this.objectsRunning.then(() => {
+      this.objectsQueued = null;
+      return this.buildObjects();
+    });
+    return this.objectsQueued;
   }
 
   // The objects (buildings, structures, bridges, boats, trees, forests) are built in a worker
@@ -695,26 +706,32 @@ export class Viewer {
   private placeObjects(): Promise<void> {
     const id = ++this.objectsJob;
     const data = this.data!;
-    this.objectsWorker ??= new Worker(new URL('./objects-worker.ts', import.meta.url), { type: 'module' });
-    const worker = this.objectsWorker;
-    // Only the models the worker hasn't been sent yet (official ones come by the hundred).
+    const worker = objectsWorker();
+    // Only the models the worker hasn't been sent yet (official ones it keeps already).
     const models = [...this.edits.values()].flatMap((e) => {
       const asset = e.model && modelAssets.get(e.model.asset);
-      return asset && !this.sentModels.has(asset.id) ? [asset] : [];
+      return asset && !sent.models.has(asset.id) ? [asset] : [];
     });
-    for (const m of models) this.sentModels.add(m.id);
+    for (const m of models) sent.models.add(m.id);
     const request: ObjectsRequest = {
       id,
       job: { scales: this.builtScales!, seaFloor: !this.visible.has('water'), edits: this.edits },
       models,
       // The data travels once per area: copying a city's takes a moment.
-      ...(data !== this.sentData ? { data } : {}),
+      ...(data !== sent.data ? { data } : {}),
     };
-    this.sentData = data;
+    sent.data = data;
     return new Promise((resolve) => {
-      const reply = (e: MessageEvent<ObjectsReply>) => {
-        if (e.data.id !== id) return;
+      // A worker that fails without answering must not hold up the builds after it.
+      const failed = () => {
         worker.removeEventListener('message', reply);
+        resolve();
+      };
+      // The worker also lends models back (objects-host.ts): those replies have a type.
+      const reply = (e: MessageEvent<ObjectsReply | { type: string }>) => {
+        if ('type' in e.data || e.data.id !== id) return;
+        worker.removeEventListener('message', reply);
+        worker.removeEventListener('error', failed);
         if (id === this.objectsJob && !this.disposed) {
           if (e.data.ok) this.showObjects(e.data.objects);
           else console.error('Building the 3D objects failed', e.data.message);
@@ -722,6 +739,7 @@ export class Viewer {
         resolve();
       };
       worker.addEventListener('message', reply);
+      worker.addEventListener('error', failed, { once: true });
       worker.postMessage(request);
     });
   }
@@ -743,11 +761,14 @@ export class Viewer {
   private showSolid(s: SolidArrays) {
     const g = new BufferGeometry();
     g.setAttribute('position', new BufferAttribute(s.positions, 3));
-    g.setAttribute('normal', new BufferAttribute(s.normals, 3));
-    g.setAttribute('color', new BufferAttribute(s.colors, 3));
+    if (s.normals) g.setAttribute('normal', new BufferAttribute(s.normals, 3));
+    if (s.colors) g.setAttribute('color', new BufferAttribute(s.colors, 3));
     g.setAttribute('groundY', new BufferAttribute(s.grounds, 1));
+    if (s.index) g.setIndex(new BufferAttribute(s.index, 1));
     const color = s.color === undefined ? undefined : new Color(s.color);
-    const material = this.stretchable(new MeshLambertMaterial(color ? { color, side: DoubleSide } : { vertexColors: true, side: DoubleSide }));
+    // Without normals (the models' lean meshes), each face is shaded flat by the GPU.
+    const flatShading = !s.normals;
+    const material = this.stretchable(new MeshLambertMaterial(color ? { color, side: DoubleSide, flatShading } : { vertexColors: true, side: DoubleSide, flatShading }));
     const mesh = new Mesh(g, material);
     mesh.castShadow = true;
     mesh.receiveShadow = true;
@@ -756,15 +777,18 @@ export class Viewer {
     this.pickables.push({
       object: mesh,
       keyAt: (face) => (face === undefined ? undefined : s.keys[s.owners[face]]),
-      // Collapse the object's triangles to a point; keep the originals to put them back.
+      // Collapse the object's triangles to a point (by their corners' numbers, where the
+      // mesh has them: its corners are shared); keep the originals to put them back.
       hide: (key) => {
-        const pos = mesh.geometry.getAttribute('position') as BufferAttribute;
-        const array = pos.array as Float32Array;
-        const saved: [number, Float32Array][] = [];
+        const indexed = mesh.geometry.getIndex();
+        const pos = indexed ?? (mesh.geometry.getAttribute('position') as BufferAttribute);
+        const array = pos.array as Float32Array | Uint32Array;
+        const per = indexed ? 3 : 9;
+        const saved: [number, Float32Array | Uint32Array][] = [];
         s.owners.forEach((owner, tri) => {
           if (s.keys[owner] !== key) return;
-          saved.push([tri * 9, array.slice(tri * 9, tri * 9 + 9)]);
-          array.fill(0, tri * 9, tri * 9 + 9);
+          saved.push([tri * per, array.slice(tri * per, tri * per + per)]);
+          array.fill(indexed ? array[tri * per] : 0, tri * per, tri * per + per);
         });
         if (!saved.length) return null;
         pos.needsUpdate = true;
@@ -878,6 +902,16 @@ export class Viewer {
     disposeChildren(this.highlight);
     this.liftPivot = null;
     const key = this.selected;
+    // An official model is kept by the objects' worker: borrow its triangles, and draw again
+    // once they're here (a moment).
+    const asset = key ? modelAssets.get(this.edits.get(key)?.model?.asset ?? '') : undefined;
+    if (asset?.stored && !asset.triangles.length && asset.span) {
+      void withTriangles([asset]).then(([full]) => {
+        if (!full.triangles.length || modelAssets.get(full.id) !== asset) return;
+        modelAssets.set(full.id, full);
+        if (this.selected === key && !this.disposed) this.drawHighlight();
+      });
+    }
     const at = this.placement;
     const data = this.data;
     // A new object starts from the ground; a rebuild of the same one keeps its height, and

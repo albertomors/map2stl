@@ -10,7 +10,7 @@ import { applyEdits, editedTrees, type Edits } from '../edits';
 import { buildCanopy, canopySurface, type Canopy } from '../forest';
 import type { OsmData } from '../osm';
 import { elevationAt } from '../terrain';
-import { buildModels } from './models';
+import { buildModelSolids, MODEL_COLOR } from './models';
 import { buildBoats, buildBridges, buildBuildings, buildStructures, buildTrees, COLORS, TREE_HEIGHT_M, type PickableMesh } from './objects';
 import { prepareScene } from './scene';
 
@@ -24,13 +24,16 @@ export interface ObjectsJob {
 // One merged mesh: its triangles' points, and which object each triangle is.
 export interface SolidArrays {
   layer: Layer;
-  // One color for all (bridges), or per point.
+  // One color for all (bridges, models), or per point.
   color?: number;
   positions: Float32Array;
-  normals: Float32Array;
-  colors: Float32Array;
+  // Absent: flat, each face's normal worked out by the GPU (the models', see LeanSolid).
+  normals?: Float32Array;
+  colors?: Float32Array;
   grounds: Float32Array;
-  owners: number[];
+  // Triangles as corners' numbers (the models'), or every 3 corners one triangle.
+  index?: Uint32Array;
+  owners: number[] | Uint32Array;
   keys: string[];
 }
 
@@ -56,8 +59,8 @@ export function buildSceneObjects(data: AreaData, clipped: OsmData, job: Objects
     solids.push({ layer, color, positions: array('position'), normals: array('normal'), colors: array('color'), grounds: array('groundY'), owners: result.owners, keys: result.keys });
   };
   solid(buildBuildings(edited.buildings, at), 'buildings');
-  solid(buildModels(osm, edits, at, 'buildings'), 'buildings');
-  solid(buildModels(osm, edits, at, 'bridges'), 'structures');
+  for (const s of buildModelSolids(osm, edits, at, 'buildings')) solids.push({ layer: 'buildings', color: MODEL_COLOR.getHex(), ...s });
+  for (const s of buildModelSolids(osm, edits, at, 'bridges')) solids.push({ layer: 'structures', color: MODEL_COLOR.getHex(), ...s });
   solid(buildStructures({ ...osm, ...edited }, at), 'structures');
   solid(buildBridges(edited.roads, at, COLORS.road), 'roads', COLORS.road.getHex());
   solid(buildBridges(edited.railways, at, COLORS.rail), 'railways', COLORS.rail.getHex());
@@ -110,7 +113,7 @@ function canopyArrays(field: Canopy): SceneObjects['canopy'] {
 // What a worker can hand back without copying.
 export function transferables(o: SceneObjects): ArrayBuffer[] {
   const buffers = [
-    ...o.solids.flatMap((s) => [s.positions, s.normals, s.colors, s.grounds]),
+    ...o.solids.flatMap((s) => [s.positions, s.normals, s.colors, s.grounds, s.index, s.owners instanceof Uint32Array ? s.owners : undefined]).filter((a) => a !== undefined),
     ...(o.trees ? [o.trees.matrices] : []),
     ...(o.canopy ? [o.canopy.positions, o.canopy.grounds, o.canopy.index, o.canopy.colors] : []),
   ].map((a) => a.buffer as ArrayBuffer);

@@ -138,8 +138,9 @@ What you see:
 - **Bridges** are decks sloping from one bank's height to the other's; **piers, walls and
   towers** are solid; single **trees** are cones; **forests** are one canopy of treetops
   over the whole wood, 15 m tall; a few **boats** lie moored at piers.
-- **Official 3D buildings** (Switzerland, swissBUILDINGS3D): select a building and use its
-  official model, or use them for every building in the area at once.
+- **Official 3D buildings** (Switzerland's swissBUILDINGS3D, the Netherlands' 3DBAG,
+  Japan's PLATEAU, Hamburg, Helsinki, Hong Kong): select a building and use its official model, or use them for every
+  building in the area at once.
 - **Everything is cut at the tile edge.** Buildings crossing it get a flat face and a flat
   roof there.
 
@@ -185,8 +186,8 @@ The model is fitted to the footprint, turned upright and set on the ground; **Tu
 and **Stand up** fix a wrong guess, Size and Height still apply, and **Remove** brings the
 original back. The export credits the model's author.
 
-In Switzerland, **Use the official 3D model** swaps the building for swisstopo's measured
-model (swissBUILDINGS3D); **Use official models for every building in the area** does it
+In Switzerland, the Netherlands, Japan's cities, Hamburg, Helsinki and Hong Kong, **Use the
+official 3D model** swaps the building for its measured model; **Use official models for every building in the area** does it
 for all of them at once.
 
 ## 6. Exporting

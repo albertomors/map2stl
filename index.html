@@ -121,6 +121,19 @@ nom<!doctype html>
           <button id="reset-all" class="link">Reset all</button>
         </span>
       </p>
+      <!-- Where an official source has 3D buildings for some of the area: all of them in one go. -->
+      <section id="official-area" class="floating-card view3d-only official-area" hidden>
+        <p class="hint">Detailed buildings for this area: <b id="official-area-source"></b> (<span id="official-area-author"></span>), measured roofs in place of OpenStreetMap's.</p>
+        <button id="official-area-use" class="primary">Use detailed buildings</button>
+        <button id="official-area-remove" class="secondary" hidden>Remove detailed buildings</button>
+        <div class="progress" id="official-area-progress" hidden>
+          <div class="progress-head"><span class="progress-label"></span><span class="progress-text"></span></div>
+          <div class="bar"><div></div></div>
+          <p class="progress-note"></p>
+        </div>
+        <button id="official-area-stop" class="link" hidden>Stop</button>
+        <p id="official-area-status" class="hint" aria-live="polite"></p>
+      </section>
       <section id="object-edit" class="floating-card view3d-only" hidden>
         <h2>Selected</h2>
         <p id="object-title" class="object-title"></p>

@@ -142,7 +142,9 @@ export function buildQuery([w, s, e, n]: [number, number, number, number]): stri
   nw["man_made"~"^(${TOWER})$"];
   node["natural"="tree"];
 );
-out geom qt;`;
+out geom qt;
+relation["type"="building"];
+out body qt;`;
 }
 
 // `tileSea`: the base map's ocean over the selection, for where the coastlines can't tell.
@@ -154,9 +156,15 @@ export function parse(elements: OverpassElement[], ring: LngLat[], tileSea: Poly
   const outlines: Building[] = [];
   const parts: Building[] = [];
   const coast: LngLat[][] = [];
+  // Buildings mapped as relations of their outline and parts (members only, no geometry).
+  const relations: OverpassElement[] = [];
 
   for (const el of elements) {
     const t = el.tags ?? {};
+    if (el.type === 'relation' && t.type === 'building') {
+      relations.push(el);
+      continue;
+    }
 
     if (el.type === 'node') {
       if (el.lon === undefined || el.lat === undefined) continue;
@@ -244,21 +252,42 @@ export function parse(elements: OverpassElement[], ring: LngLat[], tileSea: Poly
     }
   }
 
-  // An outline with building:part inside is drawn by its parts: keeping it too would bury them.
+  // Where a building is a relation, its parts are the ones it lists, wherever they lie (Atlantis
+  // The Royal, Dubai: a podium under one tower held its blocks, the sky bridge others). A
+  // member listed as a part but tagged as a building of its own (that sky bridge) is a part.
+  const byId = new Map<string, Building>();
+  for (const o of outlines) byId.set(o.id, o);
+  const listed = new Map<string, Building>();
+  for (const r of relations) {
+    const id = (m: { type: string; ref: number }) => `${m.type}/${m.ref}`;
+    const outline = r.members?.filter((m) => m.role === 'outline').map((m) => byId.get(id(m))).find(Boolean);
+    if (!outline) continue;
+    for (const m of r.members ?? []) if (m.role === 'part') listed.set(id(m), outline);
+  }
+  for (let i = outlines.length - 1; i >= 0; i--) {
+    if (listed.has(outlines[i].id) && listed.get(outlines[i].id) !== outlines[i]) parts.push(...outlines.splice(i, 1));
+  }
+
+  // Otherwise by where they lie. An outline with building:part inside is drawn by its parts:
+  // keeping it too would bury them.
   // A part belongs to the outline that holds most of its corners (at least half of them, or
   // its center). Not just the outline around its center: an arched part, like the Eiffel
   // Tower's legs, has its center in the empty space under the arch, outside every outline.
   // Failing that, the outline holding any of its corners at all: parts often stick out past
   // a roughly drawn outline (Cologne Cathedral's nave roof).
+  // And only an outline reaching the part's heights: a 13 m podium can't hold a block from
+  // 24 to 41 m (when the outline's height is tagged; a guessed one says nothing).
   const covered = new Set<Building>();
+  const reaches = (o: Building, part: Building) => o.heightFrom === 'estimate' || (o.height >= part.minHeight - 1 && o.minHeight <= part.height + 1);
   for (const part of parts) {
     const c = centroid(part.outer);
     const corners = part.outer.length - 1;
-    let owner: Building | undefined;
-    let best = -1;
+    let owner = listed.get(part.id);
+    let best = owner ? Infinity : -1;
     let fallback: Building | undefined;
     let fallbackHeld = 0;
-    for (const o of outlines) {
+    for (const o of owner ? [] : outlines) {
+      if (!reaches(o, part)) continue;
       const held = part.outer.slice(0, -1).filter((p) => pointInRing(p, o.outer)).length;
       if (held * 2 < corners && !pointInRing(c, o.outer)) {
         if (held > fallbackHeld) [fallback, fallbackHeld] = [o, held];
@@ -351,13 +380,22 @@ function footprintsMeet(a: Polygon, b: Polygon): boolean {
   );
 }
 
+// A building's color from what it's made of, where no color is tagged: the map tiles' own
+// (OpenMapTiles' building layer), so the quick and the detailed version look the same.
+const MATERIAL_COLOUR: Record<string, string> = {
+  cement_block: '#6a7880', brick: '#bd8161', plaster: '#dadbdb', wood: '#d48741', concrete: '#d3c2b0',
+  metal: '#b7b1a6', stone: '#b4a995', mud: '#9d8b75', steel: '#b7b1a6', glass: '#5a81a0',
+  traditional: '#bd8161', masonry: '#bd8161', Brick: '#bd8161', tin: '#b7b1a6', timber_framing: '#b3b0a9',
+  sandstone: '#b4a995', clay: '#9d8b75',
+};
+
 function roof(t: Record<string, string>): Pick<Building, 'roofShape' | 'roofHeight' | 'roofDirection' | 'colour' | 'roofColour'> {
   const levels = Number(t['roof:levels']);
   return {
     roofShape: t['roof:shape'],
     roofHeight: parseLength(t['roof:height']) ?? (levels > 0 ? levels * LEVEL_HEIGHT : undefined),
     roofDirection: parseDirection(t['roof:direction']),
-    colour: t['building:colour'],
+    colour: t['building:colour'] ?? MATERIAL_COLOUR[t['building:material']],
     roofColour: t['roof:colour'],
   };
 }

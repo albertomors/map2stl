@@ -84,7 +84,112 @@ export function buildModels(osm: OsmData, edits: Edits, at: Placement, which: Mo
   return m.empty ? null : { geometry: m.build(), owners: m.owners, keys };
 }
 
-const MODEL_COLOR = new Color(COLORS.wall);
+export const MODEL_COLOR = new Color(COLORS.wall);
+
+// The models for the 3D view, lighter than buildModels' (which the print and the selected
+// object's highlight use): an official city is millions of triangles, and as plain triangles
+// with a normal and a color at each corner, 5 km of Zurich (15 million) made a 1.8 GB mesh
+// no graphics card held. Here each model's corners are stored once and its triangles point
+// at them, with no normals (the GPU shades each face flat) and no colors (one for the mesh):
+// about a sixth of the memory. Straight into typed arrays, in pieces of at most a million
+// triangles: old graphics cards refuse one huge buffer even when the total would fit.
+export interface LeanSolid {
+  positions: Float32Array;
+  grounds: Float32Array;
+  index: Uint32Array;
+  // Which object each triangle belongs to: keys[owners[triangle]].
+  owners: Uint32Array;
+  keys: string[];
+}
+
+const PIECE_TRIANGLES = 1_000_000;
+
+export function buildModelSolids(osm: OsmData, edits: Edits, at: Placement, which: ModelTarget): LeanSolid[] {
+  const out: LeanSolid[] = [];
+  let piece = new LeanPiece();
+  for (const [key, foot] of footprints(osm, which)) {
+    const edit = edits.get(key);
+    const asset = edit?.model && modelAssets.get(edit.model.asset);
+    if (!asset || edit.deleted) continue;
+    const placed = placeModel(asset, edit.model!, foot.points, at, edit.scale ?? 1, edit.heightScale ?? 1);
+    if (!placed || !placed.triangles.length) continue;
+    if (piece.triangles && piece.triangles + placed.triangles.length / 9 > PIECE_TRIANGLES) {
+      out.push(piece.done());
+      piece = new LeanPiece();
+    }
+    piece.add(key, placed.triangles, placed.ground);
+  }
+  if (piece.triangles) out.push(piece.done());
+  return out;
+}
+
+// Growing typed arrays for one piece.
+class LeanPiece {
+  private positions = new Float32Array(3 << 14);
+  private grounds = new Float32Array(1 << 14);
+  private index = new Uint32Array(3 << 14);
+  private owners = new Uint32Array(1 << 14);
+  private keys: string[] = [];
+  private vertices = 0;
+  triangles = 0;
+
+  // A model's triangles (9 floats each), each corner kept once: found again by its exact
+  // position in a small hash table of the model's own corners.
+  add(key: string, t: Float32Array, ground: number) {
+    const owner = this.keys.push(key) - 1;
+    const corners = t.length / 3;
+    const bits = new Uint32Array(t.buffer, t.byteOffset, t.length);
+    let size = 16;
+    while (size < corners * 2) size <<= 1;
+    const table = new Int32Array(size).fill(-1);
+    this.grow(corners, corners / 3);
+    for (let c = 0; c < corners; c++) {
+      const [x, y, z] = [t[c * 3], t[c * 3 + 1], t[c * 3 + 2]];
+      let h = (Math.imul(bits[c * 3], 73856093) ^ Math.imul(bits[c * 3 + 1], 19349663) ^ Math.imul(bits[c * 3 + 2], 83492791)) & (size - 1);
+      let found = -1;
+      for (let i = table[h]; i !== -1; h = (h + 1) & (size - 1), i = table[h]) {
+        if (this.positions[i * 3] === x && this.positions[i * 3 + 1] === y && this.positions[i * 3 + 2] === z) {
+          found = i;
+          break;
+        }
+      }
+      if (found === -1) {
+        found = this.vertices++;
+        this.positions.set([x, y, z], found * 3);
+        this.grounds[found] = ground;
+        table[h] = found;
+      }
+      this.index[this.triangles * 3 + (c % 3)] = found;
+      if (c % 3 === 2) this.owners[this.triangles++] = owner;
+    }
+  }
+
+  // Room for this many more corners and triangles.
+  private grow(corners: number, triangles: number) {
+    const fit = <T extends Float32Array | Uint32Array>(a: T, need: number): T => {
+      if (need <= a.length) return a;
+      let n = a.length;
+      while (n < need) n *= 2;
+      const b = new (a.constructor as new (n: number) => T)(n);
+      b.set(a);
+      return b;
+    };
+    this.positions = fit(this.positions, (this.vertices + corners) * 3);
+    this.grounds = fit(this.grounds, this.vertices + corners);
+    this.index = fit(this.index, (this.triangles + triangles) * 3);
+    this.owners = fit(this.owners, this.triangles + triangles);
+  }
+
+  done(): LeanSolid {
+    return {
+      positions: this.positions.slice(0, this.vertices * 3),
+      grounds: this.grounds.slice(0, this.vertices),
+      index: this.index.slice(0, this.triangles * 3),
+      owners: this.owners.slice(0, this.triangles),
+      keys: this.keys,
+    };
+  }
+}
 
 // The model's triangles in the scene, fitted to the footprint, and the ground it stands on
 // (scene height).
@@ -122,6 +227,12 @@ export function fittedHeight(asset: ModelAsset, choice: ModelChoice, points: Lng
 // that puts the one inside the other.
 function fit(asset: ModelAsset, choice: ModelChoice, points: LngLat[], frame: LocalFrame) {
   const t = asset.anchor ? asset.triangles : upright(asset.triangles, choice.up);
+  // An official model kept by the objects' worker (objects-host.ts): here only its height
+  // span, which is all that's asked of it outside the worker (how tall it stands).
+  if (!t.length && asset.anchor && asset.span) {
+    const box = { center: [0, 0] as P, longAxis: [1, 0] as P, halfL: 1, halfW: 1 };
+    return { t, model: box, target: { ...box, center: frame.toLocal(asset.anchor) }, minY: asset.span[0], maxY: asset.span[1], scale: 1 };
+  }
   if (!t.length) return null;
   // The model's outline seen from above, and how tall it is.
   let minY = Infinity;

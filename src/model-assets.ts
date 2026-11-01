@@ -23,6 +23,11 @@ export interface ModelAsset {
   // An official model with real coordinates: its triangles are local meters around this
   // point (x east, y up, z south), so it goes there as it is, not fitted to the footprint.
   anchor?: [number, number];
+  // Kept by the 3D objects' worker (objects-host.ts), not the page: official models come by
+  // the million triangles. The page's copy has no triangles (until it borrows them), only
+  // the lowest and highest point, for how tall the model stands.
+  stored?: boolean;
+  span?: [number, number];
 }
 
 // What a building's edit says about its model.

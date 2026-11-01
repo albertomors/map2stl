@@ -19,7 +19,9 @@ import { sourceCredits } from './credits';
 import type { ModelJob, ModelResult } from './model-worker';
 import type { ObjectPick, Viewer, ViewScales } from './viewer/viewer';
 import { applyEdits, editKey, type Edits, type GroundKind } from './edits';
-import { officialSourceAt } from './official-sources';
+import { officialSourceFor } from './official-sources';
+import type { Footprint, OfficialJob, OfficialMessage } from './official3d';
+import { forgetModels, storeModels, withTriangles } from './viewer/objects-host';
 import type { PrintModel, ThinObjects } from './export';
 import type { PrintJob, PrintProgress, PrintResult } from './print-worker';
 
@@ -355,8 +357,16 @@ $('restore-deleted').addEventListener('click', () => {
   showEditsSummary();
 });
 // Everything back to how it was fetched: edits and both height multipliers.
+// The official models the objects' worker keeps, dropped (the edits using them are gone).
+function forgetOfficialModels() {
+  forgetModels([...modelAssets.values()].filter((m) => m.stored).map((m) => m.id));
+}
+
 $('reset-all').addEventListener('click', () => {
+  officialLoad?.cancel();
   edits.clear();
+  forgetOfficialModels();
+  if (areaData) triedIn(areaData).clear();
   $<HTMLInputElement>('terrain-scale').value = '1.5';
   $<HTMLInputElement>('height-scale').value = '1';
   showScales();
@@ -521,8 +531,10 @@ function resetData() {
   loading?.abort();
   loading = null;
   close3d();
+  officialLoad?.cancel();
   areaData = null;
   edits.clear();
+  forgetOfficialModels();
   showEditsSummary();
   $('open-3d').hidden = true;
   setFetchButton('fetch');
@@ -537,6 +549,8 @@ function resetData() {
 // switched off stay off, and an open 3D view updates in place.
 function showData(data: AreaData) {
   const replacing = areaData !== null;
+  // A load of official models is for the buildings it was started on.
+  if (areaData !== data) officialLoad?.cancel();
   areaData = data;
   preview?.show(data);
   // Only layers that had something to show can have been switched off.
@@ -901,7 +915,7 @@ function showPick(pick: ObjectPick | null) {
   if (pick.ground) $<HTMLSelectElement>('object-ground').value = pick.ground;
   $('object-model').hidden = !pick.canModel;
   // An official model, where a source covers the area and it's a building.
-  const official = areaData && pick.canModel && areaData.osm.buildings.some((b) => editKey(b) === pick.key) ? officialSourceAt(areaData.selection.center) : undefined;
+  const official = areaData && pick.canModel && areaData.osm.buildings.some((b) => editKey(b) === pick.key) ? officialSourceFor(describe(areaData.selection).ring) : undefined;
   $('object-official').hidden = !official;
   if (official) {
     $('object-official-source').textContent = official.name;
@@ -1118,78 +1132,183 @@ function changeModel(change: (m: ModelChoice) => ModelChoice) {
   refreshModel(picked.key);
 }
 
-// After a model change: rebuild, and show the selected building's card again.
-// Official 3D models (official3d.ts) for some buildings: each takes its model, placed by its
-// real coordinates. One load at a time.
-let officialLoad: AbortController | null = null;
-async function useOfficialModels(keys: string[]) {
+// Official 3D models (official3d.ts) for some buildings, read in a worker
+// (official-worker.ts) a few tiles at a time: each building takes its model, placed by its
+// real coordinates, as the batches come in, so a big area fills in as it goes instead of
+// running the page out of memory. One load at a time; Stop keeps what has come.
+// `stop` keeps what has come; `cancel` drops it (the area's data was replaced under it).
+let officialLoad: { stop: () => void; cancel: () => void } | null = null;
+// Each version of a model gets its own id: the 3D view sends a model to its worker once per id.
+let officialVersion = 0;
+// Per area, the buildings a finished load has looked for (found or not): once none is left,
+// the card offers to remove the detailed buildings instead.
+const officialTried = new WeakMap<AreaData, Set<string>>();
+const triedIn = (data: AreaData) => officialTried.get(data) ?? (officialTried.set(data, new Set()), officialTried.get(data)!);
+// The 3D view rebuilds with the models found at most this often.
+const OFFICIAL_APPLY_MS = 3000;
+function useOfficialModels(keys: string[]) {
   const data = areaData;
-  const source = data && officialSourceAt(data.selection.center);
-  if (!data || !source) return;
-  officialLoad?.abort();
-  const load = (officialLoad = new AbortController());
-  const key = picked?.key;
-  const say = (text: string) => (key && picked?.key === key ? ($('object-model-status').textContent = text) : modelTask.say(text));
+  const ring = data && describe(data.selection).ring;
+  const source = ring && officialSourceFor(ring);
+  // Only on the detailed data: the quick version's buildings are replaced when it comes.
+  if (!data || data.detail !== 'full' || !ring || !source) return;
+  officialLoad?.stop();
+  // One building: its own card says how it went; more: the detailed-buildings card.
+  const one = keys.length === 1 ? keys[0] : null;
+  const say = (text: string) => {
+    if (!one) $('official-area-status').textContent = text;
+    else if (picked?.key === one) $('object-model-status').textContent = text;
+    else modelTask.say(text);
+  };
+  const bar = one ? 'official-progress' : 'official-area-progress';
   const wanted = new Set(keys);
-  const footprints = new Map<string, { outer: [number, number][]; holes: [number, number][][] }[]>();
+  const footprints = new Map<string, Footprint>();
   for (const b of data.osm.buildings) {
     const k = editKey(b);
-    if (!wanted.has(k)) continue;
-    footprints.set(k, [...(footprints.get(k) ?? []), { outer: b.outer, holes: b.holes }]);
+    if (wanted.has(k)) footprints.set(k, [...(footprints.get(k) ?? []), { outer: b.outer, holes: b.holes }]);
   }
-  say(`Reading ${source.name}…`);
-  // A bar under the buttons, filling tile by tile; the buttons wait meanwhile.
-  const buttons = [$<HTMLButtonElement>('object-official-one'), $<HTMLButtonElement>('object-official-all')];
+  const buttons = [$<HTMLButtonElement>('object-official-one'), $<HTMLButtonElement>('object-official-all'), $<HTMLButtonElement>('official-area-use')];
   for (const b of buttons) b.disabled = true;
-  $('official-progress').hidden = false;
-  $('official-progress').querySelector('.progress-label')!.textContent = source.name;
-  setBar('official-progress', 'Starting…', null, '');
-  try {
-    const { fetchOfficialModels } = await import('./official3d');
-    const models = await fetchOfficialModels(source, footprints, describe(data.selection).ring, load.signal, (done, total) => {
-      say(`Reading ${source.name}: ${done} of ${total} tiles…`);
-      setBar('official-progress', `${done} of ${total} tiles`, total ? done / total : null, '');
-    });
-    if (load.signal.aborted) return;
-    for (const [k, asset] of models) {
-      modelAssets.set(asset.id, asset);
-      edits.set(k, { ...edits.get(k), model: { asset: asset.id, up: 'y', turns: 0 } });
+  $(bar).hidden = false;
+  $(bar).querySelector('.progress-label')!.textContent = source.name;
+  setBar(bar, 'Finding tiles…', null, '');
+  $('official-area-stop').hidden = !!one;
+  say('');
+
+  const worker = new Worker(new URL('./official-worker.ts', import.meta.url), { type: 'module' });
+  // What this load has given each building so far, and the buildings with a model.
+  const given = new Map<string, ModelAsset>();
+  const found = new Set<string>();
+  let [changed, applied] = [false, 0];
+  // Resolves once the 3D view shows the models so far.
+  const apply = (): Promise<void> => {
+    changed = false;
+    applied = Date.now();
+    if (one && picked?.key === one) return refreshModel(one);
+    showEditsSummary();
+    return viewer?.setEdits(edits) ?? Promise.resolve();
+  };
+  // A batch of models, handed to the objects' worker to keep (objects-host.ts): the page
+  // keeps a stub of each. A building's model, or more of it (its model spread over two
+  // tiles: joined there), or nothing (it lies under another's model and gives way, unless it
+  // has its own).
+  const take = (models: ModelAsset[]) => {
+    const [store, join, forget]: [ModelAsset[], [string, string][], string[]] = [[], [], []];
+    for (let asset of models) {
+      const key = asset.id.slice(`official/${source.name}/`.length);
+      const before = given.get(key);
+      if (!asset.triangles.length && before) continue;
+      asset = { ...asset, id: `${asset.id}#${++officialVersion}` };
+      if (before && found.has(key) && asset.triangles.length) join.push([asset.id, before.id]);
+      else if (before) forget.push(before.id);
+      given.set(key, asset);
+      if (asset.triangles.length) found.add(key);
+      store.push(asset);
+      edits.set(key, { ...edits.get(key), model: { asset: asset.id, up: 'y', turns: 0 } });
     }
-    if (key && picked?.key === key) refreshModel(key);
-    else {
-      viewer?.setEdits(edits);
-      showEditsSummary();
-    }
-    const n = [...models.values()].filter((m) => m.triangles.length).length;
-    say(
-      keys.length === 1
-        ? n
-          ? `This building now uses its ${source.name} model, by ${source.author} (the export credits it).`
-          : `${source.name} has no model for this building.`
-        : `${n.toLocaleString()} of ${keys.length.toLocaleString()} buildings now use their ${source.name} models, by ${source.author} (the export credits it).`,
-    );
-  } catch (err) {
-    if (!load.signal.aborted) say(`Couldn't read ${source.name}: ${(err as Error).message}`);
-  } finally {
-    if (officialLoad === load) {
+    forgetModels(forget);
+    storeModels(store, join);
+    changed = true;
+  };
+  // Done (or stopped): said only once the 3D view shows the last of them, which on a city
+  // takes a few seconds more.
+  const finish = async (text: string) => {
+    worker.terminate();
+    if (officialLoad !== load) return;
+    officialLoad = null;
+    $('official-area-stop').hidden = true;
+    setBar(bar, 'Placing the buildings in the 3D view…', null, '');
+    await apply();
+    $(bar).hidden = true;
+    for (const b of buttons) b.disabled = false;
+    say(text);
+    showOfficialArea();
+  };
+  const credit = `by ${source.author} (the export credits it)`;
+  const summary = () =>
+    one
+      ? found.size
+        ? `This building now uses its ${source.name} model, ${credit}.`
+        : `${source.name} has no model for this building.`
+      : `${found.size.toLocaleString()} of ${keys.length.toLocaleString()} buildings now use their ${source.name} models, ${credit}.`;
+  const load = {
+    stop: () => void finish(`Stopped. ${summary()}`),
+    cancel: () => {
+      worker.terminate();
+      if (officialLoad !== load) return;
       officialLoad = null;
-      $('official-progress').hidden = true;
+      $(bar).hidden = true;
+      $('official-area-stop').hidden = true;
       for (const b of buttons) b.disabled = false;
-    }
-  }
+      say('');
+    },
+  };
+  officialLoad = load;
+  worker.onmessage = (e: MessageEvent<OfficialMessage>) => {
+    const m = e.data;
+    if (m.type === 'progress') {
+      const tris = m.triangles ? `${(m.triangles / 1e6).toFixed(1)} million triangles so far` : '';
+      setBar(bar, `${m.done} of ${m.total} tiles`, m.total ? m.done / m.total : null, tris);
+    } else if (m.type === 'models') {
+      take(m.models);
+      if (changed && Date.now() - applied > OFFICIAL_APPLY_MS) void apply();
+    } else if (m.type === 'done') {
+      for (const k of keys) triedIn(data).add(k);
+      const skipped = m.failed ? ` ${m.failed} of its tiles couldn't be read, and their buildings keep OpenStreetMap's.` : '';
+      finish(summary() + skipped);
+    } else finish(`Couldn't read ${source.name}: ${m.message}`);
+  };
+  worker.onerror = (e) => finish(`Couldn't read ${source.name}: ${e.message || 'the reader stopped'}`);
+  const job: OfficialJob = { source, buildings: [...footprints], within: ring };
+  worker.postMessage(job);
 }
+
 $('object-official-one').addEventListener('click', () => picked && useOfficialModels([picked.key]));
 // Every building in the selection that isn't deleted or already has a model of its own.
-$('object-official-all').addEventListener('click', () => {
+const useOfficialEverywhere = () => {
   if (!areaData) return;
-  const keys = new Set(areaData.osm.buildings.map(editKey).filter((k) => !edits.get(k)?.deleted && !edits.get(k)?.model));
-  useOfficialModels([...keys]);
+  const keys = officialPending(areaData);
+  if (!keys.length) return void ($('official-area-status').textContent = 'Every building already has a model.');
+  useOfficialModels(keys);
+};
+// Buildings still to look for: not deleted, without a model, not looked for already.
+function officialPending(data: AreaData): string[] {
+  const tried = triedIn(data);
+  return [...new Set(data.osm.buildings.map(editKey))].filter((k) => !edits.get(k)?.deleted && !edits.get(k)?.model && !tried.has(k));
+}
+// The undo: every building back to OpenStreetMap's, the models from this source dropped.
+$('official-area-remove').addEventListener('click', () => {
+  const source = areaData && officialSourceFor(describe(areaData.selection).ring);
+  if (!areaData || !source) return;
+  const prefix = `official/${source.name}/`;
+  let removed = 0;
+  const dropped: string[] = [];
+  for (const [k, e] of [...edits]) {
+    if (!e.model?.asset.startsWith(prefix)) continue;
+    dropped.push(e.model.asset);
+    const { model: _, ...rest } = e;
+    if (Object.keys(rest).length) edits.set(k, rest);
+    else edits.delete(k);
+    removed++;
+  }
+  forgetModels(dropped);
+  triedIn(areaData).clear();
+  if (picked) viewer?.select(null);
+  void viewer?.setEdits(edits);
+  showEditsSummary();
+  $('official-area-status').textContent = `${removed.toLocaleString()} buildings are back to OpenStreetMap's.`;
 });
+$('object-official-all').addEventListener('click', useOfficialEverywhere);
+$('official-area-use').addEventListener('click', useOfficialEverywhere);
+$('official-area-stop').addEventListener('click', () => officialLoad?.stop());
 
-function refreshModel(key: string) {
-  viewer?.setEdits(edits);
+// After a model change: rebuild, and show the selected building's card again.
+// Resolves once the 3D view shows it.
+function refreshModel(key: string): Promise<void> {
+  const shown = viewer?.setEdits(edits) ?? Promise.resolve();
   viewer?.select(key);
   showEditsSummary();
+  return shown;
 }
 
 // How the model came out fitted to the footprint, against the building's height: far off,
@@ -1270,6 +1389,7 @@ function showEditsSummary() {
   $<HTMLButtonElement>('restore-deleted').disabled = !deleted;
   const defaults = scales().terrain === 1.5 && scales().heights === 1;
   $<HTMLButtonElement>('reset-all').disabled = !edits.size && defaults;
+  showOfficialArea();
 }
 
 // Selecting waits for the detailed data (see Viewer.canSelect).
@@ -1307,7 +1427,7 @@ function failure(what: string, err: unknown): string {
 // The print is built in a worker (see print-worker.ts), so the page stays responsive. The
 // preview has its own, ended when a newer preview is asked for; a download gets a fresh one.
 let previewWorker: Worker | null = null;
-function runPrintJob(
+async function runPrintJob(
   kind: PrintJob['kind'],
   data: AreaData,
   own?: (w: Worker) => void,
@@ -1320,7 +1440,10 @@ function runPrintJob(
     minFeatureMm: printNumber('print-min', 'Thinnest detail', 0.01),
   };
   const nozzleMm = printNumber('print-nozzle', 'Nozzle', 0.1);
-  const models = usedModels();
+  // Official models are kept by the objects' worker: borrowed back for the print, and the
+  // borrowed copies handed on to the print worker rather than copied again.
+  const models = await withTriangles(usedModels());
+  const lent = models.filter((m) => m !== modelAssets.get(m.id)).map((m) => m.triangles.buffer as ArrayBuffer);
   const job: PrintJob = { kind, data, edits, scales: scales(), visible: [...visibleLayers], options, nozzleMm, name: printName(data), models, previewed };
   const worker = new Worker(new URL('./print-worker.ts', import.meta.url), { type: 'module' });
   own?.(worker);
@@ -1341,7 +1464,7 @@ function runPrintJob(
       bar.end();
       reject(new Error(e.message || 'the build stopped'));
     };
-    worker.postMessage(job);
+    worker.postMessage(job, lent);
   });
 }
 
@@ -1571,4 +1694,30 @@ new ResizeObserver(() => {
 function showExport() {
   $('export').hidden = !(viewer && areaData?.detail === 'full');
   if ($('export').hidden && printPreview) setPrintPreview(false);
+  showOfficialArea();
+}
+
+// The detailed-buildings card: in the 3D view, once the detailed data is in, where an
+// official source covers some of the area.
+function showOfficialArea() {
+  const source = viewer && areaData?.detail === 'full' ? officialSourceFor(describe(areaData.selection).ring) : undefined;
+  if (!source) {
+    $('official-area').hidden = true;
+    return officialLoad?.stop();
+  }
+  $('official-area-source').textContent = source.name;
+  $('official-area-author').textContent = source.author;
+  $('official-area-use').textContent = `Use detailed buildings from ${source.name}`;
+  // While loading, the card stays as it is (its buttons wait).
+  if (officialLoad) return void ($('official-area').hidden = false);
+  // Buildings left to look for: Use. All looked for and some found: Remove (the undo). All
+  // looked for and none found: nothing to offer.
+  const pending = officialPending(areaData!).length;
+  const prefix = `official/${source.name}/`;
+  const using = [...edits.values()].some((e) => e.model?.asset.startsWith(prefix));
+  $('official-area').hidden = !pending && !using;
+  $('official-area-use').hidden = !pending;
+  $('official-area-remove').hidden = !using;
+  $('official-area-remove').classList.toggle('primary', !pending);
+  $('official-area-remove').classList.toggle('secondary', !!pending);
 }
