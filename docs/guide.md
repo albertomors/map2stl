@@ -243,7 +243,8 @@ share what you made.
 The **?** at the top right of the panel opens **Found a bug? Report it**. Describe what
 you did, what you expected and what happened, then **Send**: a zip is saved with your
 message, a screenshot, and what's needed to reproduce it (your selection, the view and its
-settings, your edits, your browser and graphics card, recent errors; nothing else), and
+settings, your edits, the export and its pieces, the detailed buildings in use, how the data
+was downloaded, your browser and graphics card, recent errors; nothing else), and
 your email app (or, in builds without a report address, a new GitHub issue) opens with the
 message. Attach the zip and send.
 

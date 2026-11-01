@@ -16,7 +16,7 @@ import type { LocalFrame } from './local';
 import type { Wasm } from './merge';
 import type { Line, OsmData, Polygon } from './osm';
 import { lngLatPixel, pixelLngLat, type Terrain } from './terrain';
-import { carvedTerrain, drapeContext, drapedSolids, type Poly, type Solids } from './viewer/drape';
+import { carvedTerrain, drapeContext, drapedSolids, type DrapeContext, type Poly, type Solids } from './viewer/drape';
 import { terrainGrid, type Grid } from './viewer/terrain-mesh';
 
 export interface GroundSolids {
@@ -150,8 +150,19 @@ export function buildGroundSolids(
   const waterSolids = fill(shapes.water, DEPTH.water);
   progress(0.7, 'Carving the terrain');
   // Carved a step below each fill's top: the fill takes that step back.
-  const terrain = land
-    ? carvedTerrain(
+  const carves = [
+    { polys: shapes.water, depth: (DEPTH.water + 1) * step },
+    { polys: shapes.streets, depth: (DEPTH.streets + 1) * step },
+    { polys: shapes.squares, depth: (DEPTH.flush + 1) * step },
+    { polys: shapes.sand, depth: (DEPTH.flush + 1) * step },
+    { polys: shapes.rock, depth: (DEPTH.flush + 1) * step },
+    { polys: shapes.parks, depth: (DEPTH.flush + 1) * step },
+  ];
+  // By manifold-3d, carved or not (the plain tile cut by hand isn't always closed either).
+  const terrain =
+    carvedByBooleans(wasm, ctx, t, ring, frame, baseDepth, carves, step) ??
+    (land
+      ? carvedTerrain(
         ctx,
         [
           { polys: tiles(land), depth: 0 },
@@ -168,9 +179,159 @@ export function buildGroundSolids(
         // pixels: a step in scene units is more than either.
         stepUnits,
       )
-    : null;
+      : null);
   for (const cs of made) cs.delete();
   return { water: waterSolids, streets, squares, parks: parkSolids, sand: sandSolids, rock: rockSolids, terrain };
+}
+
+// The terrain with the shapes carved in, by manifold-3d: the plain tile (a closed solid, its
+// outline and base exact) minus a solid for each shape, from its carve depth to above the
+// ground. Built by hand (carvedTerrain), the regions' borders don't always meet point for
+// point (one side splits a border where the other doesn't), and the terrain wasn't a closed
+// solid: a slicer could find a piece's first layer empty (Helsinki). A shape whose solid
+// manifold-3d won't take isn't carved: its fill stands on the ground instead of in it. Null
+// if the tile itself won't do (then it's built by hand).
+// The terrain with the shapes carved in, by manifold-3d, so it's a closed solid whatever the
+// shapes: a block of the terrain grid over the outline's box (the grid's own triangles on
+// top, four walls, a flat bottom: closed by construction), cut to the outline, minus a solid
+// for each shape, from its carve depth to above the ground. Built by hand (carvedTerrain, or
+// the plain tile cut along the outline), the pieces' sides and the regions' borders don't
+// always meet point for point, and a terrain that isn't a closed solid can leave a slicer
+// with an empty first layer (Helsinki in pieces). A shape whose solid manifold-3d won't take
+// isn't carved: its fill stands on the ground instead of in it. Null if it fails (then it's
+// built by hand).
+function carvedByBooleans(
+  wasm: Wasm,
+  ctx: DrapeContext,
+  t: Terrain,
+  ring: LngLat[],
+  frame: LocalFrame,
+  baseDepth: number,
+  carves: { polys: Poly[]; depth: number }[],
+  step: number,
+): { positions: number[]; baseY: number } | null {
+  const { Manifold, Mesh, CrossSection } = wasm;
+  const g = ctx.grid;
+  // The outline's box in grid corners, a cell of margin round it (at least three columns
+  // and rows, for the bottom's strips).
+  const px = ring.map((p) => lngLatPixel(t, p));
+  const cellOf = (v: number, n: number) => Math.min(Math.max(Math.floor(v / g.step), 0), n - 1);
+  let [c0, c1] = [cellOf(Math.min(...px.map((p) => p[0])), g.cols) - 1, cellOf(Math.max(...px.map((p) => p[0])), g.cols) + 2];
+  let [r0, r1] = [cellOf(Math.min(...px.map((p) => p[1])), g.rows) - 1, cellOf(Math.max(...px.map((p) => p[1])), g.rows) + 2];
+  [c0, c1, r0, r1] = [Math.max(c0, 0), Math.min(c1, g.cols - 1), Math.max(r0, 0), Math.min(r1, g.rows - 1)];
+  if (c1 - c0 < 3 || r1 - r0 < 3) return null;
+  const nc = c1 - c0 + 1;
+  // Top corners, then bottom corners (the same, at the base).
+  const verts: number[] = [];
+  let lowest = Infinity;
+  for (let r = r0; r <= r1; r++) {
+    for (let c = c0; c <= c1; c++) {
+      const p = ctx.scene({ x: g.colX(c), y: g.rowY(r), h: g.height(c, r) }, 0);
+      verts.push(p[0], p[1], p[2]);
+      lowest = Math.min(lowest, p[1]);
+    }
+  }
+  const deepest = Math.max(0, ...carves.filter((x) => x.polys.length).map((x) => x.depth));
+  const baseY = lowest - baseDepth - deepest;
+  const n = verts.length / 3;
+  for (let i = 0; i < n; i++) verts.push(verts[i * 3], baseY, verts[i * 3 + 2]);
+  const top = (c: number, r: number) => (r - r0) * nc + (c - c0);
+  const bottom = (c: number, r: number) => n + top(c, r);
+  const tris: number[] = [];
+  // Each triangle facing the given way (+1 up, −1 down), or outward from the box's middle.
+  const [mx, mz] = [(verts[top(c0, r0) * 3] + verts[top(c1, r1) * 3]) / 2, (verts[top(c0, r0) * 3 + 2] + verts[top(c1, r1) * 3 + 2]) / 2];
+  const face = (a: number, b: number, c: number, way: 1 | -1 | 0) => {
+    const v = (i: number) => [verts[i * 3], verts[i * 3 + 1], verts[i * 3 + 2]];
+    const [pa, pb, pc] = [v(a), v(b), v(c)];
+    const [ux, uy, uz] = [pb[0] - pa[0], pb[1] - pa[1], pb[2] - pa[2]];
+    const [wx, wy, wz] = [pc[0] - pa[0], pc[1] - pa[1], pc[2] - pa[2]];
+    const nrm = [uy * wz - uz * wy, uz * wx - ux * wz, ux * wy - uy * wx];
+    const out = way ? nrm[1] * way : nrm[0] * ((pa[0] + pb[0] + pc[0]) / 3 - mx) + nrm[2] * ((pa[2] + pb[2] + pc[2]) / 3 - mz);
+    tris.push(a, ...(out >= 0 ? [b, c] : [c, b]));
+  };
+  // Top: each cell as the grid's triangles a-d-b and b-d-e (a top left, e bottom right).
+  for (let r = r0; r < r1; r++) {
+    for (let c = c0; c < c1; c++) {
+      const [A, B, D, E] = [top(c, r), top(c + 1, r), top(c, r + 1), top(c + 1, r + 1)];
+      face(A, D, B, 1);
+      face(B, D, E, 1);
+    }
+  }
+  // Walls along the box's four sides.
+  const side = (pts: [number, number][]) => {
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const [[ca, ra], [cb, rb]] = [pts[i], pts[i + 1]];
+      face(top(ca, ra), top(cb, rb), bottom(cb, rb), 0);
+      face(top(ca, ra), bottom(cb, rb), bottom(ca, ra), 0);
+    }
+  };
+  const range = (a: number, b: number) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
+  side(range(c0, c1).map((c) => [c, r0]));
+  side(range(c0, c1).map((c) => [c, r1]));
+  side(range(r0, r1).map((r) => [c0, r]));
+  side(range(r0, r1).map((r) => [c1, r]));
+  // Bottom: column strips, each meeting the walls' points along its edges; the first and last
+  // fanned from their inner top corner over the side wall's points.
+  for (let c = c0; c < c1; c++) {
+    if (c === c0 || c === c1 - 1) {
+      const [edge, inner] = c === c0 ? [c0, c0 + 1] : [c1, c1 - 1];
+      for (let r = r0; r < r1; r++) face(bottom(inner, r0), bottom(edge, r), bottom(edge, r + 1), -1);
+      face(bottom(inner, r0), bottom(edge, r1), bottom(inner, r1), -1);
+    } else {
+      face(bottom(c, r0), bottom(c + 1, r0), bottom(c + 1, r1), -1);
+      face(bottom(c, r0), bottom(c + 1, r1), bottom(c, r1), -1);
+    }
+  }
+  const made: InstanceType<Wasm['Manifold']>[] = [];
+  const keep = <T extends InstanceType<Wasm['Manifold']>>(m: T) => (made.push(m), m);
+  try {
+    const block = keep(new Manifold(new Mesh({ numProp: 3, vertProperties: Float32Array.from(verts), triVerts: Uint32Array.from(tris) })));
+    if (block.status() !== 'NoError') return null;
+    // The outline, raised into a prism standing on y (in x, −z, extruded, turned up).
+    const section = new CrossSection([ring.map((p) => frame.toLocal(p)).map(([x, z]) => [x, -z] as [number, number])], 'EvenOdd');
+    const prism = keep(Manifold.extrude(section, 1e5).translate([0, 0, -5e4]).rotate([-90, 0, 0]));
+    section.delete();
+    let solid = keep(block.intersect(prism));
+    // Each shape's carve: from its depth to two steps above the ground, a solid per piece.
+    const cuts: InstanceType<Wasm['Manifold']>[] = [];
+    for (const { polys, depth } of carves) {
+      if (!polys.length) continue;
+      const sol = drapedSolids(ctx, polys, 2 * step, -depth);
+      const byOwner = new Map<number, number[]>();
+      for (let i = 0; i < sol.owners.length; i++) {
+        const list = byOwner.get(sol.owners[i]);
+        if (list) list.push(i);
+        else byOwner.set(sol.owners[i], [i]);
+      }
+      for (const list of byOwner.values()) {
+        const p = new Float32Array(list.length * 9);
+        list.forEach((tri, k) => {
+          for (let j = 0; j < 9; j++) p[k * 9 + j] = sol.positions[tri * 9 + j];
+        });
+        try {
+          const mesh = new Mesh({ numProp: 3, vertProperties: p, triVerts: Uint32Array.from({ length: p.length / 3 }, (_, i) => i) });
+          mesh.merge();
+          const m = keep(new Manifold(mesh));
+          if (m.status() === 'NoError' && !m.isEmpty()) cuts.push(m);
+        } catch {
+          // Not carved.
+        }
+      }
+    }
+    if (cuts.length) solid = keep(solid.subtract(keep(Manifold.union(cuts))));
+    const mesh = solid.getMesh();
+    const positions: number[] = new Array(mesh.triVerts.length * 3);
+    mesh.triVerts.forEach((v, i) => {
+      positions[i * 3] = mesh.vertProperties[v * mesh.numProp];
+      positions[i * 3 + 1] = mesh.vertProperties[v * mesh.numProp + 1];
+      positions[i * 3 + 2] = mesh.vertProperties[v * mesh.numProp + 2];
+    });
+    return positions.length ? { positions, baseY: Math.fround(baseY) } : null;
+  } catch {
+    return null;
+  } finally {
+    for (const m of made) m.delete();
+  }
 }
 
 // The grid cells steeper than ROCK_DEG (in the scene, exaggeration included), as one shape:

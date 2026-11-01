@@ -81,16 +81,16 @@ nom<!doctype html>
           <div class="progress" id="progress-osm">
             <div class="progress-head"><span>Detailed data</span><span class="progress-text"></span></div>
             <div class="bar"><div></div></div>
-            <p class="progress-note"></p>
+            <p class="progress-note msg" style="--lines: 2"></p>
           </div>
         </div>
-        <p id="data-status" class="hint" aria-live="polite"></p>
+        <p id="data-status" class="hint msg" style="--lines: 3" aria-live="polite"></p>
         <!-- The next step once there's data: right under the status, not below the layers. -->
         <button id="open-3d" class="primary map-only" hidden>Open 3D view</button>
         <div class="progress" id="progress-3d" hidden>
           <div class="progress-head"><span>3D view</span><span class="progress-text"></span></div>
           <div class="bar"><div></div></div>
-          <p class="progress-note"></p>
+          <p class="progress-note msg" style="--lines: 2"></p>
         </div>
         <!-- Folded on the map (a line of counts), open in the 3D view. -->
         <details id="data-details">
@@ -129,10 +129,10 @@ nom<!doctype html>
         <div class="progress" id="official-area-progress" hidden>
           <div class="progress-head"><span class="progress-label"></span><span class="progress-text"></span></div>
           <div class="bar"><div></div></div>
-          <p class="progress-note"></p>
+          <p class="progress-note msg" style="--lines: 2"></p>
         </div>
         <button id="official-area-stop" class="link" hidden>Stop</button>
-        <p id="official-area-status" class="hint" aria-live="polite"></p>
+        <p id="official-area-status" class="hint msg" style="--lines: 3" aria-live="polite"></p>
       </section>
       <section id="object-edit" class="floating-card view3d-only" hidden>
         <h2>Selected</h2>
@@ -171,7 +171,7 @@ nom<!doctype html>
             <div class="progress" id="official-progress" hidden>
               <div class="progress-head"><span class="progress-label">Loading</span><span class="progress-text"></span></div>
               <div class="bar"><div></div></div>
-              <p class="progress-note"></p>
+              <p class="progress-note msg" style="--lines: 2"></p>
             </div>
           </div>
           <button id="object-model-find">Find a 3D model online</button>
@@ -203,7 +203,7 @@ nom<!doctype html>
               <button id="object-model-remove" class="secondary">Remove</button>
             </div>
           </div>
-          <p id="object-model-status" class="hint" aria-live="polite"></p>
+          <p id="object-model-status" class="hint msg" style="--lines: 3" aria-live="polite"></p>
         </div>
         <div class="actions">
           <button id="object-delete">Delete</button>
@@ -231,7 +231,7 @@ nom<!doctype html>
       </div>
       <!-- Printed in pieces (pieces.ts): their sizes, and the joints that line them up. -->
       <div id="pieces" class="pieces">
-        <p id="pieces-info" class="hint"></p>
+        <p id="pieces-info" class="hint msg" style="--lines: 4"></p>
         <label id="pieces-joints" class="check">
           Joints
           <select id="print-joints" aria-label="Joints between pieces">
@@ -248,11 +248,11 @@ nom<!doctype html>
         <span>Explode view</span><output id="explode-value">1 cm</output>
         <input id="explode" type="range" autocomplete="off" min="0" max="10" step="0.5" value="1" />
       </label>
-      <p id="print-warning" class="warning" hidden></p>
+      <p id="print-warning" class="warning msg" style="--lines: 5" hidden></p>
       <div id="print-progress" class="progress" hidden>
         <div class="progress-head"><span class="progress-label"></span><span class="progress-text"></span></div>
         <div class="bar"><div></div></div>
-        <p class="progress-note"></p>
+        <p class="progress-note msg" style="--lines: 2"></p>
       </div>
       <!-- Only in the preview: the file is written from the model previewed. -->
       <div id="export-files" hidden>
@@ -260,7 +260,7 @@ nom<!doctype html>
           <button id="format-stl" data-format="stl" aria-pressed="true">STL</button>
           <button id="format-3mf" data-format="3mf" aria-pressed="false">3MF</button>
         </div>
-        <p id="format-hint" class="hint"></p>
+        <p id="format-hint" class="hint msg" style="--lines: 2"></p>
         <button id="download" class="primary">Download STL</button>
       </div>
       <!-- The 3D view as it looks, for other 3D software: no print preview needed. -->
@@ -269,7 +269,7 @@ nom<!doctype html>
         <button id="download-glb" title="Binary glTF: one file with the textures inside">GLB</button>
         <button id="download-gltf" title="glTF as JSON, the textures inside, to read or edit">glTF</button>
       </div>
-      <p id="export-status" class="hint" aria-live="polite"></p>
+      <p id="export-status" class="hint msg" style="--lines: 3" aria-live="polite"></p>
     </section>
 
     <dialog id="bug-dialog" class="bug-dialog" aria-labelledby="bug-title">
@@ -281,7 +281,7 @@ nom<!doctype html>
         3D view is and its settings, your edits, a screenshot, your browser and graphics card,
         and recent errors. Nothing else.
       </p>
-      <p id="bug-status" class="bug-status" aria-live="polite"></p>
+      <p id="bug-status" class="bug-status msg" style="--lines: 2" aria-live="polite"></p>
       <div class="bug-actions">
         <button id="bug-cancel" type="button">Close</button>
         <button id="bug-send" type="button" class="primary">Send</button>

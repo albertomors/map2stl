@@ -1091,11 +1091,26 @@ button.link:disabled {
   margin: 8px 0 0;
 }
 
-/* A fixed height, scrolling when longer: the card grows upward from the bottom, and a line
-   changing length as a setting is stepped would move the setting's arrows under the cursor. */
-#pieces-info {
-  height: 5.6em;
+/* Messages that change as the app works (statuses, warnings, progress notes): a box of a
+   fixed number of lines (--lines), scrolling when longer. Their length changing would move
+   what's around them: in the export card, which grows upward from the bottom, the settings'
+   arrows under the cursor. */
+.msg {
+  line-height: 1.45;
+  /* Lines of text, the padding (a warning's) on top. */
+  box-sizing: content-box;
+  height: calc(var(--lines, 3) * 1.45em);
   overflow-y: auto;
+}
+
+.msg[hidden] {
+  display: none;
+}
+
+/* The nozzle check with nothing to report: the same box, not a warning's colors. */
+.warning.ok {
+  background: var(--surface);
+  color: var(--muted);
 }
 
 .pieces .bad {

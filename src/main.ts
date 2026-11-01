@@ -611,6 +611,7 @@ async function fetchData(sel: Selection) {
   // Re-render every second too, so a slow server shows a running clock instead of looking stuck.
   const wait: ServerWait = { since: Date.now(), trySince: Date.now(), eta: estimateSeconds(etaInput), filled: 0 };
   let last: FetchProgress = { osmBytes: 0, osmCached: false, osmDone: false };
+  lastFetch = null;
   const render = () => showProgress(last, wait);
   render();
   const clock = setInterval(render, 1000);
@@ -620,7 +621,7 @@ async function fetchData(sel: Selection) {
       sel,
       controller.signal,
       (p) => {
-        last = p;
+        last = lastFetch = p;
         render();
         // The bar says Done while the terrain and sea floor are still being finished: the
         // caption mustn't still say the data is on its way.
@@ -935,6 +936,9 @@ function close3d() {
 // What a bug report carries to reproduce the user's conditions (bug-report.ts): where the
 // map is, the selection, the data, and in the 3D view its camera, layers, multipliers,
 // edits and export settings.
+// The last fetch's progress, for a bug report: how it was split, and how each part went.
+let lastFetch: FetchProgress | null = null;
+
 function bugContext(): Record<string, unknown> {
   const c = map.getCenter();
   const value = (id: string) => $<HTMLInputElement>(id).value;
@@ -953,6 +957,15 @@ function bugContext(): Record<string, unknown> {
       terrain: { source: 'AWS Terrain Tiles', min: t!.min, max: t!.max, grid: [t!.width, t!.height], zoom: t!.zoom },
       seaFloor: areaData.bathymetry?.source ?? null,
     },
+    // How the detailed data came: the parts it was asked in, each one's size, server and time.
+    fetch: lastFetch && {
+      parts: lastFetch.chunks?.map((c) => ({ km2: +c.km2.toFixed(2), buildings: c.buildings, predictedKb: c.kb === null ? null : Math.round(c.kb) })) ?? null,
+      answered: lastFetch.answered?.map((a) => ({ kb: Math.round(a.bytes / 1000), cached: a.cached, server: a.server ?? null, tries: a.tries ?? null, answeredS: a.answeredS ?? null })) ?? null,
+      bytes: lastFetch.osmBytes,
+      cached: lastFetch.osmCached,
+      done: lastFetch.osmDone,
+      server: lastFetch.osmServer ?? null,
+    },
     layers: [...visibleLayers],
     scales: scales(),
     edits: Object.fromEntries(edits),
@@ -964,9 +977,46 @@ function bugContext(): Record<string, unknown> {
       thinnestDetailMm: value('print-min'),
       nozzleMm: value('print-nozzle'),
       format: exportFormat,
+      // Printing in pieces: the bed, the grid (proposed or set), the joints, the slivers
+      // joined, how far apart the preview shows them, and what the card says.
+      pieces: {
+        bedMm: bedMm(),
+        grid: pieceGrid(),
+        auto: gridAuto,
+        joints: jointKind(),
+        playMm: value('print-clearance'),
+        merges,
+        explodeCm: value('explode'),
+        info: $('pieces-info').textContent,
+      },
+      // What the preview built: its size, pieces, and models a cut couldn't cut.
+      previewed: previewed && {
+        sizeMm: previewed.model.sizeMm,
+        triangles: previewed.model.triangleCount,
+        pieces: previewed.model.pieces ?? null,
+        uncutModels: previewed.model.uncutModels ?? 0,
+        parts: [...new Set(previewed.model.parts.map((p) => p.name))],
+      },
       status: $('export-status').textContent,
       warning: text('print-warning'),
     },
+    // Official 3D buildings: the source covering the area, a load running, how many buildings
+    // were looked for and use one, and what the card says.
+    official: areaData && {
+      source: officialSourceFor(describe(areaData.selection).ring)?.name ?? null,
+      loading: !!officialLoad,
+      tried: triedIn(areaData).size,
+      inUse: [...edits.values()].filter((e) => e.model?.asset.startsWith('official/')).length,
+      card: text('official-area'),
+      status: $('official-area-status').textContent,
+    },
+    // The 3D models held, by where they came from, and how many the 3D view's worker keeps
+    // (official ones live there, the page holds a stub).
+    models: {
+      byKind: [...modelAssets.values()].reduce<Record<string, number>>((n, m) => ((n[m.source.kind] = (n[m.source.kind] ?? 0) + 1), n), {}),
+      stored: [...modelAssets.values()].filter((m) => m.stored).length,
+    },
+    hints: { select: $('select-hint').textContent, edits: $('edits-count').textContent, modelTask: $('model-task-text').textContent },
   };
 }
 
@@ -1692,7 +1742,11 @@ function showThinWarning(thin: ThinObjects, nozzle: number, minFeatureMm: number
     forests +
     below
   ).trim();
-  warning.hidden = !warning.textContent;
+  // Always there in the preview (showing and hiding, it would move the settings above): with
+  // nothing to report, it says so.
+  warning.classList.toggle('ok', !warning.textContent);
+  if (!warning.textContent) warning.textContent = `Nothing is narrower than the ${nozzle} mm nozzle.`;
+  warning.hidden = false;
 }
 
 function setPrintPreview(on: boolean) {
@@ -1700,8 +1754,9 @@ function setPrintPreview(on: boolean) {
   const button = $('preview-print');
   button.setAttribute('aria-pressed', String(printPreview));
   button.textContent = printPreview ? 'Back to the 3D view' : 'Preview export';
-  // The file comes from the model previewed: only in the preview.
+  // The file comes from the model previewed: only in the preview; so does the nozzle check.
   $('export-files').hidden = !printPreview;
+  $('print-warning').hidden = !printPreview;
   // Editing waits while previewing: the edits line and the detailed-buildings card step aside.
   $('edits-summary').hidden = printPreview;
   showOfficialArea();

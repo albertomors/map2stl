@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The print's terrain is one closed solid, carved or not, whole or in pieces: built as a block
+  of the terrain grid (closed by construction), cut to the outline and carved by manifold-3d,
+  where built by hand the carved regions' borders didn't always meet point for point. A
+  piece of Helsinki opened in OrcaSlicer with an empty first layer; the STL's "one watertight
+  solid" now holds the terrain too (Hamburg: 627,000 triangles were left out of it). The
+  preview and the download take about twice as long.
+- Messages that change as the app works (the nozzle check, the export's status, the pieces,
+  progress notes) sit in boxes of a fixed height, so a setting's arrows don't move under the
+  cursor; the nozzle check stays in place in the preview, saying so when there's nothing.
+
+### Changed
+
+- A bug report also carries the export's pieces (bed, grid, joints, joins, what the preview
+  built), the detailed buildings in use, the 3D models held, and how the data was downloaded
+  (its parts, their sizes, servers and times).
+
 ## [0.9.0] - 2026-11-01
 
 Bigger prints, better buildings: maps bigger than the printer print in pieces that fit its
