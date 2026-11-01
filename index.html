@@ -235,6 +235,11 @@ nom<!doctype html>
         <label id="pieces-joints" class="check" hidden><input id="print-joints" type="checkbox" checked /> Joints in the base, <input id="print-clearance" type="number" autocomplete="off" min="0" step="0.05" value="0.1" aria-label="Joint clearance" /> mm play</label>
       </div>
       <button id="preview-print" aria-pressed="false">Preview export</button>
+      <!-- Printed in pieces: how far apart the preview shows them. -->
+      <label id="explode-row" class="slider explode" hidden>
+        <span>Explode view</span><output id="explode-value">1 cm</output>
+        <input id="explode" type="range" autocomplete="off" min="0" max="10" step="0.5" value="1" />
+      </label>
       <p id="print-warning" class="warning" hidden></p>
       <div id="print-progress" class="progress" hidden>
         <div class="progress-head"><span class="progress-label"></span><span class="progress-text"></span></div>

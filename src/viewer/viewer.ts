@@ -32,7 +32,6 @@ import {
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import type { AreaData, Layer } from '../area-data';
 import type { PrintModel, ThinObjects } from '../export';
-import type { ShownPart } from '../pieces-cut';
 import { clipObjects, clipToSelection } from '../clip';
 import { applyEdits, editedTrees, editKey, type Edits, type GroundKind, type ObjectEdit } from '../edits';
 import { centroid, pointInRing, ringArea, type LngLat } from '../geo';
@@ -93,7 +92,9 @@ const LIFT_M = 6;
 const LIFT_SHARE = 0.12;
 const LIFT_EASE = 0.18;
 // How much of the way apart the print's pieces move each frame.
-const PULL_EASE = 0.08;
+const PULL_EASE = 0.12;
+// The camera stays above the horizon over the map; the export preview may look from below.
+const MAX_POLAR = Math.PI * 0.47;
 const TINT = new Color('#ffd5b8');
 const TINT_GLOW = new Color('#ff6b2c').multiplyScalar(0.12);
 // How much of the way to the ground under it the orbit's center goes each frame.
@@ -131,9 +132,10 @@ export class Viewer {
   private print = new Group();
   // One color for every part (an STL), or each part's own (a 3MF).
   private printMono = false;
-  // Printed in pieces: each piece's meshes and how far it moves out, and how far along the
-  // pulling apart is (0 together, 1 apart).
-  private explode: { meshes: { mesh: Mesh; offset: [number, number] }[]; toScene: Matrix4; k: number } | null = null;
+  // Printed in pieces: each piece's meshes and its place in the grid, and the gap between
+  // pieces (mm): as shown, and where it's easing to (the export card's Explode view).
+  private explode: { meshes: { mesh: Mesh; col: number; row: number }[]; grid: { cols: number; rows: number }; toScene: Matrix4; gap: number } | null = null;
+  private explodeGap = 10;
   private liftKey: string | null = null;
   // The lifted copy's scaling pivot (center of its base), and the edit it was built with.
   private liftPivot: Group | null = null;
@@ -208,7 +210,7 @@ export class Viewer {
     // orbit's center up and down, down under the tile), and the camera stays above the
     // horizon of its center.
     this.controls.screenSpacePanning = false;
-    this.controls.maxPolarAngle = Math.PI * 0.47;
+    this.controls.maxPolarAngle = MAX_POLAR;
 
     let press: { x: number; y: number } | null = null;
     this.renderer.domElement.addEventListener('pointerdown', (e) => (press = e.button === 0 ? { x: e.clientX, y: e.clientY } : null));
@@ -231,6 +233,9 @@ export class Viewer {
       const y = this.highlight.position.y;
       const lifting = Math.abs(target - y) > 1e-3;
       this.highlight.position.y = reducedMotion || !lifting ? target : y + (target - y) * LIFT_EASE;
+      // Seen from below (the export preview), dragging on the ground plane runs the wrong way
+      // up and down: there, panning follows the screen, the model moving with the cursor.
+      this.controls.screenSpacePanning = this.controls.getPolarAngle() > Math.PI / 2;
       const moved = this.controls.update();
       const apart = this.pullApart();
       if (!moved && !lifting && !apart && !this.dirty && now - lastDrawn < 1000) return;
@@ -245,6 +250,8 @@ export class Viewer {
   // way back but Back to map); and zoomed in close over a mountain, the camera can be inside
   // the ground under it: it's lifted to clear the terrain.
   private keepAboveGround() {
+    // The export preview may be looked at from any side, below too.
+    if (this.print.children.length) return;
     if (!this.data || !this.placement || !this.outline.length) return;
     const t = this.controls.target;
     const [cx, cz] = pointInRing([t.x, t.z], this.outline) ? [t.x, t.z] : nearestOnRing([t.x, t.z], this.outline);
@@ -288,22 +295,23 @@ export class Viewer {
 
   // The model exactly as it will print, one color per part (or one for all: `mono`), objects
   // narrower than the nozzle in red; null goes back to the normal view.
-  // `shown`: the model in pieces (pieces-cut.ts), pulled apart.
-  showPrint(model: PrintModel | null, thin?: ThinObjects, mono = this.printMono, shown?: { parts: ShownPart[]; offsets: [number, number][] }) {
+  // In pieces (each part tagged with its piece), they're pulled apart; and the camera may go
+  // under the model, to see its bottom (the joints' pockets).
+  showPrint(model: PrintModel | null, thin?: ThinObjects, mono = this.printMono) {
     this.dirty = true;
     this.printMono = mono;
     disposeChildren(this.print);
     this.explode = null;
+    this.controls.maxPolarAngle = model ? Math.PI : MAX_POLAR;
     if (model) this.select(null);
     for (const g of [this.terrain, this.objects, this.highlight]) g.visible = !model;
     if (!model) return;
-    const meshes: { mesh: Mesh; offset: [number, number] }[] = [];
-    for (const part of (shown?.parts ?? model.parts) as (PrintModel['parts'][number] & Partial<ShownPart>)[]) {
+    const meshes: { mesh: Mesh; col: number; row: number }[] = [];
+    for (const part of model.parts) {
       const geometry = new BufferGeometry();
       geometry.setAttribute('position', new BufferAttribute(part.triangles, 3));
       geometry.computeVertexNormals();
-      // A piece's part is marked from the whole part it was cut from.
-      const flagged = thin?.objects.get(part.from !== undefined ? model.parts[part.from] : part);
+      const flagged = thin?.objects.get(part);
       // Which triangles are too thin, to keep them red whatever the colors.
       const thinTris = flagged ? Uint8Array.from(part.objects, (o) => (flagged.has(o) ? 1 : 0)) : null;
       if (thinTris) geometry.setAttribute('color', new BufferAttribute(new Float32Array(part.triangles.length), 3));
@@ -315,18 +323,28 @@ export class Viewer {
       mesh.matrixAutoUpdate = false;
       mesh.matrix.copy(model.toScene);
       this.print.add(mesh);
-      if (shown && part.piece !== undefined) meshes.push({ mesh, offset: shown.offsets[part.piece] });
+      const place = part.piece !== undefined ? model.pieces?.[part.piece] : undefined;
+      if (place) meshes.push({ mesh, ...place });
     }
-    if (meshes.length) this.explode = { meshes, toScene: model.toScene, k: 0 };
+    if (meshes.length && model.grid) this.explode = { meshes, grid: model.grid, toScene: model.toScene, gap: 0 };
   }
 
-  // The pieces moving apart, eased (at once with reduced motion); whether they moved.
+  // The gap between the print's pieces (mm), eased to.
+  setExplode(gapMm: number) {
+    this.explodeGap = gapMm;
+    this.dirty = true;
+  }
+
+  // The pieces moving apart (or together), eased (at once with reduced motion), each by its
+  // place in the grid: neighbors end up the gap apart. Whether they moved.
   private pullApart(): boolean {
     const e = this.explode;
-    if (!e || e.k >= 1) return false;
-    e.k = matchMedia('(prefers-reduced-motion: reduce)').matches || e.k > 0.995 ? 1 : e.k + (1 - e.k) * PULL_EASE;
+    if (!e || Math.abs(e.gap - this.explodeGap) < 1e-3) return false;
+    const jump = matchMedia('(prefers-reduced-motion: reduce)').matches || Math.abs(e.gap - this.explodeGap) < 0.05;
+    e.gap = jump ? this.explodeGap : e.gap + (this.explodeGap - e.gap) * PULL_EASE;
     const move = new Matrix4();
-    for (const { mesh, offset } of e.meshes) mesh.matrix.multiplyMatrices(e.toScene, move.makeTranslation(offset[0] * e.k, offset[1] * e.k, 0));
+    const [mc, mr] = [(e.grid.cols - 1) / 2, (e.grid.rows - 1) / 2];
+    for (const { mesh, col, row } of e.meshes) mesh.matrix.multiplyMatrices(e.toScene, move.makeTranslation((col - mc) * e.gap, -(row - mr) * e.gap, 0));
     return true;
   }
 

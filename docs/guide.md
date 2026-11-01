@@ -205,12 +205,21 @@ The **Export** card floats over the 3D view once the detailed data is in.
   **Pieces** that fit it (an n × m grid over the shape, turned with it; **auto** brings the
   proposal back after you set your own). The card gives the largest piece's size, marks any
   that don't fit, and warns of slivers (under 15% of a piece: another grid avoids them).
-  The preview shows the pieces pulled apart. The download is a zip with an STL per piece,
+  The preview shows the pieces pulled apart (**Explode view** sets how far, 0 to 10 cm; the
+  camera can look from below, at the joints). The download is a zip with an STL per piece,
   or one 3MF with an object per piece, named by row and column (r1c1 at the top left).
-- **Joints:** along every cut the base gets small tapered tabs on one side (toward the
-  right and the top) and pockets on the other, with 0.1 mm of play (a setting): slide the
-  pieces together sideways, row by row, and glue them. The pockets open at the bottom and
-  at the cut, so everything prints without supports.
+- **Joints:** along every cut the base gets small tapered tabs on one side and pockets on
+  the other, with 0.1 mm of play (a setting). Every tab points to the next column (right)
+  or the next row (down): r1c1 has only tabs, and each other piece has pockets toward the
+  pieces before it. Assemble diagonally from the top left, sliding each piece in sideways,
+  and glue. The pockets open at the bottom and at the cut, so everything prints without
+  supports. A tab is 10 mm wide at the cut (7 at its tip), reaches 6 mm into the neighbor
+  and is 60% of the base tall; there's one where the cut is 16 mm or longer, two (at a
+  quarter and three quarters of the way) from 40 mm. The play can be up to the base's thickness less the tab's and a 0.4 mm
+  roof (0.8 mm with a 3 mm base).
+- **What a cut crosses:** streets, terrain and buildings are cut with closed walls; 3D models
+  too, each half closed (one that isn't a closed solid prints whole in one piece, and the
+  preview says so); single trees a cut would split are left out.
 - Streets and water are carved one step (the thinnest detail) into the ground; parks,
   squares and sand lie flush. Each is its own colored part in a 3MF.
 - **For other 3D software** (Blender, Unity, Unreal, Sketchfab, a web page): **GLB** or

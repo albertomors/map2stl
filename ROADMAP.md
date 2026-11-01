@@ -70,8 +70,8 @@ testing).
 
 ### Print in pieces: what's left
 
-Built: the grid, the pieces' sizes against the bed, the pulled-apart preview, the cut files,
-the tabs and pockets. Next:
+Built: the grid, the pieces' sizes against the bed, each piece built on its own outline, the
+pulled-apart preview, the files, the tabs and pockets. Next:
 
 - **Merge a sliver into its neighbor:** a piece under 15% of a cell (a free shape's odd
   corner, a circle's edge in a fine grid) is flagged; one click should join it to the piece
@@ -80,8 +80,6 @@ the tabs and pockets. Next:
   cut, and a small key printed apart, pushed in from below, so the pieces hold without glue.
 - **Cut lines along streets** rather than through buildings: each cut nudged, within a few
   millimeters, to where it crosses the fewest buildings.
-- Parts manifold-3d can't take (not closed) go uncut to the piece holding each triangle's
-  middle: cut them by their triangles too, open at the cut.
 
 ## Publishing
 

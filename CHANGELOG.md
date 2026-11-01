@@ -12,10 +12,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Print in pieces, for maps bigger than the printer: set the bed's size and the export
   proposes the fewest pieces that fit (an n × m grid over the shape, turned with it, or one
   of your own), says how big the largest is, marks any that don't fit and warns of slivers.
-  The preview pulls the pieces apart. The download cuts them with manifold-3d, flat and
-  watertight: a zip with an STL per piece, or one 3MF with an object per piece, named by row
-  and column. Along each cut the base gets tapered tabs and matching pockets (0.1 mm of play,
-  a setting), open at the bottom so they print without supports.
+  Each piece is built on its own outline (the shape cut to its cell), so its cut sides are
+  closed walls like the map's edge, and all stand on one base. The preview pulls them apart
+  (Explode view, 0 to 10 cm; the camera may look from below). The download is a zip with an
+  STL per piece, or one 3MF with an object per piece, named by row and column. Along each cut
+  the base gets tapered tabs and matching pockets (0.1 mm of play, a setting), open at the
+  bottom so they print without supports; every tab points right or down, so the pieces go
+  together diagonally from the top left. 3D models (official or your own) crossing a cut are
+  cut too, each half closed; single trees a cut would split are left out.
+
+### Fixed
+
+- The print's base no longer has holes where carved streets or water meet the edge: it was
+  traced from the terrain's open edges, which branch there (Hamburg in pieces: a third of one
+  piece's bottom missing); it's now the outline itself.
+- Seen from below (the export preview's camera may go under the model), dragging pans the
+  way the cursor goes.
 
 - "Use detailed buildings from …" in the 3D view, wherever an official source covers some of
   the area: every building takes its measured model, without picking one first, with
@@ -27,8 +39,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Switzerland: one building or every building in the area takes its measured model. The
   reader now takes 3D Tiles 1.1 (glb, meshopt, oriented-box volumes) besides 1.0, and
   tilesets that refine by replacing (only their finest tiles are read).
-
-### Fixed
 
 - A building mapped as a relation of its outline and parts is one building again, its
   parts where the relation says, not wherever their corners fall: Atlantis The Royal

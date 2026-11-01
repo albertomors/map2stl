@@ -47,7 +47,9 @@ export function clipObjects(osm: OsmData, ring: LngLat[]): Pick<OsmData, 'buildi
     railways: lines(osm.railways.filter((l) => l.bridge)),
     structureAreas: osm.structureAreas.flatMap((a) => clipPolygon(a, shape, ring).map((p) => ({ ...a, ...p }))),
     structureLines: lines(osm.structureLines),
-    towers: osm.towers,
+    // Points: in or out (a print in pieces builds each piece on its own outline: every tower
+    // in every piece otherwise).
+    towers: osm.towers.filter((t) => pointInRing(t.at, ring)),
   };
 }
 

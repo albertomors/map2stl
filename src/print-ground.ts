@@ -163,6 +163,10 @@ export function buildGroundSolids(
           { polys: shapes.parks, depth: (DEPTH.flush + 1) * step },
         ],
         baseDepth,
+        ring.map((p) => frame.toLocal(p)),
+        // Shapes are simplified and tidied by fractions of a step (SIMPLIFY, TIDY) in grid
+        // pixels: a step in scene units is more than either.
+        stepUnits,
       )
     : null;
   for (const cs of made) cs.delete();

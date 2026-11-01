@@ -22,8 +22,7 @@ import { applyEdits, editKey, type Edits, type GroundKind } from './edits';
 import { officialSourceFor } from './official-sources';
 import type { Footprint, OfficialJob, OfficialMessage } from './official3d';
 import { forgetModels, storeModels, withTriangles } from './viewer/objects-host';
-import { fits, outlineMm, piecesOf, proposeGrid, SLIVER, type Grid, type Pt } from './pieces';
-import type { PieceSpec } from './pieces-cut';
+import { fits, JOINT, outlineMm, piecesOf, proposeGrid, SLIVER, type Grid, type PieceSpec, type Pt } from './pieces';
 import type { PrintModel, ThinObjects } from './export';
 import type { PrintJob, PrintProgress, PrintResult } from './print-worker';
 
@@ -160,7 +159,12 @@ function pieceSpec(): PieceSpec | undefined {
   const grid = pieceGrid();
   if (grid.cols * grid.rows === 1) return undefined;
   const clearance = Number($<HTMLInputElement>('print-clearance').value);
-  if (!Number.isFinite(clearance) || clearance < 0) throw new SettingError('The joints\' play must be 0 mm or more.');
+  // A pocket is the tab's height (JOINT.height of the base) plus the play: it must stay under
+  // the base's top with a 0.4 mm roof left, or it breaks through where the ground is lowest.
+  const base = Number($<HTMLInputElement>('print-base').value) || 3;
+  const most = Math.max(0, Math.floor(((1 - JOINT.height) * base - 0.4) * 100) / 100);
+  if (!Number.isFinite(clearance) || clearance < 0 || clearance > most)
+    throw new SettingError(`The joints' play must be between 0 and ${most} mm with a ${base} mm base (a thicker base allows more).`);
   return { grid, joints: $<HTMLInputElement>('print-joints').checked, clearance };
 }
 // The grid (proposed, if it's on auto), and each piece's size against the bed.
@@ -220,6 +224,12 @@ $('print-grid-auto').addEventListener('click', () => {
   updatePrintPreview();
 });
 $('print-size').addEventListener('change', () => showPieces());
+// Explode view: how far apart the preview shows the pieces (cm on the print).
+$('explode').addEventListener('input', () => {
+  const cm = Number($<HTMLInputElement>('explode').value);
+  $('explode-value').textContent = `${cm} cm`;
+  viewer?.setExplode(cm * 10);
+});
 for (const id of ['print-joints', 'print-clearance']) $(id).addEventListener('change', () => updatePrintPreview());
 // Thinnest detail and nozzle step by 0.1 mm, and by 0.01 mm below 0.1 (0.1 up is 0.2, not
 // 0.11; 0.1 down is 0.09): their own arrows and keys, since a number field's step is fixed.
@@ -1652,6 +1662,7 @@ function setPrintPreview(on: boolean) {
   $('edits-summary').hidden = printPreview;
   showOfficialArea();
   previewed = null;
+  $('explode-row').hidden = true;
   if (!printPreview) {
     printProgress.cancel(previewWorker);
     previewWorker?.terminate();
@@ -1681,12 +1692,17 @@ async function updatePrintPreview() {
     const { result, nozzle, minFeatureMm } = await runPrintJob('preview', areaData, (w) => (previewWorker = mine = w));
     if (previewWorker !== mine || !printPreview) return;
     previewWorker = null;
-    viewer?.showPrint(result.model, result.thin, exportFormat === 'stl', result.shown);
+    viewer?.setExplode(Number($<HTMLInputElement>('explode').value) * 10);
+    viewer?.showPrint(result.model, result.thin, exportFormat === 'stl');
+    $('explode-row').hidden = !result.model.pieces;
     showThinWarning(result.thin, nozzle, minFeatureMm, result.model.crownMm);
     previewed = { model: result.model, thin: result.thin, nozzle, minFeatureMm };
     $<HTMLButtonElement>('download').disabled = false;
     const [x, y, z] = result.model.sizeMm.map((v) => Math.round(v));
-    status.textContent = `${x} × ${y} × ${z} mm · ${result.model.triangleCount.toLocaleString()} triangles.`;
+    // 3D models a cut crosses but couldn't cut (not closed): whole, in one piece each.
+    const n = result.model.uncutModels ?? 0;
+    const uncut = n ? ` ${n} detailed ${n === 1 ? 'building crosses a cut and prints' : 'buildings cross a cut and print'} whole in one piece: only a closed model can be cut, and ${n === 1 ? 'its isn\'t' : 'theirs aren\'t'}.` : '';
+    status.textContent = `${x} × ${y} × ${z} mm · ${result.model.triangleCount.toLocaleString()} triangles.${uncut}`;
   } catch (err) {
     if (mine && previewWorker !== mine) return;
     if (!(err instanceof SettingError)) console.error('Preview failed', err);

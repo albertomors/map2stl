@@ -260,8 +260,10 @@ export function drapedSolids(ctx: DrapeContext, polys: Poly[], top: Offset, bott
 // The terrain tile with shapes carved in, each region at its own depth below the terrain
 // (0 for the plain ground), steep walls where regions of different depths meet, and the side
 // walls and flat base under all of it, as one closed solid. The regions must together cover
-// the selection without overlapping.
-export function carvedTerrain(ctx: DrapeContext, regions: { polys: Poly[]; depth: Offset }[], baseDepth: number): { positions: number[]; baseY: number } {
+// the selection without overlapping. `outline`: the selection's (or a piece's) outline in
+// scene x, z, which the base fills; the regions' edges along it may stray from it by up to
+// `tolerance` (they're simplified that much).
+export function carvedTerrain(ctx: DrapeContext, regions: { polys: Poly[]; depth: Offset }[], baseDepth: number, outline: [number, number][], tolerance: number): { positions: number[]; baseY: number } {
   const positions: number[] = [];
   const tri = (a: number[], b: number[], c: number[]) => positions.push(...a, ...b, ...c);
   const welder = new Welder();
@@ -323,29 +325,48 @@ export function carvedTerrain(ctx: DrapeContext, regions: { polys: Poly[]; depth
   let minY = Infinity;
   for (const pts of at) for (const p of pts) minY = Math.min(minY, p[1]);
   const baseY = minY - baseDepth;
-  // Rim edges leaving each point. A point can have more than one (where a region just
-  // touches the rim), so each edge is walked once.
-  const next = new Map<string, Edge[]>();
+  // The side walls, from each rim edge down to the base.
   for (const e of rim) {
     const [tp, tq] = [at[e.level][e.p], at[e.level][e.q]];
     wall(keyOf(e, e.p), keyOf(e, e.q), tp, tq, [tp[0], baseY, tp[2]], [tq[0], baseY, tq[2]]);
-    const list = next.get(keyOf(e, e.p)) ?? [];
-    list.push(e);
-    next.set(keyOf(e, e.p), list);
   }
-  // The base: each rim loop at the base height, triangulated, facing down.
-  const used = new Set<Edge>();
-  for (const first of rim) {
-    if (used.has(first)) continue;
-    const loop: number[][] = [];
-    for (let e: Edge | undefined = first; e && !used.has(e); ) {
-      used.add(e);
-      loop.push(at[e.level][e.p]);
-      e = next.get(keyOf(e, e.q))?.find((n) => !used.has(n));
+  // The base: the outline at the base height, facing down. Its points are the rim's (each side
+  // wall's bottom), put in order along the outline, so the base meets the walls point for
+  // point. Not by walking the rim from edge to edge: where a region touches the outline a
+  // point has two rim edges, and a flaw in the carving leaves rim edges inside; walked, the
+  // loops came out partial and the base had holes (Hamburg in pieces: a third of one piece's
+  // bottom). Rim points farther off the outline than the regions' edges stray (such flaws)
+  // aren't the base's.
+  const ring = outline[0][0] === outline[outline.length - 1][0] && outline[0][1] === outline[outline.length - 1][1] ? outline : [...outline, outline[0]];
+  const starts: number[] = [0];
+  for (let i = 1; i < ring.length; i++) starts.push(starts[i - 1] + Math.hypot(ring[i][0] - ring[i - 1][0], ring[i][1] - ring[i - 1][1]));
+  const ON = tolerance;
+  // How far along the outline a point is, or null if it's not on it.
+  const along = (x: number, z: number): number | null => {
+    let best: [number, number] | null = null;
+    for (let i = 1; i < ring.length; i++) {
+      const [ax, az] = ring[i - 1];
+      const [dx, dz] = [ring[i][0] - ax, ring[i][1] - az];
+      const len2 = dx * dx + dz * dz || 1;
+      const t = Math.min(1, Math.max(0, ((x - ax) * dx + (z - az) * dz) / len2));
+      const d = Math.hypot(ax + t * dx - x, az + t * dz - z);
+      if (!best || d < best[0]) best = [d, starts[i - 1] + t * (starts[i] - starts[i - 1])];
     }
-    if (loop.length < 3) continue;
-    const outline = loop.map((p) => new Vector2(p[0], p[2]));
-    for (const [a, b, c] of ShapeUtils.triangulateShape(outline, [])) {
+    return best && best[0] <= ON ? best[1] : null;
+  };
+  const points = new Map<string, { p: number[]; s: number }>();
+  for (const e of rim) {
+    for (const v of [e.p, e.q]) {
+      const k = keyOf(e, v);
+      if (points.has(k)) continue;
+      const p = at[e.level][v];
+      const s = along(p[0], p[2]);
+      if (s !== null) points.set(k, { p, s });
+    }
+  }
+  const loop = [...points.values()].sort((a, b) => a.s - b.s).map((x) => x.p);
+  if (loop.length >= 3) {
+    for (const [a, b, c] of ShapeUtils.triangulateShape(loop.map((p) => new Vector2(p[0], p[2])), [])) {
       const [pa, pb, pc] = [loop[a], loop[b], loop[c]].map((p) => [p[0], baseY, p[2]]);
       const ny = (pb[2] - pa[2]) * (pc[0] - pa[0]) - (pb[0] - pa[0]) * (pc[2] - pa[2]);
       tri(pa, ny < 0 ? pb : pc, ny < 0 ? pc : pb);

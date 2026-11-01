@@ -37,7 +37,7 @@ const BRIDGE_CLEARANCE_M = 1;
 // Thin walls vanish on screen; the export passes its own print minimum instead.
 const MIN_WIDTH_M = 0.8;
 export const TREE_HEIGHT_M = 9;
-const TREE_RADIUS_M = 3;
+export const TREE_RADIUS_M = 3;
 
 export interface Placement {
   frame: LocalFrame;

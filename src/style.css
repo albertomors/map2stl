@@ -768,6 +768,14 @@ body.mode-3d .map-only {
   gap: 8px;
 }
 
+.explode {
+  margin-top: 10px;
+}
+
+.slider.explode[hidden] {
+  display: none;
+}
+
 .official-area[hidden] {
   display: none;
 }

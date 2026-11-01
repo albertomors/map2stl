@@ -4,12 +4,11 @@
 
 import type { AreaData, Layer } from './area-data';
 import type { Edits } from './edits';
-import { buildPrintModel, findThinObjects, type PrintModel, type PrintOptions, type ThinObjects } from './export';
+import { buildPrintModel, buildPrintPieces, combinePieces, findThinObjects, pieceOf, type PrintModel, type PrintOptions, type ThinObjects } from './export';
 import { sourceCredits } from './credits';
 import { to3MF, to3MFPieces, toSTL, toSTLPieces } from './export-files';
 import { loadManifold, mergeModel } from './merge';
-import { outlineMm } from './pieces';
-import { cutPieces, piecesForPreview, type PieceSpec, type ShownPart } from './pieces-cut';
+import type { PieceSpec } from './pieces';
 import { modelAssets, type ModelAsset } from './model-assets';
 import type { ViewScales } from './viewer/viewer';
 
@@ -32,9 +31,8 @@ export interface PrintJob {
 }
 
 export type PrintResult =
-  // `shown`: the preview's pieces, pulled apart in the view (the model itself stays whole,
-  // for the download); `pieces`: how many the file has.
-  | { ok: true; model: PrintModel; thin: ThinObjects; file?: Blob; skipped?: number; credits?: string[]; shown?: { parts: ShownPart[]; offsets: [number, number][] }; pieces?: number }
+  // `pieces`: how many the file has.
+  | { ok: true; model: PrintModel; thin: ThinObjects; file?: Blob; skipped?: number; credits?: string[]; pieces?: number }
   | { ok: false; message: string };
 
 // Sent while it works: how far along (0 to 1) and what it's doing.
@@ -50,17 +48,13 @@ const SHARES = {
   // From the previewed model: merging and writing only.
   previewed: { build: 0, thin: 0, merge: 0.7, cut: 0, write: 0.3 },
 };
-// In pieces, cutting takes about as long again as merging.
-const CUT = { merge: 0.45, cut: 0.35, write: 0.2 };
+
 
 self.onmessage = async (e: MessageEvent<PrintJob>) => {
   const job = e.data;
   const inPieces = !!job.pieces && job.pieces.grid.cols * job.pieces.grid.rows > 1;
   const base = SHARES[job.kind === 'preview' ? 'preview' : job.previewed ? 'previewed' : 'file'];
-  // In pieces, what's left after building goes to merging, cutting and writing.
-  const rest = 1 - base.build - base.thin;
-  const share: Record<string, number> =
-    job.kind !== 'preview' && inPieces ? { ...base, merge: CUT.merge * rest, cut: CUT.cut * rest, write: CUT.write * rest } : base;
+  const share: Record<string, number> = base;
   let start = 0;
   const report = (stage: string, fraction: number, label: string) => {
     const p: PrintProgress = { progress: start + (share[stage] ?? 0) * fraction, label };
@@ -80,46 +74,49 @@ self.onmessage = async (e: MessageEvent<PrintJob>) => {
       next('build');
       next('thin');
     } else {
-      model = buildPrintModel(wasm, job.data, job.edits, job.scales, new Set(job.visible), job.options, (f, label) => report('build', f, label));
+      // In pieces, each built on its own outline (export.ts), as one model of tagged parts.
+      model = inPieces
+        ? combinePieces(buildPrintPieces(wasm, job.data, job.edits, job.scales, new Set(job.visible), job.options, job.pieces, (f, label) => report('build', f, label)), job.pieces!.grid)
+        : buildPrintModel(wasm, job.data, job.edits, job.scales, new Set(job.visible), job.options, (f, label) => report('build', f, label));
       next('build');
       report('thin', 0, 'Checking thin details');
       thin = findThinObjects(model, job.nozzleMm);
       next('thin');
     }
-    // The joints go in the base: the terrain's, or the whole model's in an STL (one solid).
-    const outline = inPieces ? outlineMm(job.data.selection, job.options.sizeMm) : [];
-    const jointPart = job.kind === 'stl' ? 'Model' : 'Terrain';
     if (job.kind === 'preview') {
-      const shown = inPieces ? piecesForPreview(wasm, model, outline, job.pieces!, job.options.baseMm, 'Terrain') : undefined;
-      reply({ ok: true, model, thin, shown }, model, shown?.parts);
+      reply({ ok: true, model, thin }, model);
       return;
     }
     // Overlaps united into one watertight solid (one per colored part in a 3MF): what CAD
     // tools, mesh checkers and print services expect. The preview skips this: it looks the same.
+    // In pieces, each piece on its own.
     const label = job.kind === 'stl' ? 'Merging into one solid' : 'Merging each color';
-    const merged = await mergeModel(model, job.kind === 'stl', (f) => report('merge', f, label));
-    next('merge');
     const credits = sourceCredits(job.data, job.models, job.visible);
     let file: Blob;
     let pieces: number | undefined;
-    if (inPieces) {
-      report('cut', 0, 'Cutting the pieces');
-      const cut = cutPieces(wasm, merged.model, outline, job.pieces!, job.options.baseMm, jointPart, (f) => report('cut', f, 'Cutting the pieces')).filter((c) => c.model.parts.length);
-      next('cut');
-      report('write', 0, 'Writing the files');
-      const named = cut.map(({ piece, model }) => ({ name: `${job.name}-r${piece.row + 1}c${piece.col + 1}`, model }));
+    let merged: { model: PrintModel; skipped: number };
+    if (model.pieces) {
+      const list = model.pieces;
+      const done: { name: string; model: PrintModel; offset: [number, number] }[] = [];
+      let skipped = 0;
       // On the plate a little apart, as on the map, so they don't overlap.
       const GAP = 10;
-      file =
-        job.kind === 'stl'
-          ? toSTLPieces(named)
-          : to3MFPieces(
-              named.map((n, i) => ({ ...n, offset: [cut[i].piece.col * GAP, -cut[i].piece.row * GAP] })),
-              job.name,
-              credits,
-            );
-      pieces = cut.length;
+      for (let i = 0; i < list.length; i++) {
+        const m = await mergeModel(pieceOf(model, i), job.kind === 'stl', (f) => report('merge', (i + f) / list.length, label));
+        skipped += m.skipped;
+        if (!m.model.parts.length) continue;
+        const { col, row } = list[i];
+        done.push({ name: `${job.name}-r${row + 1}c${col + 1}`, model: m.model, offset: [col * GAP, -row * GAP] });
+      }
+      next('merge');
+      report('write', 0, 'Writing the files');
+      file = job.kind === 'stl' ? toSTLPieces(done) : to3MFPieces(done, job.name, credits);
+      pieces = done.length;
+      const triangleCount = done.reduce((n, d) => n + d.model.triangleCount, 0);
+      merged = { model: { ...model, parts: [], triangleCount }, skipped };
     } else {
+      merged = await mergeModel(model, job.kind === 'stl', (f) => report('merge', f, label));
+      next('merge');
       report('write', 0, 'Writing the file');
       file = job.kind === 'stl' ? toSTL(merged.model) : to3MF(merged.model, job.name, credits);
     }
@@ -133,7 +130,7 @@ self.onmessage = async (e: MessageEvent<PrintJob>) => {
 };
 
 // The triangle arrays move to the page instead of being copied.
-function reply(result: PrintResult, model: PrintModel | null, shown: ShownPart[] = []) {
-  const buffers = [...(model?.parts ?? []), ...shown].flatMap((p) => [p.triangles.buffer, p.solids.buffer, p.objects.buffer]);
+function reply(result: PrintResult, model: PrintModel | null) {
+  const buffers = (model?.parts ?? []).flatMap((p) => [p.triangles.buffer, p.solids.buffer, p.objects.buffer]);
   (self as unknown as Worker).postMessage(result, [...new Set(buffers)] as ArrayBuffer[]);
 }

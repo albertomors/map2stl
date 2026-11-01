@@ -4,7 +4,11 @@
 // piece is the shape inside a cell, and cells the shape doesn't reach are dropped. Along every
 // cut the base gets joints: tabs on one side, matching pockets on the other, so the pieces
 // line up. Plain geometry, in print millimeters (X right, Y up the bed), free of three.js and
-// manifold: the page sizes the pieces with it, the print worker cuts them.
+// manifold: the page sizes the pieces with it, the print builds them (export.ts).
+//
+// The joints let the pieces go together from the top left, diagonally: every tab points to
+// the next column (right) or the next row (down), so r1c1 has only tabs, and every other
+// piece has pockets toward the pieces before it and tabs toward those after it.
 
 import polygonClipping, { type Polygon as PcPolygon } from 'polygon-clipping';
 import { pointInRing } from './geo';
@@ -16,6 +20,13 @@ export type Pt = [number, number];
 export interface Grid {
   cols: number;
   rows: number;
+}
+
+export interface PieceSpec {
+  grid: Grid;
+  joints: boolean;
+  // How much wider a pocket is than its tab, all round (mm).
+  clearance: number;
 }
 
 export interface Piece {
@@ -35,14 +46,14 @@ export interface Piece {
 export const SLIVER = 0.15;
 
 // The joints, in mm: a tab reaching this far past the cut, this wide at the cut and at its tip
-// (tapered, so it finds its place), as tall as this share of the base, one per this much cut,
-// and kept this far from where the cut leaves the shape.
-export const JOINT = { length: 6, root: 10, tip: 7, height: 0.6, every: 40, margin: 3 };
+// (tapered, so it finds its place), as tall as this share of the base; one per this much cut,
+// up to this many, evenly spread; kept this far from where the cut leaves the shape.
+export const JOINT = { length: 6, root: 10, tip: 7, height: 0.6, every: 40, most: 2, margin: 3 };
 
 export interface Joint {
-  // The tab's root, in the middle of the cut, and the way it points (+x or +y).
+  // The tab's root, on the cut, and the way it points: right (+x) or down (−y).
   at: Pt;
-  along: 'x' | 'y';
+  dir: Pt;
   // The piece that has the tab, and the one with the pocket (indexes into the pieces).
   tab: number;
   pocket: number;
@@ -78,10 +89,10 @@ export function piecesOf(outline: Pt[], grid: Grid): Piece[] {
       // A hair of the shape along a cell's edge isn't a piece.
       if (area < w * h * 0.001) continue;
       const [px0, py0, px1, py1] = boxOf(inside.flat(2));
-      // Tabs stick out toward +x and +y where there's a neighbor there.
+      // Tabs stick out right and down where there's a next piece there.
       const right = col < grid.cols - 1 ? JOINT.length : 0;
-      const up = row > 0 ? JOINT.length : 0;
-      pieces.push({ col, row, cell, outline: inside, sizeMm: [px1 - px0 + right, py1 - py0 + up], share: area / (w * h) });
+      const down = row < grid.rows - 1 ? JOINT.length : 0;
+      pieces.push({ col, row, cell, outline: inside, sizeMm: [px1 - px0 + right, py1 - py0 + down], share: area / (w * h) });
     }
   }
   return pieces;
@@ -101,30 +112,32 @@ export function proposeGrid(outline: Pt[], bed: Pt): Grid | null {
 }
 
 // The joints along every cut between two pieces: on each stretch of cut inside the shape,
-// one tab per JOINT.every mm (at least one), evenly spread; none where the stretch is too
-// short, or where the pocket would reach past the shape's edge.
+// one tab per JOINT.every mm, at least one and at most JOINT.most, evenly spread (two at a
+// quarter and three quarters of the way); none where the stretch is too short, or where the
+// pocket would reach past the shape's edge.
 export function jointsOf(outline: Pt[], pieces: Piece[], grid: Grid, clearance: number): Joint[] {
   const index = new Map(pieces.map((p, i) => [`${p.col},${p.row}`, i]));
   const joints: Joint[] = [];
-  const add = (tab: number | undefined, pocket: number | undefined, along: 'x' | 'y', cut: number, from: number, to: number) => {
+  // `along`: the cut is the line x = cut ('x') or y = cut ('y').
+  const add = (tab: number | undefined, pocket: number | undefined, along: 'x' | 'y', dir: Pt, cut: number, from: number, to: number) => {
     if (tab === undefined || pocket === undefined) return;
     for (const [a, b] of stretches(outline, along, cut, from, to)) {
       const length = b - a;
       if (length < JOINT.root + 2 * JOINT.margin) continue;
-      const n = Math.max(1, Math.floor(length / JOINT.every));
+      const n = Math.min(JOINT.most, Math.max(1, Math.floor(length / JOINT.every)));
       for (let k = 0; k < n; k++) {
         const t = a + ((k + 0.5) * length) / n;
-        const at: Pt = along === 'x' ? [cut, t] : [t, cut];
-        if (pocketFootprint({ at, along, tab, pocket }, clearance).every((p) => pointInRing(p, outline))) joints.push({ at, along, tab, pocket });
+        const joint: Joint = { at: along === 'x' ? [cut, t] : [t, cut], dir, tab, pocket };
+        if (pocketFootprint(joint, clearance).every((p) => pointInRing(p, outline))) joints.push(joint);
       }
     }
   };
   for (const p of pieces) {
     const i = index.get(`${p.col},${p.row}`);
-    // Its right side: tab here, pocket in the piece to the right.
-    if (p.col < grid.cols - 1) add(i, index.get(`${p.col + 1},${p.row}`), 'x', p.cell[2], p.cell[1], p.cell[3]);
-    // Its top side: tab here, pocket in the piece above.
-    if (p.row > 0) add(i, index.get(`${p.col},${p.row - 1}`), 'y', p.cell[3], p.cell[0], p.cell[2]);
+    // Its right side: tab here, pocket in the next piece to the right.
+    if (p.col < grid.cols - 1) add(i, index.get(`${p.col + 1},${p.row}`), 'x', [1, 0], p.cell[2], p.cell[1], p.cell[3]);
+    // Its bottom side: tab here, pocket in the next piece down.
+    if (p.row < grid.rows - 1) add(i, index.get(`${p.col},${p.row + 1}`), 'y', [0, -1], p.cell[1], p.cell[0], p.cell[2]);
   }
   return joints;
 }
@@ -140,10 +153,11 @@ export function pocketFootprint(j: Joint, clearance: number): Pt[] {
 }
 
 // Counterclockwise, in print mm.
-function footprint({ at: [x, y], along }: Joint, root: number, tip: number, length: number): Pt[] {
-  // Across and along the tab, then turned to its axis.
+function footprint({ at: [x, y], dir: [dx, dy] }: Joint, root: number, tip: number, length: number): Pt[] {
+  // Along the tab (u) and across it (v), then turned to its direction: a rotation, so it
+  // stays counterclockwise.
   const local: Pt[] = [[-1, -root / 2], [0, -root / 2], [length, -tip / 2], [length, tip / 2], [0, root / 2], [-1, root / 2]];
-  return along === 'x' ? local.map(([u, v]) => [x + u, y + v]) : local.map(([u, v]) => [x - v, y + u]);
+  return local.map(([u, v]) => [x + u * dx - v * dy, y + u * dy + v * dx]);
 }
 
 // The stretches of the line x = cut (or y = cut) inside the outline, between `from` and `to`
