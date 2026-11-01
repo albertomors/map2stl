@@ -232,7 +232,15 @@ nom<!doctype html>
       <!-- Printed in pieces (pieces.ts): their sizes, and the joints that line them up. -->
       <div id="pieces" class="pieces">
         <p id="pieces-info" class="hint"></p>
-        <label id="pieces-joints" class="check" hidden><input id="print-joints" type="checkbox" checked /> Joints in the base, <input id="print-clearance" type="number" autocomplete="off" min="0" step="0.05" value="0.1" aria-label="Joint clearance" /> mm play</label>
+        <label id="pieces-joints" class="check">
+          Joints
+          <select id="print-joints" aria-label="Joints between pieces">
+            <option value="tabs" selected>tabs</option>
+            <option value="keys" title="Bowtie keys printed apart, pushed in from below: they hold the pieces without glue">keys</option>
+            <option value="none">none</option>
+          </select>
+          <input id="print-clearance" type="number" autocomplete="off" min="0" step="0.05" value="0.1" aria-label="Joint clearance" /> mm play
+        </label>
       </div>
       <button id="preview-print" aria-pressed="false">Preview export</button>
       <!-- Printed in pieces: how far apart the preview shows them. -->

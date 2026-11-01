@@ -18,8 +18,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   STL per piece, or one 3MF with an object per piece, named by row and column. Along each cut
   the base gets tapered tabs and matching pockets (0.1 mm of play, a setting), open at the
   bottom so they print without supports; every tab points right or down, so the pieces go
-  together diagonally from the top left. 3D models (official or your own) crossing a cut are
-  cut too, each half closed; single trees a cut would split are left out.
+  together diagonally from the top left. Or bowtie keys instead: half a pocket in each piece,
+  and keys printed apart (their own file, laid out for one plate), pushed in from below,
+  that hold the pieces without glue. A sliver (under 15% of a piece) can be joined to its
+  neighbor in one click. 3D models (official or your own) crossing a cut are cut too, each
+  half closed; single trees a cut would split are left out.
 
 ### Fixed
 

@@ -134,7 +134,7 @@ export class Viewer {
   private printMono = false;
   // Printed in pieces: each piece's meshes and its place in the grid, and the gap between
   // pieces (mm): as shown, and where it's easing to (the export card's Explode view).
-  private explode: { meshes: { mesh: Mesh; col: number; row: number }[]; grid: { cols: number; rows: number }; toScene: Matrix4; gap: number } | null = null;
+  private explode: { meshes: { mesh: Mesh; col: number; row: number; keys?: boolean }[]; grid: { cols: number; rows: number }; toScene: Matrix4; gap: number } | null = null;
   private explodeGap = 10;
   private liftKey: string | null = null;
   // The lifted copy's scaling pivot (center of its base), and the edit it was built with.
@@ -306,7 +306,7 @@ export class Viewer {
     if (model) this.select(null);
     for (const g of [this.terrain, this.objects, this.highlight]) g.visible = !model;
     if (!model) return;
-    const meshes: { mesh: Mesh; col: number; row: number }[] = [];
+    const meshes: { mesh: Mesh; col: number; row: number; keys?: boolean }[] = [];
     for (const part of model.parts) {
       const geometry = new BufferGeometry();
       geometry.setAttribute('position', new BufferAttribute(part.triangles, 3));
@@ -344,7 +344,8 @@ export class Viewer {
     e.gap = jump ? this.explodeGap : e.gap + (this.explodeGap - e.gap) * PULL_EASE;
     const move = new Matrix4();
     const [mc, mr] = [(e.grid.cols - 1) / 2, (e.grid.rows - 1) / 2];
-    for (const { mesh, col, row } of e.meshes) mesh.matrix.multiplyMatrices(e.toScene, move.makeTranslation((col - mc) * e.gap, -(row - mr) * e.gap, 0));
+    // The keys drop out of their pockets, below the pieces.
+    for (const { mesh, col, row, keys } of e.meshes) mesh.matrix.multiplyMatrices(e.toScene, keys ? move.makeTranslation(0, 0, -2 * e.gap) : move.makeTranslation((col - mc) * e.gap, -(row - mr) * e.gap, 0));
     return true;
   }
 

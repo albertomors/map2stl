@@ -22,7 +22,7 @@ import { applyEdits, editKey, type Edits, type GroundKind } from './edits';
 import { officialSourceFor } from './official-sources';
 import type { Footprint, OfficialJob, OfficialMessage } from './official3d';
 import { forgetModels, storeModels, withTriangles } from './viewer/objects-host';
-import { fits, JOINT, outlineMm, piecesOf, proposeGrid, SLIVER, type Grid, type PieceSpec, type Pt } from './pieces';
+import { fits, JOINT, joinFor, outlineMm, piecesOf, proposeGrid, SLIVER, type Grid, type Merge, type PieceSpec, type Pt } from './pieces';
 import type { PrintModel, ThinObjects } from './export';
 import type { PrintJob, PrintProgress, PrintResult } from './print-worker';
 
@@ -165,8 +165,12 @@ function pieceSpec(): PieceSpec | undefined {
   const most = Math.max(0, Math.floor(((1 - JOINT.height) * base - 0.4) * 100) / 100);
   if (!Number.isFinite(clearance) || clearance < 0 || clearance > most)
     throw new SettingError(`The joints' play must be between 0 and ${most} mm with a ${base} mm base (a thicker base allows more).`);
-  return { grid, joints: $<HTMLInputElement>('print-joints').checked, clearance };
+  return { grid, joints: jointKind(), clearance, merges };
 }
+const jointKind = () => $<HTMLSelectElement>('print-joints').value as PieceSpec['joints'];
+// Slivers joined to a neighbor, for this grid, size and selection (a change starts over).
+let merges: Merge[] = [];
+let mergesFor = '';
 // The grid (proposed, if it's on auto), and each piece's size against the bed.
 function showPieces() {
   const size = Number($<HTMLInputElement>('print-size').value);
@@ -179,7 +183,10 @@ function showPieces() {
   }
   $('print-grid-auto').setAttribute('aria-pressed', String(gridAuto));
   const grid = pieceGrid();
-  const pieces = piecesOf(outline, grid);
+  const key = JSON.stringify([size, grid, bed, areaData.selection]);
+  if (key !== mergesFor) [merges, mergesFor] = [[], key];
+  const tabs = jointKind() === 'tabs';
+  const pieces = piecesOf(outline, grid, merges, tabs);
   const mm = ([w, h]: Pt) => `${Math.round(w)} × ${Math.round(h)} mm`;
   const name = (p: (typeof pieces)[number]) => `r${p.row + 1}c${p.col + 1}`;
   const list = (ps: typeof pieces) => (ps.length > 3 ? `${ps.slice(0, 3).map(name).join(', ')} and ${ps.length - 3} more` : ps.map(name).join(', '));
@@ -193,11 +200,43 @@ function showPieces() {
     info.append(tooBig.length ? bad(`Bigger than ${bedText} (${mm(pieces[0].sizeMm)}): print it in pieces.`) : `Fits ${bedText} in one piece.`);
   } else {
     const largest = pieces.reduce((a, b) => (b.sizeMm[0] * b.sizeMm[1] > a.sizeMm[0] * a.sizeMm[1] ? b : a));
-    info.append(`${pieces.length} pieces, named by row and column (r1c1 top left); the largest ${mm(largest.sizeMm)} with its tabs. `);
+    info.append(`${pieces.length} pieces, named by row and column (r1c1 top left); the largest ${mm(largest.sizeMm)}${tabs ? ' with its tabs' : ''}. `);
     info.append(tooBig.length ? bad(`${list(tooBig)} ${tooBig.length === 1 ? "doesn't" : "don't"} fit ${bedText}: more pieces, or a smaller print.`) : `All fit ${bedText}.`);
-    if (slivers.length) info.append(' ', bad(`${list(slivers)} ${slivers.length === 1 ? 'is a sliver' : 'are slivers'} (under ${Math.round(SLIVER * 100)}% of a piece): another grid avoids ${slivers.length === 1 ? 'it' : 'them'}.`));
+    // Slivers, said once: those that can be joined to a neighbor (the one each shares the
+    // longest cut with, where the two still fit the bed) in one click, and those that can't.
+    const link = (text: string, act: () => void) => {
+      const b = Object.assign(document.createElement('button'), { type: 'button', className: 'link', textContent: text });
+      b.addEventListener('click', () => {
+        act();
+        showPieces();
+        updatePrintPreview();
+      });
+      return b;
+    };
+    const share = (ps: typeof pieces) => {
+      const [lo, hi] = [Math.min(...ps.map((p) => p.share)), Math.max(...ps.map((p) => p.share))].map((v) => Math.round(v * 100));
+      return lo === hi ? `${lo}%` : `${lo}–${hi}%`;
+    };
+    const joins = slivers.map((s) => ({ s, join: joinFor(outline, grid, merges, s, bed, tabs) }));
+    const joinable = joins.filter((j) => j.join);
+    const stuck = joins.filter((j) => !j.join).map((j) => j.s);
+    const are = (ps: typeof pieces) => (ps.length === 1 ? 'is a sliver' : 'are slivers');
+    if (joinable.length) {
+      const ps = joinable.map((j) => j.s);
+      info.append(' ', bad(`${list(ps)} ${are(ps)} (${share(ps)} of a piece): `), link(ps.length === 1 ? 'join it to its neighbor' : 'join them to their neighbors', () => {
+        // One at a time, each against the joins before it.
+        for (const s of ps) {
+          const j = joinFor(outline, grid, merges, s, bed, tabs);
+          if (j) merges.push(j);
+        }
+      }), '.');
+    }
+    if (stuck.length) info.append(' ', bad(`${list(stuck)} ${are(stuck)} (${share(stuck)} of a piece): none fits the bed joined to a neighbor; another grid may avoid ${stuck.length === 1 ? 'it' : 'them'}.`));
+    if (merges.length) info.append(` ${merges.length} ${merges.length === 1 ? 'sliver' : 'slivers'} joined (`, link('undo', () => (merges = [])), ').');
   }
-  $('pieces-joints').hidden = pieces.length < 2;
+  // Always there (its row showing and hiding would move the settings above), off for one piece.
+  for (const id of ['print-joints', 'print-clearance']) $<HTMLInputElement>(id).disabled = pieces.length < 2;
+  $('pieces-joints').classList.toggle('off', pieces.length < 2);
   showFormat();
 }
 for (const id of ['print-bed-w', 'print-bed-h']) {
@@ -230,7 +269,12 @@ $('explode').addEventListener('input', () => {
   $('explode-value').textContent = `${cm} cm`;
   viewer?.setExplode(cm * 10);
 });
-for (const id of ['print-joints', 'print-clearance']) $(id).addEventListener('change', () => updatePrintPreview());
+$('print-joints').addEventListener('change', () => {
+  // Tabs stick out of the pieces, keys don't: the sizes change.
+  showPieces();
+  updatePrintPreview();
+});
+$('print-clearance').addEventListener('change', () => updatePrintPreview());
 // Thinnest detail and nozzle step by 0.1 mm, and by 0.01 mm below 0.1 (0.1 up is 0.2, not
 // 0.11; 0.1 down is 0.09): their own arrows and keys, since a number field's step is fixed.
 for (const stepper of document.querySelectorAll<HTMLElement>('.stepper')) {

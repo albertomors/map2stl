@@ -204,19 +204,26 @@ The **Export** card floats over the 3D view once the detailed data is in.
 - **Bigger than your printer:** set your **Printer bed** and the export proposes the fewest
   **Pieces** that fit it (an n × m grid over the shape, turned with it; **auto** brings the
   proposal back after you set your own). The card gives the largest piece's size, marks any
-  that don't fit, and warns of slivers (under 15% of a piece: another grid avoids them).
+  that don't fit, and flags slivers (under 15% of a piece): **join it to …** makes a sliver
+  part of its neighbor (the one it shares the longest cut with, if the two still fit the
+  bed), and **undo** takes the joins back.
   The preview shows the pieces pulled apart (**Explode view** sets how far, 0 to 10 cm; the
   camera can look from below, at the joints). The download is a zip with an STL per piece,
   or one 3MF with an object per piece, named by row and column (r1c1 at the top left).
-- **Joints:** along every cut the base gets small tapered tabs on one side and pockets on
-  the other, with 0.1 mm of play (a setting). Every tab points to the next column (right)
+- **Joints:** **tabs**, **keys** or **none**, with 0.1 mm of play (a setting). With
+  **tabs**, along every cut the base gets small tapered tabs on one side and pockets on the
+  other. Every tab points to the next column (right)
   or the next row (down): r1c1 has only tabs, and each other piece has pockets toward the
   pieces before it. Assemble diagonally from the top left, sliding each piece in sideways,
   and glue. The pockets open at the bottom and at the cut, so everything prints without
   supports. A tab is 10 mm wide at the cut (7 at its tip), reaches 6 mm into the neighbor
   and is 60% of the base tall; there's one where the cut is 16 mm or longer, two (at a
   quarter and three quarters of the way) from 40 mm. The play can be up to the base's thickness less the tab's and a 0.4 mm
-  roof (0.8 mm with a 3 mm base).
+  roof (0.8 mm with a 3 mm base). With **keys**, both pieces get half of a bowtie-shaped
+  pocket at each joint, open at the bottom, and the bowtie keys come in their own file
+  (…-keys.stl, or a Keys object in the 3MF), laid out for one plate: put the pieces side by
+  side and push a key up into each pocket. Narrow at the cut, wide in each piece, they hold
+  the pieces together without glue.
 - **What a cut crosses:** streets, terrain and buildings are cut with closed walls; 3D models
   too, each half closed (one that isn't a closed solid prints whole in one piece, and the
   preview says so); single trees a cut would split are left out.

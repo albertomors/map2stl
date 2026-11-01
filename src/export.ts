@@ -2,7 +2,7 @@
 // built as closed solids and converted to millimeters with Z up, base at Z = 0. Each layer is
 // one part, so a 3MF can give each its own color; slicers merge overlapping parts.
 
-import { BufferGeometry, ConeGeometry, Float32BufferAttribute, Matrix4 } from 'three';
+import { BufferGeometry, ConeGeometry, Float32BufferAttribute, Matrix4, ShapeUtils, Vector2 } from 'three';
 import type { AreaData, Layer } from './area-data';
 import { clipObjects } from './clip';
 import { applyEdits, editedTrees, type Edits } from './edits';
@@ -12,7 +12,7 @@ import { buildCanopy, canopySolid } from './forest';
 import { buildGroundSolids, type GroundSolids } from './print-ground';
 import polygonClipping, { type Polygon as PcPolygon } from 'polygon-clipping';
 import { pointInRing, type LngLat } from './geo';
-import { JOINT, jointsOf, piecesOf, pocketFootprint, tabFootprint, type Piece, type PieceSpec, type Pt } from './pieces';
+import { JOINT, jointsOf, keyFootprint, pieceAt, piecesOf, pocketFootprint, tabFootprint, type Piece, type PieceSpec, type Pt } from './pieces';
 import { elevationAt } from './terrain';
 import { buildModels } from './viewer/models';
 import { buildBoats, buildBridges, buildBuildings, buildStructures, COLORS, TREE_HEIGHT_M, TREE_RADIUS_M, treesGeometry, type PickableMesh } from './viewer/objects';
@@ -54,10 +54,11 @@ export interface PrintModel {
   toScene: Matrix4;
   // How wide the forests' crowns print, if there are forests.
   crownMm?: number;
-  // Printed in pieces: each piece's place in the grid, and the grid; and how many 3D models
-  // cross a cut but couldn't be cut there (not closed): each prints whole in one piece.
+  // Printed in pieces: each piece's place in the grid (`keys`: the joints' keys, printed
+  // apart), and the grid; and how many 3D models cross a cut but couldn't be cut there (not
+  // closed): each prints whole in one piece.
   uncutModels?: number;
-  pieces?: { col: number; row: number }[];
+  pieces?: { col: number; row: number; keys?: boolean }[];
   grid?: { cols: number; rows: number };
 }
 
@@ -96,7 +97,7 @@ export function buildPrintPieces(
   options: PrintOptions,
   spec: PieceSpec | undefined,
   progress: (fraction: number, label: string) => void = () => {},
-): { piece: Piece | null; model: PrintModel }[] {
+): { piece: Piece | null; model: PrintModel; keys?: boolean }[] {
   // Water off: the sea floor prints (its real depths), the deepest point the lowest.
   const { ring, frame, bounds, placement, groundHeight } = prepareScene(data, scales, !visible.has('water'));
   // The print keeps the shape the way it was drawn: its "up" (the map bearing when drawn)
@@ -130,13 +131,22 @@ export function buildPrintPieces(
   let pieces: Piece[] = [];
   let regions: Region[] = [{ piece: 0, ring, ground: [ring], lids: [], tabs: [] }];
   const lidBottom = (JOINT.height * options.baseMm + (spec?.clearance ?? 0)) / mmPerUnit;
+  // With keys: each one's footprint, printed apart.
+  let keys: Pt[][] = [];
+  let pieceHolding: (p: Pt) => number = () => 0;
   if (spec) {
     const shape = outline.map(([x, y]): Pt => [(x - cx) * mmPerUnit, (y - cy) * mmPerUnit]);
-    pieces = piecesOf(shape, spec.grid);
-    const joints = spec.joints ? jointsOf(shape, pieces, spec.grid, spec.clearance) : [];
+    pieces = piecesOf(shape, spec.grid, spec.merges, spec.joints === 'tabs');
+    pieceHolding = pieceAt(shape, spec.grid, pieces);
+    const joints = spec.joints === 'none' ? [] : jointsOf(shape, pieces, spec.grid, spec.clearance, spec.joints);
+    if (spec.joints === 'keys') keys = joints.map((j) => keyFootprint(j));
     regions = pieces.flatMap((piece, i) => {
-      const pockets = joints.filter((j) => j.pocket === i).map((j) => [pocketFootprint(j, spec.clearance)] as PcPolygon);
-      const tabs = joints.filter((j) => j.tab === i).map(tabFootprint);
+      // Tabs: the second piece has the pocket. Keys: both have half of one.
+      const pockets =
+        spec.joints === 'keys'
+          ? joints.filter((j) => j.tab === i || j.pocket === i).map((j) => [keyFootprint(j, spec.clearance)] as PcPolygon)
+          : joints.filter((j) => j.pocket === i).map((j) => [pocketFootprint(j, spec.clearance)] as PcPolygon);
+      const tabs = spec.joints === 'tabs' ? joints.filter((j) => j.tab === i).map(tabFootprint) : [];
       return piece.outline.map((poly, k) => {
         const own = [poly[0]] as PcPolygon;
         const ground = pockets.length ? (polygonClipping.difference(own, ...pockets) as Pt[][][]) : [[poly[0]]];
@@ -196,14 +206,6 @@ export function buildPrintPieces(
         });
       })
     : [[], []];
-  // The cut lines in print mm, between the grid's cells.
-  const cuts = { x: [] as number[], y: [] as number[] };
-  if (spec && pieces.length) {
-    const xs = new Set(pieces.flatMap((p) => [p.cell[0], p.cell[2]]));
-    const ys = new Set(pieces.flatMap((p) => [p.cell[1], p.cell[3]]));
-    cuts.x = [...xs].sort((a, b) => a - b).slice(1, -1);
-    cuts.y = [...ys].sort((a, b) => a - b).slice(1, -1);
-  }
   const toMm = (p: LngLat): Pt => {
     const [px, py] = plan(...frame.toLocal(p));
     return [(px - cx) * mmPerUnit, (py - cy) * mmPerUnit];
@@ -286,7 +288,9 @@ export function buildPrintPieces(
     const nearCut = (t: { at: LngLat; size: number }) => {
       const [X, Y] = toMm(t.at);
       const reach = Math.max(TREE_RADIUS_M * t.size, at.minWidth / 2) * mmPerUnit;
-      return cuts.x.some((c) => Math.abs(X - c) < reach) || cuts.y.some((c) => Math.abs(Y - c) < reach);
+      // Its crown reaching into another piece.
+      const own = pieceHolding([X, Y]);
+      return [[X - reach, Y - reach], [X + reach, Y - reach], [X - reach, Y + reach], [X + reach, Y + reach]].some((p) => pieceHolding(p as Pt) !== own);
     };
     const groups: Group[] = [
       { name: TERRAIN, color: '#c9bba5', pieces: [...grounds, ...lids].flatMap((g) => g.terrain) },
@@ -445,7 +449,7 @@ export function buildPrintPieces(
   const k = 1 / mmPerUnit;
   const [tx, tz] = [cos * cx + sin * cy, sin * cx - cos * cy];
   const toScene = new Matrix4().set(cos * k, sin * k, 0, tx, 0, 0, k, baseY, sin * k, -cos * k, 0, tz, 0, 0, 0, 1);
-  return out.map((o, i) => {
+  const result: { piece: Piece | null; model: PrintModel; keys?: boolean }[] = out.map((o, i) => {
     const parts: PrintPart[] = [];
     for (const [name, p] of byPiece.get(i) ?? []) {
       const triangles = join(p.chunks, (n) => new Float32Array(n));
@@ -462,11 +466,28 @@ export function buildPrintPieces(
     };
     return { piece: spec ? pieces[i] : null, model };
   });
+  // The keys, printed apart: each a solid of its own, as tall as a tab, in place (the preview
+  // shows them in their pockets; the file lays them out).
+  if (keys.length) {
+    const t = keys.map((k) => prism(k, 0, JOINT.height * options.baseMm));
+    const triangles = new Float32Array(t.reduce((n, x) => n + x.length, 0));
+    const solidIds: number[] = [];
+    let o = 0;
+    t.forEach((x, i) => {
+      triangles.set(x, o);
+      o += x.length;
+      for (let k = 0; k < x.length / 9; k++) solidIds.push(i);
+    });
+    const solids = Uint32Array.from(solidIds);
+    const part: PrintPart = { name: 'Keys', color: '#c9bba5', triangles, solids, objects: solids };
+    result.push({ piece: null, keys: true, model: { parts: [part], sizeMm: [0, 0, JOINT.height * options.baseMm], triangleCount: triangles.length / 9, toScene } });
+  }
+  return result;
 }
 
 // The pieces as one model: each part tagged with its piece (the preview shows them pulled
 // apart, the download writes each on its own).
-export function combinePieces(list: { piece: Piece | null; model: PrintModel }[], grid: { cols: number; rows: number }): PrintModel {
+export function combinePieces(list: { piece: Piece | null; model: PrintModel; keys?: boolean }[], grid: { cols: number; rows: number }): PrintModel {
   const parts = list.flatMap(({ model }, i) => model.parts.map((p) => ({ ...p, piece: i })));
   const [min, max] = [[Infinity, Infinity, Infinity], [-Infinity, -Infinity, -Infinity]];
   for (const p of parts) {
@@ -481,7 +502,7 @@ export function combinePieces(list: { piece: Piece | null; model: PrintModel }[]
     triangleCount: parts.reduce((n, p) => n + p.triangles.length / 9, 0),
     toScene: list[0].model.toScene,
     crownMm: parts.find((p) => p.featureMm !== undefined)?.featureMm,
-    pieces: list.map(({ piece }) => ({ col: piece?.col ?? 0, row: piece?.row ?? 0 })),
+    pieces: list.map(({ piece, keys }) => ({ col: piece?.col ?? 0, row: piece?.row ?? 0, keys })),
     uncutModels: list[0].model.uncutModels,
     grid,
   };
@@ -493,13 +514,17 @@ export function pieceOf(model: PrintModel, i: number): PrintModel {
   return { ...model, parts, triangleCount: parts.reduce((n, p) => n + p.triangles.length / 9, 0), pieces: undefined, grid: undefined };
 }
 
-// A block on a convex counterclockwise footprint (print mm), as triangles (9 floats each).
+// A block on a counterclockwise footprint (print mm), as triangles (9 floats each); the
+// footprint may be concave (a key's bowtie).
 function prism(ring: Pt[], z0: number, z1: number): Float32Array {
   const out: number[] = [];
   const n = ring.length;
-  for (let k = 1; k + 1 < n; k++) {
-    out.push(ring[0][0], ring[0][1], z1, ring[k][0], ring[k][1], z1, ring[k + 1][0], ring[k + 1][1], z1);
-    out.push(ring[0][0], ring[0][1], z0, ring[k + 1][0], ring[k + 1][1], z0, ring[k][0], ring[k][1], z0);
+  for (const [a, b, c] of ShapeUtils.triangulateShape(ring.map(([x, y]) => new Vector2(x, y)), [])) {
+    // Each cap facing out: counterclockwise from above on top, the other way below.
+    const ccw = (ring[b][0] - ring[a][0]) * (ring[c][1] - ring[a][1]) - (ring[b][1] - ring[a][1]) * (ring[c][0] - ring[a][0]) > 0;
+    const [p, q] = ccw ? [b, c] : [c, b];
+    out.push(ring[a][0], ring[a][1], z1, ring[p][0], ring[p][1], z1, ring[q][0], ring[q][1], z1);
+    out.push(ring[a][0], ring[a][1], z0, ring[q][0], ring[q][1], z0, ring[p][0], ring[p][1], z0);
   }
   for (let k = 0; k < n; k++) {
     const [a, b] = [ring[k], ring[(k + 1) % n]];

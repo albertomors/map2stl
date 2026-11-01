@@ -1,14 +1,17 @@
-// Printing in pieces: a map bigger than the printer's bed is cut into an n × m grid of pieces,
+// Printing in pieces: a map bigger than the printer's bed is cut into an n × m grid of cells,
 // printed one by one and put back together. The grid is centered on the selection and turned
 // with it (the print's own axes), each cell an equal share of the shape's bounding box; a
-// piece is the shape inside a cell, and cells the shape doesn't reach are dropped. Along every
-// cut the base gets joints: tabs on one side, matching pockets on the other, so the pieces
-// line up. Plain geometry, in print millimeters (X right, Y up the bed), free of three.js and
-// manifold: the page sizes the pieces with it, the print builds them (export.ts).
+// piece is the shape inside its cells (one, or more where a sliver was joined to a
+// neighbor), and cells the shape doesn't reach are dropped. Along every cut the base gets
+// joints, so the pieces line up. Plain geometry, in print millimeters (X right, Y up the
+// bed), free of three.js and manifold: the page sizes the pieces with it, the print builds
+// them (export.ts).
 //
-// The joints let the pieces go together from the top left, diagonally: every tab points to
-// the next column (right) or the next row (down), so r1c1 has only tabs, and every other
-// piece has pockets toward the pieces before it and tabs toward those after it.
+// Two kinds of joint. Tabs: one piece's tab slides into its neighbor's pocket; every tab
+// points to the next column (right) or the next row (down), so r1c1 has only tabs, and the
+// pieces go together diagonally from the top left. Keys: both pieces get half of a bowtie
+// pocket, open at the bottom, and a bowtie key printed apart is pushed up into it once
+// they're side by side: its wide ends hold them together, no glue needed.
 
 import polygonClipping, { type Polygon as PcPolygon } from 'polygon-clipping';
 import { pointInRing } from './geo';
@@ -22,20 +25,24 @@ export interface Grid {
   rows: number;
 }
 
+// A sliver joined to a neighbor: [its column, its row, the neighbor's column, row].
+export type Merge = [number, number, number, number];
+
 export interface PieceSpec {
   grid: Grid;
-  joints: boolean;
-  // How much wider a pocket is than its tab, all round (mm).
+  joints: 'tabs' | 'keys' | 'none';
+  // How much wider a pocket is than its tab or key, all round (mm).
   clearance: number;
+  merges?: Merge[];
 }
 
 export interface Piece {
-  // Column from the left, row from the top (as named in the files: r1c1 top left).
+  // Its cell's column from the left and row from the top (as named in the files: r1c1 top
+  // left), and every cell it covers (more than its own where a sliver was joined to it).
   col: number;
   row: number;
-  // The cell: [x0, y0, x1, y1].
-  cell: [number, number, number, number];
-  // The shape inside it (one or more polygons, holes after their outer ring).
+  cells: Pt[];
+  // The shape inside them (one or more polygons, holes after their outer ring).
   outline: Pt[][][];
   // Its footprint's size (mm), tabs included, and its share of a full cell.
   sizeMm: Pt;
@@ -49,12 +56,14 @@ export const SLIVER = 0.15;
 // (tapered, so it finds its place), as tall as this share of the base; one per this much cut,
 // up to this many, evenly spread; kept this far from where the cut leaves the shape.
 export const JOINT = { length: 6, root: 10, tip: 7, height: 0.6, every: 40, most: 2, margin: 3 };
+// A key: this narrow at the cut, this wide at its ends, reaching this far into each piece.
+export const KEY = { waist: 5, end: 10, reach: 7 };
 
 export interface Joint {
-  // The tab's root, on the cut, and the way it points: right (+x) or down (−y).
+  // On the cut; the way from the first piece to the second: right (+x) or down (−y).
   at: Pt;
   dir: Pt;
-  // The piece that has the tab, and the one with the pocket (indexes into the pieces).
+  // The first piece (it has the tab) and the second (the pocket), as indexes into the pieces.
   tab: number;
   pocket: number;
 }
@@ -75,27 +84,62 @@ export function outlineMm(selection: Selection, sizeMm: number): Pt[] {
   return plan.map(([x, y]) => [(x - (x0 + x1) / 2) * k, (y - (y0 + y1) / 2) * k]);
 }
 
-// The pieces of a grid over the outline: those the shape reaches, row by row from the top.
-export function piecesOf(outline: Pt[], grid: Grid): Piece[] {
+// The grid's cells over the outline: [x0, y0, x1, y1] of the cell at column c, row r.
+function cellsOf(outline: Pt[], grid: Grid) {
   const [x0, y0, x1, y1] = boxOf(outline);
   const [w, h] = [(x1 - x0) / grid.cols, (y1 - y0) / grid.rows];
+  return { w, h, box: ([c, r]: Pt): [number, number, number, number] => [x0 + c * w, y1 - (r + 1) * h, x0 + (c + 1) * w, y1 - r * h] };
+}
+
+// Which piece each cell belongs to (by its own cell's "col,row"), the joins applied.
+function owners(grid: Grid, merges: Merge[]): Map<string, string> {
+  const owner = new Map<string, string>();
+  for (let r = 0; r < grid.rows; r++) for (let c = 0; c < grid.cols; c++) owner.set(`${c},${r}`, `${c},${r}`);
+  for (const [c, r, tc, tr] of merges) {
+    const into = owner.get(`${tc},${tr}`);
+    const from = owner.get(`${c},${r}`);
+    if (!into || !from || into === from) continue;
+    // Everything that was the sliver's goes to the neighbor's piece.
+    for (const [k, v] of owner) if (v === from) owner.set(k, into);
+  }
+  return owner;
+}
+
+// The pieces of a grid over the outline: those the shape reaches, row by row from the top.
+// `tabs`: their size includes the tabs sticking out right and down.
+export function piecesOf(outline: Pt[], grid: Grid, merges: Merge[] = [], tabs = true): Piece[] {
+  const { w, h, box } = cellsOf(outline, grid);
+  const owner = owners(grid, merges);
+  const ring = (b: [number, number, number, number]): Pt[] => [[b[0], b[1]], [b[2], b[1]], [b[2], b[3]], [b[0], b[3]], [b[0], b[1]]];
   const pieces: Piece[] = [];
   for (let row = 0; row < grid.rows; row++) {
     for (let col = 0; col < grid.cols; col++) {
-      const cell: Piece['cell'] = [x0 + col * w, y1 - (row + 1) * h, x0 + (col + 1) * w, y1 - row * h];
-      const box: Pt[] = [[cell[0], cell[1]], [cell[2], cell[1]], [cell[2], cell[3]], [cell[0], cell[3]], [cell[0], cell[1]]];
-      const inside = polygonClipping.intersection([outline] as PcPolygon, [box] as PcPolygon) as Pt[][][];
-      const area = inside.reduce((a, poly) => a + poly.reduce((b, ring, i) => b + (i ? -1 : 1) * Math.abs(ringArea(ring)), 0), 0);
+      const key = `${col},${row}`;
+      if (owner.get(key) !== key) continue;
+      const cells = [...owner].filter(([, v]) => v === key).map(([k]) => k.split(',').map(Number) as Pt);
+      const region = polygonClipping.union(...(cells.map((c) => [ring(box(c))]) as [PcPolygon, ...PcPolygon[]]));
+      const inside = polygonClipping.intersection([outline] as PcPolygon, region) as Pt[][][];
+      const area = inside.reduce((a, poly) => a + poly.reduce((b, r, i) => b + (i ? -1 : 1) * Math.abs(ringArea(r)), 0), 0);
       // A hair of the shape along a cell's edge isn't a piece.
       if (area < w * h * 0.001) continue;
       const [px0, py0, px1, py1] = boxOf(inside.flat(2));
-      // Tabs stick out right and down where there's a next piece there.
-      const right = col < grid.cols - 1 ? JOINT.length : 0;
-      const down = row < grid.rows - 1 ? JOINT.length : 0;
-      pieces.push({ col, row, cell, outline: inside, sizeMm: [px1 - px0 + right, py1 - py0 + down], share: area / (w * h) });
+      // Tabs stick out right and down where another piece's cell is there.
+      const next = (dc: number, dr: number) => cells.some(([c, r]) => owner.has(`${c + dc},${r + dr}`) && owner.get(`${c + dc},${r + dr}`) !== key);
+      const right = tabs && next(1, 0) ? JOINT.length : 0;
+      const down = tabs && next(0, 1) ? JOINT.length : 0;
+      pieces.push({ col, row, cells, outline: inside, sizeMm: [px1 - px0 + right, py1 - py0 + down], share: area / (w * h) });
     }
   }
   return pieces;
+}
+
+// Which piece holds a point (print mm), as an index into the pieces; −1 for none.
+export function pieceAt(outline: Pt[], grid: Grid, pieces: Piece[]): (p: Pt) => number {
+  const [x0, , , y1] = boxOf(outline);
+  const { w, h } = cellsOf(outline, grid);
+  const at = new Map<string, number>();
+  pieces.forEach((p, i) => p.cells.forEach(([c, r]) => at.set(`${c},${r}`, i)));
+  return ([x, y]) => at.get(`${Math.floor((x - x0) / w)},${Math.floor((y1 - y) / h)}`) ?? -1;
 }
 
 // Whether a piece fits the bed, either way round.
@@ -111,16 +155,42 @@ export function proposeGrid(outline: Pt[], bed: Pt): Grid | null {
   return grids.find((g) => piecesOf(outline, g).every((p) => fits(p.sizeMm, bed))) ?? null;
 }
 
+// The neighbor a sliver is best joined to: the piece it shares the longest cut with, as long
+// as the two together still fit the bed. Null if none does.
+export function joinFor(outline: Pt[], grid: Grid, merges: Merge[], sliver: Piece, bed: Pt, tabs = true): Merge | null {
+  const pieces = piecesOf(outline, grid, merges, tabs);
+  const owner = owners(grid, merges);
+  const { w, h } = cellsOf(outline, grid);
+  const shared = new Map<string, number>();
+  for (const [c, r] of sliver.cells) {
+    for (const [dc, dr, len] of [[1, 0, h], [-1, 0, h], [0, 1, w], [0, -1, w]]) {
+      const o = owner.get(`${c + dc},${r + dr}`);
+      if (o && o !== `${sliver.col},${sliver.row}`) shared.set(o, (shared.get(o) ?? 0) + len);
+    }
+  }
+  for (const [o] of [...shared].sort((a, b) => b[1] - a[1])) {
+    const [tc, tr] = o.split(',').map(Number);
+    if (!pieces.some((p) => p.col === tc && p.row === tr)) continue;
+    const merge: Merge = [sliver.col, sliver.row, tc, tr];
+    const joined = piecesOf(outline, grid, [...merges, merge], tabs).find((p) => p.col === tc && p.row === tr);
+    if (joined && fits(joined.sizeMm, bed)) return merge;
+  }
+  return null;
+}
+
 // The joints along every cut between two pieces: on each stretch of cut inside the shape,
-// one tab per JOINT.every mm, at least one and at most JOINT.most, evenly spread (two at a
-// quarter and three quarters of the way); none where the stretch is too short, or where the
-// pocket would reach past the shape's edge.
-export function jointsOf(outline: Pt[], pieces: Piece[], grid: Grid, clearance: number): Joint[] {
-  const index = new Map(pieces.map((p, i) => [`${p.col},${p.row}`, i]));
+// one per JOINT.every mm, at least one and at most JOINT.most, evenly spread (two at a
+// quarter and three quarters of the way); none where the stretch is too short, or where a
+// pocket would reach past the shape's edge. Cells of one piece have no cut between them.
+export function jointsOf(outline: Pt[], pieces: Piece[], grid: Grid, clearance: number, kind: 'tabs' | 'keys' = 'tabs'): Joint[] {
+  const { box } = cellsOf(outline, grid);
+  const pieceOf = new Map<string, number>();
+  pieces.forEach((p, i) => p.cells.forEach(([c, r]) => pieceOf.set(`${c},${r}`, i)));
+  const pockets = (j: Joint) => (kind === 'keys' ? keyFootprint(j, clearance) : pocketFootprint(j, clearance));
   const joints: Joint[] = [];
   // `along`: the cut is the line x = cut ('x') or y = cut ('y').
   const add = (tab: number | undefined, pocket: number | undefined, along: 'x' | 'y', dir: Pt, cut: number, from: number, to: number) => {
-    if (tab === undefined || pocket === undefined) return;
+    if (tab === undefined || pocket === undefined || tab === pocket) return;
     for (const [a, b] of stretches(outline, along, cut, from, to)) {
       const length = b - a;
       if (length < JOINT.root + 2 * JOINT.margin) continue;
@@ -128,35 +198,44 @@ export function jointsOf(outline: Pt[], pieces: Piece[], grid: Grid, clearance: 
       for (let k = 0; k < n; k++) {
         const t = a + ((k + 0.5) * length) / n;
         const joint: Joint = { at: along === 'x' ? [cut, t] : [t, cut], dir, tab, pocket };
-        if (pocketFootprint(joint, clearance).every((p) => pointInRing(p, outline))) joints.push(joint);
+        if (pockets(joint).every((p) => pointInRing(p, outline))) joints.push(joint);
       }
     }
   };
-  for (const p of pieces) {
-    const i = index.get(`${p.col},${p.row}`);
-    // Its right side: tab here, pocket in the next piece to the right.
-    if (p.col < grid.cols - 1) add(i, index.get(`${p.col + 1},${p.row}`), 'x', [1, 0], p.cell[2], p.cell[1], p.cell[3]);
-    // Its bottom side: tab here, pocket in the next piece down.
-    if (p.row < grid.rows - 1) add(i, index.get(`${p.col},${p.row + 1}`), 'y', [0, -1], p.cell[1], p.cell[0], p.cell[2]);
+  for (let r = 0; r < grid.rows; r++) {
+    for (let c = 0; c < grid.cols; c++) {
+      const b = box([c, r]);
+      const here = pieceOf.get(`${c},${r}`);
+      // Its right side: the first piece here, the second to the right.
+      if (c < grid.cols - 1) add(here, pieceOf.get(`${c + 1},${r}`), 'x', [1, 0], b[2], b[1], b[3]);
+      // Its bottom side: the first piece here, the second below.
+      if (r < grid.rows - 1) add(here, pieceOf.get(`${c},${r + 1}`), 'y', [0, -1], b[1], b[0], b[2]);
+    }
   }
   return joints;
 }
 
 // A tab's footprint: from 1 mm inside its own piece (so it joins it) to its tip, tapered.
 export function tabFootprint(j: Joint): Pt[] {
-  return footprint(j, JOINT.root, JOINT.tip, JOINT.length);
+  return footprint(j, [[-1, -JOINT.root / 2], [0, -JOINT.root / 2], [JOINT.length, -JOINT.tip / 2], [JOINT.length, JOINT.tip / 2], [0, JOINT.root / 2], [-1, JOINT.root / 2]]);
 }
 
 // Its pocket's: the tab grown by the clearance all round.
 export function pocketFootprint(j: Joint, clearance: number): Pt[] {
-  return footprint(j, JOINT.root + 2 * clearance, JOINT.tip + 2 * clearance, JOINT.length + clearance);
+  const [root, tip, length] = [JOINT.root + 2 * clearance, JOINT.tip + 2 * clearance, JOINT.length + clearance];
+  return footprint(j, [[-1, -root / 2], [0, -root / 2], [length, -tip / 2], [length, tip / 2], [0, root / 2], [-1, root / 2]]);
 }
 
-// Counterclockwise, in print mm.
-function footprint({ at: [x, y], dir: [dx, dy] }: Joint, root: number, tip: number, length: number): Pt[] {
-  // Along the tab (u) and across it (v), then turned to its direction: a rotation, so it
-  // stays counterclockwise.
-  const local: Pt[] = [[-1, -root / 2], [0, -root / 2], [length, -tip / 2], [length, tip / 2], [0, root / 2], [-1, root / 2]];
+// A bowtie key across the cut, narrow at it and wide at both ends, grown by `grow` all round
+// (its pocket; 0 for the key itself).
+export function keyFootprint(j: Joint, grow = 0): Pt[] {
+  const [waist, end, reach] = [KEY.waist / 2 + grow, KEY.end / 2 + grow, KEY.reach + grow];
+  return footprint(j, [[-reach, -end], [0, -waist], [reach, -end], [reach, end], [0, waist], [-reach, end]]);
+}
+
+// Counterclockwise, in print mm: `local` along the joint (u, the way it points) and across
+// it (v), turned to its direction (a rotation, so it stays counterclockwise).
+function footprint({ at: [x, y], dir: [dx, dy] }: Joint, local: Pt[]): Pt[] {
   return local.map(([u, v]) => [x + u * dx - v * dy, y + u * dy + v * dx]);
 }
 

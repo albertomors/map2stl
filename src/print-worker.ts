@@ -102,11 +102,13 @@ self.onmessage = async (e: MessageEvent<PrintJob>) => {
       // On the plate a little apart, as on the map, so they don't overlap.
       const GAP = 10;
       for (let i = 0; i < list.length; i++) {
-        const m = await mergeModel(pieceOf(model, i), job.kind === 'stl', (f) => report('merge', (i + f) / list.length, label));
+        const { col, row, keys } = list[i];
+        // The keys laid out in rows for one plate, before they're merged into one solid.
+        const piece = keys ? packKeys(pieceOf(model, i)) : pieceOf(model, i);
+        const m = await mergeModel(piece, job.kind === 'stl', (f) => report('merge', (i + f) / list.length, label));
         skipped += m.skipped;
         if (!m.model.parts.length) continue;
-        const { col, row } = list[i];
-        done.push({ name: `${job.name}-r${row + 1}c${col + 1}`, model: m.model, offset: [col * GAP, -row * GAP] });
+        done.push({ name: keys ? `${job.name}-keys` : `${job.name}-r${row + 1}c${col + 1}`, model: m.model, offset: keys ? [model.sizeMm[0] / 2 + (model.grid?.cols ?? 1) * GAP + 10, 0] : [col * GAP, -row * GAP] });
       }
       next('merge');
       report('write', 0, 'Writing the files');
@@ -128,6 +130,42 @@ self.onmessage = async (e: MessageEvent<PrintJob>) => {
     reply({ ok: false, message: (err as Error).message }, null);
   }
 };
+
+// The joints' keys, in place in the model (each a solid of its own), laid out in rows of up to
+// 150 mm from the origin, 4 mm apart: one small plate.
+function packKeys(model: PrintModel): PrintModel {
+  const parts = model.parts.map((part) => {
+    const bySolid = new Map<number, number[]>();
+    for (let t = 0; t < part.solids.length; t++) bySolid.set(part.solids[t], [...(bySolid.get(part.solids[t]) ?? []), t]);
+    const out = new Float32Array(part.triangles.length);
+    let [x, y, rowH] = [0, 0, 0];
+    let o = 0;
+    const solids: number[] = [];
+    for (const [solid, tris] of bySolid) {
+      let [x0, y0, x1, y1] = [Infinity, Infinity, -Infinity, -Infinity];
+      for (const t of tris) {
+        for (let v = 0; v < 3; v++) {
+          const [px, py] = [part.triangles[t * 9 + v * 3], part.triangles[t * 9 + v * 3 + 1]];
+          [x0, y0, x1, y1] = [Math.min(x0, px), Math.min(y0, py), Math.max(x1, px), Math.max(y1, py)];
+        }
+      }
+      if (x && x + (x1 - x0) > 150) [x, y, rowH] = [0, y + rowH + 4, 0];
+      for (const t of tris) {
+        for (let v = 0; v < 3; v++) {
+          const k = t * 9 + v * 3;
+          out.set([part.triangles[k] - x0 + x, part.triangles[k + 1] - y0 + y, part.triangles[k + 2]], o);
+          o += 3;
+        }
+        solids.push(solid);
+      }
+      x += x1 - x0 + 4;
+      rowH = Math.max(rowH, y1 - y0);
+    }
+    const ids = Uint32Array.from(solids);
+    return { ...part, triangles: out, solids: ids, objects: ids };
+  });
+  return { ...model, parts };
+}
 
 // The triangle arrays move to the page instead of being copied.
 function reply(result: PrintResult, model: PrintModel | null) {

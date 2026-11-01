@@ -2,9 +2,7 @@
 
 Open work only: built items move to the README and CHANGELOG.
 
-## Milestone 0.9: bigger prints, better buildings
-
-### More official 3D buildings
+## Milestone 0.10: more official buildings
 
 Swapping the OSM approximation for measured models. Google's photorealistic tiles can't be
 used (their terms forbid extracting them), and no open worldwide photogrammetry exists.
@@ -67,19 +65,6 @@ testing).
   documents one (`?key=`), free on request by email to 3dmap@landsd.gov.hk. Ask for one,
   and confirm in the same email that a public web page may use it and that printing the
   buildings is fine, so the app doesn't depend on access that could close.
-
-### Print in pieces: what's left
-
-Built: the grid, the pieces' sizes against the bed, each piece built on its own outline, the
-pulled-apart preview, the files, the tabs and pockets. Next:
-
-- **Merge a sliver into its neighbor:** a piece under 15% of a cell (a free shape's odd
-  corner, a circle's edge in a fine grid) is flagged; one click should join it to the piece
-  beside it (that piece's region becomes two cells).
-- **Bowtie keys,** the locking option: a dovetail pocket open at the bottom on each side of a
-  cut, and a small key printed apart, pushed in from below, so the pieces hold without glue.
-- **Cut lines along streets** rather than through buildings: each cut nudged, within a few
-  millimeters, to where it crosses the fewest buildings.
 
 ## Publishing
 

@@ -1091,6 +1091,13 @@ button.link:disabled {
   margin: 8px 0 0;
 }
 
+/* A fixed height, scrolling when longer: the card grows upward from the bottom, and a line
+   changing length as a setting is stepped would move the setting's arrows under the cursor. */
+#pieces-info {
+  height: 5.6em;
+  overflow-y: auto;
+}
+
 .pieces .bad {
   color: var(--warn-fg);
   font-weight: 600;
@@ -1105,8 +1112,17 @@ button.link:disabled {
   color: var(--muted);
 }
 
-.pieces .check[hidden] {
-  display: none;
+.pieces .check.off {
+  opacity: 0.5;
+}
+
+.pieces .check select {
+  font: inherit;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 4px;
 }
 
 .pieces .check input[type='number'] {
