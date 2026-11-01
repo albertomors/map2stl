@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-01
+
+Bigger prints, better buildings: maps bigger than the printer print in pieces that fit its
+bed, closed on every side, held together by tabs or bowtie keys; official 3D buildings in the
+Netherlands, Japan's cities, Hamburg, Helsinki and Hong Kong besides Switzerland, a whole city
+of them at once without the browser giving up; and a lighter, steadier 3D view.
+
 ### Added
 
 - Print in pieces, for maps bigger than the printer: set the bed's size and the export
