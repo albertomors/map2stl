@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Print in pieces, for maps bigger than the printer: set the bed's size and the export
+  proposes the fewest pieces that fit (an n × m grid over the shape, turned with it, or one
+  of your own), says how big the largest is, marks any that don't fit and warns of slivers.
+  The preview pulls the pieces apart. The download cuts them with manifold-3d, flat and
+  watertight: a zip with an STL per piece, or one 3MF with an object per piece, named by row
+  and column. Along each cut the base gets tapered tabs and matching pockets (0.1 mm of play,
+  a setting), open at the bottom so they print without supports.
+
 - "Use detailed buildings from …" in the 3D view, wherever an official source covers some of
   the area: every building takes its measured model, without picking one first, with
   progress and Stop. Once every building has been looked for, it becomes "Remove detailed

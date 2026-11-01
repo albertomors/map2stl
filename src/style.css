@@ -722,6 +722,10 @@ body.mode-3d .map-only {
   gap: 4px 12px;
 }
 
+#edits-summary[hidden] {
+  display: none;
+}
+
 #select-hint {
   flex-basis: 100%;
 }
@@ -1069,6 +1073,43 @@ button.link:disabled {
   font-size: 9px;
   line-height: 1.2;
   border-radius: 3px;
+}
+
+.field.pair input {
+  width: 66px;
+}
+
+.pieces .hint {
+  margin: 8px 0 0;
+}
+
+.pieces .bad {
+  color: var(--warn-fg);
+  font-weight: 600;
+}
+
+.pieces .check {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.pieces .check[hidden] {
+  display: none;
+}
+
+.pieces .check input[type='number'] {
+  width: 66px;
+  font: inherit;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 6px;
+  text-align: right;
 }
 
 .field input:focus {

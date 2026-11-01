@@ -32,6 +32,7 @@ import {
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import type { AreaData, Layer } from '../area-data';
 import type { PrintModel, ThinObjects } from '../export';
+import type { ShownPart } from '../pieces-cut';
 import { clipObjects, clipToSelection } from '../clip';
 import { applyEdits, editedTrees, editKey, type Edits, type GroundKind, type ObjectEdit } from '../edits';
 import { centroid, pointInRing, ringArea, type LngLat } from '../geo';
@@ -91,6 +92,8 @@ const TEXTURE_LAYERS: Layer[] = ['green', 'surfaces', 'paved', 'water', 'roads',
 const LIFT_M = 6;
 const LIFT_SHARE = 0.12;
 const LIFT_EASE = 0.18;
+// How much of the way apart the print's pieces move each frame.
+const PULL_EASE = 0.08;
 const TINT = new Color('#ffd5b8');
 const TINT_GLOW = new Color('#ff6b2c').multiplyScalar(0.12);
 // How much of the way to the ground under it the orbit's center goes each frame.
@@ -128,6 +131,9 @@ export class Viewer {
   private print = new Group();
   // One color for every part (an STL), or each part's own (a 3MF).
   private printMono = false;
+  // Printed in pieces: each piece's meshes and how far it moves out, and how far along the
+  // pulling apart is (0 together, 1 apart).
+  private explode: { meshes: { mesh: Mesh; offset: [number, number] }[]; toScene: Matrix4; k: number } | null = null;
   private liftKey: string | null = null;
   // The lifted copy's scaling pivot (center of its base), and the edit it was built with.
   private liftPivot: Group | null = null;
@@ -226,7 +232,8 @@ export class Viewer {
       const lifting = Math.abs(target - y) > 1e-3;
       this.highlight.position.y = reducedMotion || !lifting ? target : y + (target - y) * LIFT_EASE;
       const moved = this.controls.update();
-      if (!moved && !lifting && !this.dirty && now - lastDrawn < 1000) return;
+      const apart = this.pullApart();
+      if (!moved && !lifting && !apart && !this.dirty && now - lastDrawn < 1000) return;
       this.keepAboveGround();
       this.renderer.render(this.scene, this.camera);
       this.dirty = false;
@@ -281,18 +288,22 @@ export class Viewer {
 
   // The model exactly as it will print, one color per part (or one for all: `mono`), objects
   // narrower than the nozzle in red; null goes back to the normal view.
-  showPrint(model: PrintModel | null, thin?: ThinObjects, mono = this.printMono) {
+  // `shown`: the model in pieces (pieces-cut.ts), pulled apart.
+  showPrint(model: PrintModel | null, thin?: ThinObjects, mono = this.printMono, shown?: { parts: ShownPart[]; offsets: [number, number][] }) {
     this.dirty = true;
     this.printMono = mono;
     disposeChildren(this.print);
+    this.explode = null;
     if (model) this.select(null);
     for (const g of [this.terrain, this.objects, this.highlight]) g.visible = !model;
     if (!model) return;
-    for (const part of model.parts) {
+    const meshes: { mesh: Mesh; offset: [number, number] }[] = [];
+    for (const part of (shown?.parts ?? model.parts) as (PrintModel['parts'][number] & Partial<ShownPart>)[]) {
       const geometry = new BufferGeometry();
       geometry.setAttribute('position', new BufferAttribute(part.triangles, 3));
       geometry.computeVertexNormals();
-      const flagged = thin?.objects.get(part);
+      // A piece's part is marked from the whole part it was cut from.
+      const flagged = thin?.objects.get(part.from !== undefined ? model.parts[part.from] : part);
       // Which triangles are too thin, to keep them red whatever the colors.
       const thinTris = flagged ? Uint8Array.from(part.objects, (o) => (flagged.has(o) ? 1 : 0)) : null;
       if (thinTris) geometry.setAttribute('color', new BufferAttribute(new Float32Array(part.triangles.length), 3));
@@ -304,7 +315,19 @@ export class Viewer {
       mesh.matrixAutoUpdate = false;
       mesh.matrix.copy(model.toScene);
       this.print.add(mesh);
+      if (shown && part.piece !== undefined) meshes.push({ mesh, offset: shown.offsets[part.piece] });
     }
+    if (meshes.length) this.explode = { meshes, toScene: model.toScene, k: 0 };
+  }
+
+  // The pieces moving apart, eased (at once with reduced motion); whether they moved.
+  private pullApart(): boolean {
+    const e = this.explode;
+    if (!e || e.k >= 1) return false;
+    e.k = matchMedia('(prefers-reduced-motion: reduce)').matches || e.k > 0.995 ? 1 : e.k + (1 - e.k) * PULL_EASE;
+    const move = new Matrix4();
+    for (const { mesh, offset } of e.meshes) mesh.matrix.multiplyMatrices(e.toScene, move.makeTranslation(offset[0] * e.k, offset[1] * e.k, 0));
+    return true;
   }
 
   // Which way is up for a new model of this building: the file's own up axis, unless

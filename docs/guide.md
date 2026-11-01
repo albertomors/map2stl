@@ -201,6 +201,16 @@ The **Export** card floats over the 3D view once the detailed data is in.
 - In the preview, anything narrower than the nozzle shows in **red**, with a warning that
   counts it per part: make the model bigger, or enlarge or delete those objects. Forests
   turn red when their crowns come out narrower than the nozzle.
+- **Bigger than your printer:** set your **Printer bed** and the export proposes the fewest
+  **Pieces** that fit it (an n × m grid over the shape, turned with it; **auto** brings the
+  proposal back after you set your own). The card gives the largest piece's size, marks any
+  that don't fit, and warns of slivers (under 15% of a piece: another grid avoids them).
+  The preview shows the pieces pulled apart. The download is a zip with an STL per piece,
+  or one 3MF with an object per piece, named by row and column (r1c1 at the top left).
+- **Joints:** along every cut the base gets small tapered tabs on one side (toward the
+  right and the top) and pockets on the other, with 0.1 mm of play (a setting): slide the
+  pieces together sideways, row by row, and glue them. The pockets open at the bottom and
+  at the cut, so everything prints without supports.
 - Streets and water are carved one step (the thinnest detail) into the ground; parks,
   squares and sand lie flush. Each is its own colored part in a 3MF.
 - **For other 3D software** (Blender, Unity, Unreal, Sketchfab, a web page): **GLB** or

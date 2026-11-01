@@ -22,6 +22,8 @@ import { applyEdits, editKey, type Edits, type GroundKind } from './edits';
 import { officialSourceFor } from './official-sources';
 import type { Footprint, OfficialJob, OfficialMessage } from './official3d';
 import { forgetModels, storeModels, withTriangles } from './viewer/objects-host';
+import { fits, outlineMm, piecesOf, proposeGrid, SLIVER, type Grid, type Pt } from './pieces';
+import type { PieceSpec } from './pieces-cut';
 import type { PrintModel, ThinObjects } from './export';
 import type { PrintJob, PrintProgress, PrintResult } from './print-worker';
 
@@ -124,7 +126,9 @@ const FORMAT_HINTS = {
 function showFormat() {
   for (const f of ['stl', '3mf'] as const) $(`format-${f}`).setAttribute('aria-pressed', String(f === exportFormat));
   $('format-hint').textContent = FORMAT_HINTS[exportFormat];
-  $('download').textContent = `Download ${exportFormat.toUpperCase()}`;
+  // In pieces, an STL per piece, in a zip; a 3MF holds them all.
+  const grid = pieceGrid();
+  $('download').textContent = grid.cols * grid.rows > 1 && exportFormat === 'stl' ? 'Download STLs (zip)' : `Download ${exportFormat.toUpperCase()}`;
   // The preview shows what the file will print: one color for an STL, the parts' for a 3MF.
   viewer?.setPrintMonochrome(exportFormat === 'stl');
 }
@@ -135,6 +139,88 @@ $('download').addEventListener('click', () => downloadModel());
 let printPreview = false;
 $('preview-print').addEventListener('click', () => setPrintPreview(!printPreview));
 for (const id of ['print-size', 'print-base', 'print-min', 'print-nozzle']) $(id).addEventListener('change', () => updatePrintPreview());
+
+// Printing in pieces (pieces.ts): the bed's size (kept in this browser), the grid (the fewest
+// pieces that fit the bed, until set by hand), and the joints in the base that line them up.
+let gridAuto = true;
+const BED_KEY = 'map2stl-bed';
+try {
+  const bed = JSON.parse(localStorage.getItem(BED_KEY) ?? 'null');
+  if (Array.isArray(bed) && bed.length === 2) [$<HTMLInputElement>('print-bed-w').value, $<HTMLInputElement>('print-bed-h').value] = bed.map(String);
+} catch {
+  // No storage (a private window): the default bed.
+}
+const bedMm = (): Pt => [Number($<HTMLInputElement>('print-bed-w').value) || 220, Number($<HTMLInputElement>('print-bed-h').value) || 220];
+function pieceGrid(): Grid {
+  const n = (id: string) => Math.min(8, Math.max(1, Math.round(Number($<HTMLInputElement>(id).value)) || 1));
+  return { cols: n('print-cols'), rows: n('print-rows') };
+}
+// The pieces for the print job, if more than one.
+function pieceSpec(): PieceSpec | undefined {
+  const grid = pieceGrid();
+  if (grid.cols * grid.rows === 1) return undefined;
+  const clearance = Number($<HTMLInputElement>('print-clearance').value);
+  if (!Number.isFinite(clearance) || clearance < 0) throw new SettingError('The joints\' play must be 0 mm or more.');
+  return { grid, joints: $<HTMLInputElement>('print-joints').checked, clearance };
+}
+// The grid (proposed, if it's on auto), and each piece's size against the bed.
+function showPieces() {
+  const size = Number($<HTMLInputElement>('print-size').value);
+  if (!areaData || !(size > 0)) return;
+  const outline = outlineMm(areaData.selection, size);
+  const bed = bedMm();
+  if (gridAuto) {
+    const g = proposeGrid(outline, bed) ?? { cols: 8, rows: 8 };
+    [$<HTMLInputElement>('print-cols').value, $<HTMLInputElement>('print-rows').value] = [String(g.cols), String(g.rows)];
+  }
+  $('print-grid-auto').setAttribute('aria-pressed', String(gridAuto));
+  const grid = pieceGrid();
+  const pieces = piecesOf(outline, grid);
+  const mm = ([w, h]: Pt) => `${Math.round(w)} × ${Math.round(h)} mm`;
+  const name = (p: (typeof pieces)[number]) => `r${p.row + 1}c${p.col + 1}`;
+  const list = (ps: typeof pieces) => (ps.length > 3 ? `${ps.slice(0, 3).map(name).join(', ')} and ${ps.length - 3} more` : ps.map(name).join(', '));
+  const tooBig = pieces.filter((p) => !fits(p.sizeMm, bed));
+  const slivers = pieces.filter((p) => p.share < SLIVER);
+  const info = $('pieces-info');
+  info.replaceChildren();
+  const bad = (text: string) => Object.assign(document.createElement('span'), { className: 'bad', textContent: text });
+  const bedText = `the ${mm(bed)} bed`;
+  if (pieces.length === 1) {
+    info.append(tooBig.length ? bad(`Bigger than ${bedText} (${mm(pieces[0].sizeMm)}): print it in pieces.`) : `Fits ${bedText} in one piece.`);
+  } else {
+    const largest = pieces.reduce((a, b) => (b.sizeMm[0] * b.sizeMm[1] > a.sizeMm[0] * a.sizeMm[1] ? b : a));
+    info.append(`${pieces.length} pieces, named by row and column (r1c1 top left); the largest ${mm(largest.sizeMm)} with its tabs. `);
+    info.append(tooBig.length ? bad(`${list(tooBig)} ${tooBig.length === 1 ? "doesn't" : "don't"} fit ${bedText}: more pieces, or a smaller print.`) : `All fit ${bedText}.`);
+    if (slivers.length) info.append(' ', bad(`${list(slivers)} ${slivers.length === 1 ? 'is a sliver' : 'are slivers'} (under ${Math.round(SLIVER * 100)}% of a piece): another grid avoids ${slivers.length === 1 ? 'it' : 'them'}.`));
+  }
+  $('pieces-joints').hidden = pieces.length < 2;
+  showFormat();
+}
+for (const id of ['print-bed-w', 'print-bed-h']) {
+  $(id).addEventListener('change', () => {
+    try {
+      localStorage.setItem(BED_KEY, JSON.stringify(bedMm()));
+    } catch {
+      // Not kept: fine.
+    }
+    showPieces();
+    updatePrintPreview();
+  });
+}
+for (const id of ['print-cols', 'print-rows']) {
+  $(id).addEventListener('change', () => {
+    gridAuto = false;
+    showPieces();
+    updatePrintPreview();
+  });
+}
+$('print-grid-auto').addEventListener('click', () => {
+  gridAuto = true;
+  showPieces();
+  updatePrintPreview();
+});
+$('print-size').addEventListener('change', () => showPieces());
+for (const id of ['print-joints', 'print-clearance']) $(id).addEventListener('change', () => updatePrintPreview());
 // Thinnest detail and nozzle step by 0.1 mm, and by 0.01 mm below 0.1 (0.1 up is 0.2, not
 // 0.11; 0.1 down is 0.09): their own arrows and keys, since a number field's step is fixed.
 for (const stepper of document.querySelectorAll<HTMLElement>('.stepper')) {
@@ -1444,7 +1530,8 @@ async function runPrintJob(
   // borrowed copies handed on to the print worker rather than copied again.
   const models = await withTriangles(usedModels());
   const lent = models.filter((m) => m !== modelAssets.get(m.id)).map((m) => m.triangles.buffer as ArrayBuffer);
-  const job: PrintJob = { kind, data, edits, scales: scales(), visible: [...visibleLayers], options, nozzleMm, name: printName(data), models, previewed };
+  const pieces = pieceSpec();
+  const job: PrintJob = { kind, data, edits, scales: scales(), visible: [...visibleLayers], options, nozzleMm, name: printName(data), models, previewed, pieces };
   const worker = new Worker(new URL('./print-worker.ts', import.meta.url), { type: 'module' });
   own?.(worker);
   const bar = printProgress.start(worker);
@@ -1561,6 +1648,9 @@ function setPrintPreview(on: boolean) {
   button.textContent = printPreview ? 'Back to the 3D view' : 'Preview export';
   // The file comes from the model previewed: only in the preview.
   $('export-files').hidden = !printPreview;
+  // Editing waits while previewing: the edits line and the detailed-buildings card step aside.
+  $('edits-summary').hidden = printPreview;
+  showOfficialArea();
   previewed = null;
   if (!printPreview) {
     printProgress.cancel(previewWorker);
@@ -1591,7 +1681,7 @@ async function updatePrintPreview() {
     const { result, nozzle, minFeatureMm } = await runPrintJob('preview', areaData, (w) => (previewWorker = mine = w));
     if (previewWorker !== mine || !printPreview) return;
     previewWorker = null;
-    viewer?.showPrint(result.model, result.thin, exportFormat === 'stl');
+    viewer?.showPrint(result.model, result.thin, exportFormat === 'stl', result.shown);
     showThinWarning(result.thin, nozzle, minFeatureMm, result.model.crownMm);
     previewed = { model: result.model, thin: result.thin, nozzle, minFeatureMm };
     $<HTMLButtonElement>('download').disabled = false;
@@ -1623,7 +1713,8 @@ async function downloadModel() {
     // The model previewed: merged and written, not built again.
     const { result } = await runPrintJob(format, areaData, undefined, { model: previewed.model, thin: previewed.thin.counts }, onProgress);
     const file = result.file!;
-    saveFile(file, format);
+    // In pieces, the STLs come in a zip.
+    saveFile(file, result.pieces && format === 'stl' ? 'zip' : format);
     const skipped = result.skipped ?? 0;
     const merged = skipped
       ? ` · ${skipped.toLocaleString()} small ${skipped === 1 ? 'piece is kept as a separate part' : 'pieces are kept as separate parts'} (slicers handle that fine)`
@@ -1633,7 +1724,8 @@ async function downloadModel() {
     // Joining overlapping objects cuts new edges where they meet.
     const more = triangles > previewTriangles ? ` (more than the preview's ${previewTriangles.toLocaleString()}: joining touching objects adds edges where they meet)` : '';
     const credits = result.credits?.length ? ` and ${result.credits.join('; ')}` : '';
-    status.textContent = `${x} × ${y} × ${z} mm · ${triangles.toLocaleString()} triangles${more} · ${formatBytes(file.size)}${merged}. Credit "© OpenStreetMap contributors"${credits} when you share it.`;
+    const pieces = result.pieces ? ` · ${result.pieces} pieces${format === 'stl' ? ', an STL each' : ', an object each'}` : '';
+    status.textContent = `${x} × ${y} × ${z} mm${pieces} · ${triangles.toLocaleString()} triangles${more} · ${formatBytes(file.size)}${merged}. Credit "© OpenStreetMap contributors"${credits} when you share it.`;
   } catch (err) {
     if (!(err instanceof SettingError)) console.error('Export failed', err);
     status.textContent = failure('The export', err);
@@ -1694,6 +1786,7 @@ new ResizeObserver(() => {
 function showExport() {
   $('export').hidden = !(viewer && areaData?.detail === 'full');
   if ($('export').hidden && printPreview) setPrintPreview(false);
+  if (!$('export').hidden) showPieces();
   showOfficialArea();
 }
 
@@ -1708,6 +1801,8 @@ function showOfficialArea() {
   $('official-area-source').textContent = source.name;
   $('official-area-author').textContent = source.author;
   $('official-area-use').textContent = `Use detailed buildings from ${source.name}`;
+  // Not in the export preview: models are chosen before, in the 3D view.
+  if (printPreview) return void ($('official-area').hidden = true);
   // While loading, the card stays as it is (its buttons wait).
   if (officialLoad) return void ($('official-area').hidden = false);
   // Buildings left to look for: Use. All looked for and some found: Remove (the undo). All

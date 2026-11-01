@@ -68,39 +68,20 @@ testing).
   and confirm in the same email that a public web page may use it and that printing the
   buildings is fine, so the app doesn't depend on access that could close.
 
-### Print in pieces
+### Print in pieces: what's left
 
-A big map doesn't fit the printer's bed: the export splits it into pieces, each printed on
-its own and put back together. One control for every shape: an n × m grid (1×3, 2×3,
-3×3…) centered on the selection and turned with it, each cell an equal share of its
-bounding box; a piece is the shape inside a cell, and cells it doesn't reach are dropped.
-A hexagon in 2×2 is four equal quarters, a circle in 3×3 has corner pieces about 60% of a
-full one. With the bed's size set (or a printer picked), the export proposes the smallest
-grid whose pieces fit, and the user can change it.
+Built: the grid, the pieces' sizes against the bed, the pulled-apart preview, the cut files,
+the tabs and pockets. Next:
 
-Each piece's size in mm is shown, with a red mark on any that doesn't fit the bed, and a
-warning on slivers (a piece under about 15% of a cell, at a free shape's odd corner), with
-the option to merge one into its neighbor. The 3D view shows the pieces pulled apart (an
-exploded view, eased in), and the download is one 3MF with a plate per piece, or a zip of
-STLs named by row and column.
-
-Each piece is cut from the solid with planes (manifold-3d's trimByPlane: the library
-already joins the print's solids), so cut faces are flat and watertight; the few parts
-manifold-3d won't take (not closed) are cut by their triangles, without a closed face.
-
-Joints in the base, so the pieces line up: along every cut between two pieces, the base
-grows tabs on one side and the neighbor gets matching pockets, 0.1 mm wider all round (a
-setting: printers differ). Always tabs toward +x and +y, pockets toward −x and −y, so any
-grid assembles row by row. A tab is in the lower part of the base (its top stays under the
-terrain), slightly tapered to center itself; its pocket is open at the bottom and at the
-cut face, closed on top by the terrain above, so the pieces slide together sideways and
-print without supports (the pocket's roof is a short bridge). One tab per about 40 mm of
-cut, at least one; a cut too short for one (a piece's corner at the shape's edge) gets
-none. They align, they don't lock: glue holds them. A locking option: bowtie keys, a
-dovetail pocket open at the bottom on each side of the cut and a small key printed apart,
-pushed in from below.
-
-Later: cut lines nudged to run along streets rather than through buildings.
+- **Merge a sliver into its neighbor:** a piece under 15% of a cell (a free shape's odd
+  corner, a circle's edge in a fine grid) is flagged; one click should join it to the piece
+  beside it (that piece's region becomes two cells).
+- **Bowtie keys,** the locking option: a dovetail pocket open at the bottom on each side of a
+  cut, and a small key printed apart, pushed in from below, so the pieces hold without glue.
+- **Cut lines along streets** rather than through buildings: each cut nudged, within a few
+  millimeters, to where it crosses the fewest buildings.
+- Parts manifold-3d can't take (not closed) go uncut to the piece holding each triangle's
+  middle: cut them by their triangles too, open at the cut.
 
 ## Publishing
 

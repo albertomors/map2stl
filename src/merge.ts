@@ -28,48 +28,13 @@ export function loadManifold(): Promise<Wasm> {
 // `whole`: everything into one solid (STL); otherwise each part on its own (3MF).
 // `progress` hears how far along it is, 0 to 1.
 export async function mergeModel(model: PrintModel, whole: boolean, progress: (fraction: number) => void = () => {}): Promise<MergeResult> {
-  const { Manifold, Mesh } = await loadManifold();
+  const wasm = await loadManifold();
+  const { Manifold } = wasm;
   let skipped = 0;
-  // Each solid's triangles as an indexed mesh, points shared by exact position.
   const manifolds = (part: PrintPart) => {
-    const bySolid = new Map<number, number[]>();
-    for (let t = 0; t < part.solids.length; t++) {
-      let list = bySolid.get(part.solids[t]);
-      if (!list) bySolid.set(part.solids[t], (list = []));
-      list.push(t);
-    }
-    const ok: InstanceType<typeof Manifold>[] = [];
-    const left: number[] = [];
-    for (const tris of bySolid.values()) {
-      // Each triangle with its own three points: manifold-3d's merge() joins the ones in the
-      // same place (quicker than sharing them here). Triangles squashed flat are left out.
-      const verts = new Float32Array(tris.length * 9);
-      let n = 0;
-      const tr = part.triangles;
-      for (const t of tris) {
-        const o = t * 9;
-        const same = (i: number, j: number) => tr[o + i] === tr[o + j] && tr[o + i + 1] === tr[o + j + 1] && tr[o + i + 2] === tr[o + j + 2];
-        if (same(0, 3) || same(3, 6) || same(0, 6)) continue;
-        verts.set(tr.subarray(o, o + 9), n * 9);
-        n++;
-      }
-      const triVerts = new Uint32Array(n * 3).map((_, i) => i);
-      try {
-        const mesh = new Mesh({ numProp: 3, vertProperties: verts.subarray(0, n * 9), triVerts });
-        mesh.merge();
-        const m = new Manifold(mesh);
-        if (m.status() === 'NoError' && !m.isEmpty()) ok.push(m);
-        else {
-          m.delete();
-          throw new Error('not manifold');
-        }
-      } catch {
-        skipped++;
-        // One by one: a big solid (the terrain) has more triangles than a spread can take.
-        for (const t of tris) left.push(t);
-      }
-    }
-    return { ok, left };
+    const r = partSolids(wasm, part);
+    skipped += r.skipped;
+    return r;
   };
 
   const toPart = (base: PrintPart, ok: InstanceType<typeof Manifold>[], leftovers: { part: PrintPart; tris: number[] }[]): PrintPart => {
@@ -146,3 +111,49 @@ export async function mergeModel(model: PrintModel, whole: boolean, progress: (f
     skipped,
   };
 }
+
+// A part's solids as manifolds, each from its own triangles (points shared by exact
+// position); `left`: the triangles of those manifold-3d won't take (not closed, say).
+export function partSolids(wasm: Wasm, part: PrintPart): { ok: InstanceType<Wasm['Manifold']>[]; left: number[]; skipped: number } {
+  const { Manifold, Mesh } = wasm;
+  let skipped = 0;
+  const bySolid = new Map<number, number[]>();
+  for (let t = 0; t < part.solids.length; t++) {
+    let list = bySolid.get(part.solids[t]);
+    if (!list) bySolid.set(part.solids[t], (list = []));
+    list.push(t);
+  }
+  const ok: InstanceType<typeof Manifold>[] = [];
+  const left: number[] = [];
+  for (const tris of bySolid.values()) {
+    // Each triangle with its own three points: manifold-3d's merge() joins the ones in the
+    // same place (quicker than sharing them here). Triangles squashed flat are left out.
+    const verts = new Float32Array(tris.length * 9);
+    let n = 0;
+    const tr = part.triangles;
+    for (const t of tris) {
+      const o = t * 9;
+      const same = (i: number, j: number) => tr[o + i] === tr[o + j] && tr[o + i + 1] === tr[o + j + 1] && tr[o + i + 2] === tr[o + j + 2];
+      if (same(0, 3) || same(3, 6) || same(0, 6)) continue;
+      verts.set(tr.subarray(o, o + 9), n * 9);
+      n++;
+    }
+    const triVerts = new Uint32Array(n * 3).map((_, i) => i);
+    try {
+      const mesh = new Mesh({ numProp: 3, vertProperties: verts.subarray(0, n * 9), triVerts });
+      mesh.merge();
+      const m = new Manifold(mesh);
+      if (m.status() === 'NoError' && !m.isEmpty()) ok.push(m);
+      else {
+        m.delete();
+        throw new Error('not manifold');
+      }
+    } catch {
+      skipped++;
+      // One by one: a big solid (the terrain) has more triangles than a spread can take.
+      for (const t of tris) left.push(t);
+    }
+  }
+  return { ok, left, skipped };
+}
+

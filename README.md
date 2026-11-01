@@ -1,4 +1,4 @@
-# map2stl
+# map2stl: 3D-printable maps of any place on Earth
 
 **Turn any place on Earth into a 3D print.**
 
@@ -101,6 +101,9 @@ builds a static site into `dist/`: it needs no server of its own.
   chose. Anything narrower than the nozzle shows in red, forests too, with a count per part.
 - Exact tile edges, a solid base, streets and water carved into the ground; everything
   that touches joined into one watertight solid (manifold-3d).
+- **Bigger than your printer?** Print it in pieces: the fewest that fit your bed (or your
+  own grid), cut flat and watertight, with tabs and pockets in the base that line them up.
+  A zip of STLs, or one 3MF with an object per piece.
 - **GLB and glTF** for Blender, Unity, Unreal, Sketchfab or the web: the 3D view as it looks,
   painted ground with its relief shading, your edits and multipliers, in meters with y up.
   No preview needed.
