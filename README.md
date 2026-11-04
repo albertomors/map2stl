@@ -15,11 +15,12 @@ account, no API key, nothing to install.
 git clone https://github.com/albertomors/map2stl.git
 cd map2stl
 npm install
-npm run dev     # http://localhost:5173
+npm run build
+npm run preview     # http://localhost:4173
 ```
 
-Needs [Node.js](https://nodejs.org) 20.19+ or 22.12+. `npm run build` type-checks and
-builds a static site into `dist/`: it needs no server of its own.
+Needs [Node.js](https://nodejs.org) 20.19+ or 22.12+. The build is a static site in `dist/`,
+which any web server can host. To work on the code, `npm run dev` reloads as you save.
 
 ## How it works
 
