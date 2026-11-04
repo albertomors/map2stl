@@ -1,9 +1,7 @@
 # map2stl: 3D-printable maps of any place on Earth
 
 Your favorite city on the shelf. A real place for your next tabletop campaign. Find it,
-select it, shape it in 3D, print it.
-
-Real buildings, terrain, rivers and the sea floor, from open data, in your browser. No
+select it, shape it in 3D, print it. Real buildings, terrain, rivers and the sea floor, from open data, in your browser. No
 account, no API key, nothing to install.
 
 [Quick start](#quick-start) · [How it works](#how-it-works) · [Features](#features) ·
@@ -19,8 +17,7 @@ npm run build
 npm run preview     # http://localhost:4173
 ```
 
-Needs [Node.js](https://nodejs.org) 20.19+ or 22.12+. The build is a static site in `dist/`,
-which any web server can host. To work on the code, `npm run dev` reloads as you save.
+Needs [Node.js](https://nodejs.org) 20.19+ or 22.12+.
 
 ## How it works
 
@@ -31,7 +28,7 @@ shape, and fetch it: a first look in seconds, the full detail in about a minute.
 
 ![Searching for Rome, drawing a free shape over the city center and fetching its 3D data](docs/screenshots/search.webp)
 
-### 2. Make it yours
+### 2. Edit the 3D model
 
 Fly around it. Click anything to change it: delete a building, enlarge your favorite one,
 turn a square into a park, or swap a landmark for a real 3D model.
@@ -40,42 +37,26 @@ turn a square into a park, or swap a landmark for a real 3D model.
 
 ### 3. The real buildings, where cities publish them
 
-Where a city publishes its official 3D model, one click swaps OpenStreetMap's blocks for
-the real thing: every roof, dormer and spire.
+Where a city publishes its official 3D buildings, one click swaps OpenStreetMap's blocks for
+the real thing: every roof, dormer and spire. See Zurich below.
 
 ![Zurich's old town in the 3D view with OpenStreetMap's buildings: flat-roofed blocks, the Grossmünster's towers among them](docs/screenshots/official-without.png)
-
-<sub>Zurich with OpenStreetMap's buildings.</sub>
-
 ![The same view with swisstopo's official 3D buildings: gabled and hipped roofs, dormers, the Grossmünster's spires](docs/screenshots/official-with.png)
-
-<sub>The same view with swissBUILDINGS3D.</sub>
 
 ### 4. Print it, even bigger than your printer
 
-See it exactly as it will print, with anything too thin for your nozzle in red. Too big
-for your printer? It splits into pieces that fit your bed and snap back together.
+Preview and plan as it will print, with anything too thin for your nozzle flagged in red. Too big
+for your printer? Split it into pieces that fit your bed and snap back together.
 
 ![Rome as a 600 mm circle in the export preview: split into 3 × 3 pieces for a 220 mm bed, pulled apart and back together with the Explode view slider](docs/screenshots/export.webp)
 
-## Features
+### 5. Other features
 
-- **Real buildings:** heights, roof shapes and colors from OpenStreetMap.
-- **Official 3D buildings where available:** Switzerland (swissBUILDINGS3D), the
-  Netherlands (3DBAG), Japan (PLATEAU), Hamburg, Helsinki and Hong Kong.
 - **Water and the sea floor:** rivers, lakes, harbors, and the sea at its real depths.
-- **Edit anything:** delete, resize or retype a building, street, river or park, or swap a
-  landmark for a 3D model from Wikimedia Commons, Sketchfab or your own file.
-- **Every format:** STL for any slicer, multi-color 3MF for OrcaSlicer and Bambu Studio,
+- **Every format you need:** STL for any slicer, multi-color 3MF for OrcaSlicer and Bambu Studio,
   GLB and glTF for Blender, Unity and the web.
-- **No surprises:** the preview shows the print exactly as it comes out, nozzle check
-  included.
-- **Too big to print? Split it into pieces.** Sized to your bed, joined by tabs or locked
-  with bowtie keys.
 
 ## Data sources
-
-All open data, fetched by your browser; every export credits the sources that ask for it.
 
 | Data | Source | License |
 |---|---|---|
@@ -88,16 +69,8 @@ All open data, fetched by your browser; every export credits the sources that as
 ## License
 
 map2stl's code is under the [MIT License](LICENSE). The data keeps its own licenses (see
-[Data sources](#data-sources)); prints and files made from OpenStreetMap data must credit
-"© OpenStreetMap contributors" (every export carries the credit).
+[Data sources](#data-sources));
 
-## More
-
-- [User guide](docs/guide.md): everything the app does, step by step
-- [Architecture](docs/architecture.md): how it's put together
-- [Roadmap](ROADMAP.md): what's next
-- [Changelog](CHANGELOG.md): what shipped, version by version
-
-## Support
+## Support (me)
 
 Like it? Found it useful? [![Buy me a coffee](https://img.shields.io/badge/Buy%20me%20a%20coffee-000000?style=flat&logo=ko-fi&logoColor=white)](https://ko-fi.com/W7A529A7ZI)
