@@ -63,7 +63,7 @@ Preview the model exactly as it prints: anything thinner than your nozzle shows 
 Bigger than your bed? It's split into the fewest pieces that fit, with joints in the base
 that line them up.
 
-<!-- docs/screenshots/export.webp: the export settings and printing in pieces (to come) -->
+![Rome as a 600 mm circle in the export preview: split into 3 × 3 pieces for a 220 mm bed, pulled apart and back together with the Explode view slider](docs/screenshots/export.webp)
 
 ## Features
 
