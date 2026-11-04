@@ -50,6 +50,8 @@ for your printer? Split it into pieces that fit your bed and snap back together.
 
 ![Rome as a 600 mm circle in the export preview: split into 3 × 3 pieces for a 220 mm bed, pulled apart and back together with the Explode view slider](docs/screenshots/export.webp)
 
+![Piece r2c2 of the Rome print in OrcaSlicer on a Creality K1 SE's bed: the Colosseum, the Forum and the streets around them, ready to slice](docs/screenshots/orcaslicer.png)
+
 ### 5. Other features
 
 - **Water and the sea floor:** rivers, lakes, harbors, and the sea at its real depths.
