@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-11-04
+
+Prints that slice cleanly: the terrain is now one closed solid, so a piece no longer opens in
+a slicer with an empty first layer; steadier export settings; fuller bug reports; and a new
+README.
+
 ### Fixed
 
 - The print's terrain is one closed solid, carved or not, whole or in pieces: built as a block
@@ -24,6 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A bug report also carries the export's pieces (bed, grid, joints, joins, what the preview
   built), the detailed buildings in use, the 3D models held, and how the data was downloaded
   (its parts, their sizes, servers and times).
+- The README walks through the app in four steps, with animations of searching and selecting,
+  the 3D view and printing in pieces, Zurich without and with its official buildings, and a
+  piece in OrcaSlicer; the quick start runs the production build.
 
 ## [0.9.0] - 2026-11-01
 
