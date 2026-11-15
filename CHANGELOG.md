@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Sending a bug report shows a progress bar: the upload's share, then "Creating the GitHub
+  issue" until the link is there. The description can't be edited meanwhile.
+
 ## [1.0.0] - 2026-11-15
 
 map2stl is public: open **[map2stl.pages.dev](https://map2stl.pages.dev)** and print any

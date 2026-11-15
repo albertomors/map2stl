@@ -73,13 +73,27 @@ export function setupBugReport(context: () => Record<string, unknown>, screensho
   const text = document.getElementById('bug-text') as HTMLTextAreaElement;
   const send = document.getElementById('bug-send') as HTMLButtonElement;
   const status = document.getElementById('bug-status')!;
+  const progress = document.getElementById('bug-progress')!;
+  const progressLabel = progress.querySelector<HTMLElement>('.progress-label')!;
+  const progressText = progress.querySelector<HTMLElement>('.progress-text')!;
+  const progressBar = progress.querySelector<HTMLElement>('.bar > div')!;
+  // The upload's share while it goes, then a sweep while GitHub makes the issue.
+  const showProgress = (label: string, fraction: number | null) => {
+    progress.hidden = false;
+    progressLabel.textContent = label;
+    progress.classList.toggle('busy', fraction === null);
+    progressText.textContent = fraction === null ? '' : `${Math.round(fraction * 100)}%`;
+    progressBar.style.width = fraction === null ? '' : `${fraction * 100}%`;
+  };
   // Taken when the window opens: it would cover the view otherwise.
   let shot: Promise<Blob | null> = Promise.resolve(null);
 
   document.getElementById('bug-open')!.addEventListener('click', () => {
     shot = screenshot().catch(() => null);
     status.textContent = '';
+    progress.hidden = true;
     send.disabled = false;
+    text.disabled = false;
     dialog.showModal();
     text.focus();
   });
@@ -95,14 +109,19 @@ export function setupBugReport(context: () => Record<string, unknown>, screensho
       return;
     }
     send.disabled = true;
+    text.disabled = true;
     try {
       const at = new Date();
       const report = { message, at: at.toISOString(), app: { version: __APP_VERSION__, url: location.href }, ...context(), environment: environment(), console: log };
       const image = await shot;
       const subject = message.split('\n')[0].slice(0, 80);
-      status.textContent = 'Sending…';
+      status.textContent = '';
+      showProgress('Preparing', null);
 
-      const sent = await post(message, report, image);
+      const sent = await post(message, report, image, (fraction) =>
+        fraction < 1 ? showProgress('Sending', fraction) : showProgress('Creating the GitHub issue', null),
+      );
+      progress.hidden = true;
       if (sent) {
         status.textContent = 'Sent as ';
         const link = document.createElement('a');
@@ -128,7 +147,10 @@ export function setupBugReport(context: () => Record<string, unknown>, screensho
         status.textContent = `Couldn't send it directly, so it's saved as ${name}. A GitHub issue opens with the message: drop the file into it and submit. Thank you!`;
       }
       text.value = '';
+      text.disabled = false;
     } catch (err) {
+      progress.hidden = true;
+      text.disabled = false;
       console.error('Bug report failed', err);
       status.textContent = `The report couldn't be saved: ${(err as Error).message}`;
       send.disabled = false;
@@ -136,20 +158,36 @@ export function setupBugReport(context: () => Record<string, unknown>, screensho
   });
 }
 
-// The report to the site's function. null when there is no function (the dev server) or it
-// fails: the caller falls back to the zip.
-async function post(message: string, report: Record<string, unknown>, image: Blob | null) {
+// The report to the site's function, with the upload's progress (0..1; 1 once it's all sent
+// and the server is making the issue). XMLHttpRequest, as fetch can't report an upload's
+// progress. null when there is no function (the dev server) or it fails: the caller falls back
+// to the zip.
+function post(
+  message: string,
+  report: Record<string, unknown>,
+  image: Blob | null,
+  onProgress: (fraction: number) => void,
+): Promise<{ number: number; url: string } | null> {
   const form = new FormData();
   form.set('message', message);
   form.set('context', JSON.stringify(report));
   if (image) form.set('screenshot', image, 'screenshot.png');
   form.set('website', (document.getElementById('bug-website') as HTMLInputElement | null)?.value ?? '');
-  try {
-    const res = await fetch(ENDPOINT, { method: 'POST', body: form });
-    if (!res.ok) return null;
-    const data = (await res.json()) as { number?: number; url?: string };
-    return data.url && data.number ? { number: data.number, url: data.url } : null;
-  } catch {
-    return null;
-  }
+  return new Promise((resolve) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', ENDPOINT);
+    xhr.timeout = 60_000;
+    xhr.upload.onprogress = (e) => e.lengthComputable && onProgress(e.loaded / e.total);
+    xhr.upload.onload = () => onProgress(1);
+    xhr.onload = () => {
+      try {
+        const data = JSON.parse(xhr.responseText) as { number?: number; url?: string };
+        resolve(xhr.status < 300 && data.url && data.number ? { number: data.number, url: data.url } : null);
+      } catch {
+        resolve(null);
+      }
+    };
+    xhr.onerror = xhr.ontimeout = () => resolve(null);
+    xhr.send(form);
+  });
 }

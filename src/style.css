@@ -86,6 +86,10 @@ header {
   box-shadow: var(--shadow);
 }
 
+.bug-progress {
+  margin-top: 8px;
+}
+
 .bug-trap {
   /* honeypot for bots (bug-report.ts): out of sight and out of reach */
   position: absolute;

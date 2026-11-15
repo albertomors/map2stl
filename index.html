@@ -291,6 +291,10 @@ nom<!doctype html>
         it.
       </p>
       <input id="bug-website" name="website" type="text" tabindex="-1" autocomplete="off" aria-hidden="true" class="bug-trap" />
+      <div class="progress bug-progress" id="bug-progress" hidden>
+        <div class="progress-head"><span class="progress-label">Sending</span><span class="progress-text"></span></div>
+        <div class="bar"><div></div></div>
+      </div>
       <p id="bug-status" class="bug-status msg" style="--lines: 2" aria-live="polite"></p>
       <div class="bug-actions">
         <button id="bug-cancel" type="button">Close</button>
