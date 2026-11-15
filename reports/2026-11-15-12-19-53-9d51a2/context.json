@@ -1,0 +1,70 @@
+{
+  "message": "if i select one shape and i click out the selection disappear properly. if i select one shape, then switch shape then click out it doesnt disappear",
+  "at": "2026-11-15T12:19:30.473Z",
+  "app": {
+    "version": "0.9.1",
+    "url": "https://map2stl.pages.dev/#3/43.44/17.18"
+  },
+  "view": "map",
+  "map": {
+    "center": [
+      17.175632340088214,
+      43.43985163151339
+    ],
+    "zoom": 3,
+    "bearing": 0,
+    "pitch": 0
+  },
+  "selection": {
+    "kind": "circle",
+    "center": [
+      8.430515152588498,
+      43.662799086374406
+    ],
+    "halfWidth": 1270765.520987859,
+    "halfHeight": 1270765.520987859,
+    "rotation": 0
+  },
+  "drawing": "hexagon",
+  "fetching": false,
+  "data": null,
+  "fetch": null,
+  "layers": [],
+  "scales": {
+    "terrain": 1.5,
+    "heights": 1
+  },
+  "edits": {},
+  "selected": null,
+  "camera": null,
+  "export": null,
+  "official": null,
+  "models": {
+    "byKind": {},
+    "stored": 0
+  },
+  "hints": {
+    "select": "Selecting and editing become available when the detailed data arrives.",
+    "edits": "No edits",
+    "modelTask": ""
+  },
+  "environment": {
+    "userAgent": "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+    "language": "en-US",
+    "screen": {
+      "width": 1920,
+      "height": 1080,
+      "pixelRatio": 1
+    },
+    "window": {
+      "width": 1809,
+      "height": 939
+    },
+    "webgl": {
+      "vendor": "AMD",
+      "renderer": "Radeon HD 3200 Graphics, or similar",
+      "maxTextureSize": 16384
+    }
+  },
+  "console": []
+}
