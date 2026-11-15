@@ -1,6 +1,7 @@
 // Drawing a selection shape by dragging on the map (or clicking points, for a free shape),
 // then editing it with handles: center = move, corner = resize (rectangles and free shapes
-// stretch freely; hexagons and circles keep their ratio), top = rotate in place. A plain click outside the shape clears it.
+// stretch freely; hexagons and circles keep their ratio), top = rotate in place. A plain click outside the shape clears it,
+// with or without a drawing tool armed.
 
 import { Marker, type GeoJSONSource, type Map, type MapMouseEvent, type MapTouchEvent } from 'maplibre-gl';
 import { bearingTo, crossesPath, destination, distance, type LngLat } from './geo';
@@ -20,8 +21,9 @@ const SOURCE = 'selection';
 // Drags shorter than this are clicks, not shapes.
 const MIN_DRAG_PX = 5;
 const MIN_HALF_SIZE_M = 20;
-// Clicking this close to the first point closes a free shape.
+// Clicking this close to the first point closes a free shape; a finger needs more room.
 const CLOSE_PX = 10;
+const CLOSE_TOUCH_PX = 28;
 const INVALID = '#d93025';
 // A press and release this close together is a click, even if the hand wobbled.
 // (MapLibre's own click allows 3 px, and the rest pans the map: points went missing.)
@@ -44,6 +46,8 @@ export class DrawController {
   // The click that closes a free shape also reaches the map's click handler, as a click on
   // the outline, which reads as "outside": it must not clear the new shape.
   private finishedAt = 0;
+  // Whether the last press was a finger: the first point is then easier to hit.
+  private touch = false;
   private handles: Record<Handle, Marker>;
 
   constructor(
@@ -94,7 +98,7 @@ export class DrawController {
       if (this.tool !== 'polygon') return;
       // Not a zoom: it finishes the shape.
       e.preventDefault();
-      this.finishPolygon();
+      if (this.points.length) this.finishPolygon();
     });
     window.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') this.setTool(null);
@@ -117,6 +121,9 @@ export class DrawController {
     // Free shapes are clicked, not dragged: the map can still pan between clicks.
     if (tool && tool !== 'polygon') this.map.dragPan.disable();
     else this.map.dragPan.enable();
+    // A double-click or double-tap finishes a free shape: it mustn't zoom too.
+    if (tool === 'polygon') this.map.doubleClickZoom.disable();
+    else this.map.doubleClickZoom.enable();
     this.showHandles();
     this.onToolChange(tool);
   }
@@ -140,6 +147,17 @@ export class DrawController {
     this.onSelection(null, true);
   }
 
+  // Before using the selection (Fetch): a free shape still being drawn is finished if it can
+  // be, so the old shape isn't used in its place. False when it can't be finished yet.
+  finishDrawing(): boolean {
+    if (this.tool !== 'polygon' || !this.points.length) return true;
+    if (this.points.length < 3) {
+      this.onMessage('Add at least 3 points to the free shape first.');
+      return false;
+    }
+    return this.finishPolygon();
+  }
+
   // Drawing
 
   private down(e: MapMouseEvent | MapTouchEvent) {
@@ -147,6 +165,7 @@ export class DrawController {
       const mouse = e.originalEvent instanceof MouseEvent ? e.originalEvent : null;
       // Right button and Ctrl+drag belong to the orbit control.
       if (mouse && (mouse.button !== 0 || mouse.ctrlKey)) return;
+      this.touch = !mouse;
       this.press = { lngLat: [e.lngLat.lng, e.lngLat.lat], x: e.point.x, y: e.point.y };
       return;
     }
@@ -182,8 +201,11 @@ export class DrawController {
       this.onSelection(this.current, true);
       this.setTool(null);
     } else {
-      // A click leaves no real shape: keep the tool armed.
+      // A click leaves no real shape: keep the tool armed. Outside the current shape it
+      // clears it, as it does with no tool.
+      const at = this.start.lngLat;
       this.start = null;
+      if (this.current && !contains(this.current, at)) this.clear();
     }
   }
 
@@ -200,8 +222,9 @@ export class DrawController {
   private addPoint(press: { lngLat: LngLat; x: number; y: number }) {
     const p = press.lngLat;
     const px = (q: LngLat) => this.map.project(q);
-    const near = (q: LngLat) => Math.hypot(px(q).x - px(p).x, px(q).y - px(p).y) < CLOSE_PX;
-    if (this.points.length >= 3 && near(this.points[0])) return this.finishPolygon();
+    const close = this.touch ? CLOSE_TOUCH_PX : CLOSE_PX;
+    const near = (q: LngLat) => Math.hypot(px(q).x - px(p).x, px(q).y - px(p).y) < close;
+    if (this.points.length >= 3 && near(this.points[0])) return void this.finishPolygon();
     // Edges that cross make a shape with no clear inside: refuse the point.
     const last = this.points[this.points.length - 1];
     if (last && crossesPath(last, p, this.points)) {
@@ -209,28 +232,36 @@ export class DrawController {
       return;
     }
     // A double-click sends two clicks first: don't add the same point twice.
+    // A double-tap finishes the shape (touch has no dblclick event): its second tap does.
     const now = performance.now();
-    if (this.points.length && now - this.lastPointAt < DOUBLE_CLICK_MS && near(this.points[this.points.length - 1])) return;
+    if (this.points.length && now - this.lastPointAt < DOUBLE_CLICK_MS && near(this.points[this.points.length - 1])) {
+      if (this.touch && this.points.length >= 3) this.finishPolygon();
+      return;
+    }
     this.lastPointAt = now;
     this.onMessage(null);
     this.points.push(p);
     this.showDraft(p);
   }
 
-  private finishPolygon() {
+  private finishPolygon(): boolean {
     const pts = this.points;
     if (pts.length >= 3 && crossesPath(pts[pts.length - 1], pts[0], pts)) {
       this.onMessage('Closing here would cross an edge. Add a point that keeps the outline from crossing.');
-      return;
+      return false;
     }
     this.points = [];
     this.onMessage(null);
     this.finishedAt = performance.now();
-    if (pts.length < 3) return this.show(this.current);
+    if (pts.length < 3) {
+      this.show(this.current);
+      return false;
+    }
     const sel = fromPoints(pts, this.map.getBearing());
     this.show(sel);
     this.onSelection(sel, true);
     this.setTool(null);
+    return true;
   }
 
   // The shape so far, filled, including the edges to the cursor and back to the start;

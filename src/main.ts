@@ -33,7 +33,7 @@ const HINTS: Record<ShapeKind, string> = {
   rectangle: 'Drag from one corner to the opposite corner.',
   hexagon: 'Drag from the center outward. Up on screen becomes the flat top.',
   circle: 'Drag from the center outward.',
-  polygon: 'Click to add points; double-click, or click the first point, to finish.',
+  polygon: 'Click or tap to add points; double-click or double-tap, or click the first point, to finish.',
 };
 
 const SHAPE_NAMES: Record<ShapeKind, string> = { rectangle: 'Rectangle', hexagon: 'Hexagon', circle: 'Circle', polygon: 'Free shape' };
@@ -98,7 +98,12 @@ toolButtons.forEach((btn) =>
   }),
 );
 $('clear').addEventListener('click', () => draw?.clear());
-$('fetch').addEventListener('click', () => (loading ? loading.abort() : selection && fetchData(selection)));
+$('fetch').addEventListener('click', () => {
+  if (loading) return loading.abort();
+  // A free shape still being drawn is what the user means, not the shape before it.
+  if (draw && !draw.finishDrawing()) return;
+  if (selection) fetchData(selection);
+});
 $('open-3d').addEventListener('click', () => open3d());
 $('close-3d').addEventListener('click', () => close3d());
 for (const id of ['terrain-scale', 'height-scale']) {
@@ -888,6 +893,31 @@ function formatBytes(n: number): string {
   return n < 1e6 ? `${Math.round(n / 1e3)} kB` : `${(n / 1e6).toFixed(1)} MB`;
 }
 
+// A script that didn't download: the browser's message names the file.
+function isChunkError(err: unknown): boolean {
+  return err instanceof TypeError && /dynamically imported module|module script failed/i.test(err.message);
+}
+
+// The 3D engine's code, downloaded on first use. On a phone the download can drop, and the
+// browser then remembers the failure for that file, failing every later try the same way
+// (issues #2, #3): retry with the file's address made new, twice.
+async function loadViewer(): Promise<typeof import('./viewer/viewer')> {
+  try {
+    return await import('./viewer/viewer');
+  } catch (err) {
+    const url = isChunkError(err) ? (err as Error).message.match(/https?:\/\/\S+?\.js/)?.[0] : undefined;
+    if (!url) throw err;
+    for (let attempt = 1; ; attempt++) {
+      await new Promise((r) => setTimeout(r, 1000 * attempt));
+      try {
+        return await import(/* @vite-ignore */ `${url}?retry=${Date.now()}`);
+      } catch (retryErr) {
+        if (attempt >= 2) throw retryErr;
+      }
+    }
+  }
+}
+
 // Three.js is loaded only when the 3D view is first opened.
 async function open3d() {
   if (!areaData || viewer) return;
@@ -899,7 +929,7 @@ async function open3d() {
   bar.hidden = false;
   setBar('progress-3d', 'Loading the 3D engine…', 0, '');
   try {
-    const { Viewer, BUILD_STAGES } = await import('./viewer/viewer');
+    const { Viewer, BUILD_STAGES } = await loadViewer();
     const v = (viewer = new Viewer($('viewer'), showPick));
     await v.showStaged(areaData, visibleLayers, scales(), edits, (stage, done) => setBar('progress-3d', `${stage}…`, (done + 1) / (BUILD_STAGES + 1), ''));
     // A new selection while building closed it.
@@ -914,7 +944,9 @@ async function open3d() {
     console.error('3D view failed', err);
     close3d();
     $('data-status').classList.add('error');
-    $('data-status').textContent = `The 3D view failed to start: ${(err as Error).message}`;
+    $('data-status').textContent = isChunkError(err)
+      ? "The 3D engine couldn't be downloaded: the connection dropped, or the site was just updated. Reload the page and try again."
+      : `The 3D view failed to start: ${(err as Error).message}`;
   } finally {
     bar.hidden = true;
     button.disabled = false;

@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- The 3D view starts on a flaky connection: when its code fails to download, it's tried again
+  twice with a fresh request, since the browser otherwise remembers the failure until the
+  page is reloaded; if it still fails, the message says to reload
+  ([#2](https://github.com/albertomors/map2stl/issues/2),
+  [#3](https://github.com/albertomors/map2stl/issues/3)).
+- Free shapes on a phone: **Fetch 3D data** finishes a free shape still being drawn instead
+  of fetching the shape before it; a double-tap finishes it, without zooming; and the first
+  point is easier to tap to close it
+  ([#4](https://github.com/albertomors/map2stl/issues/4)).
+- A click outside the selection clears it with a drawing tool armed too, as it does without
+  one ([#5](https://github.com/albertomors/map2stl/issues/5)).
+
 ### Changed
 
 - Sending a bug report shows a progress bar: the upload's share, then "Creating the GitHub
