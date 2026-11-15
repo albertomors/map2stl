@@ -2,13 +2,38 @@
 
 A static web app: TypeScript, [Vite](https://vite.dev), [MapLibre GL JS](https://maplibre.org)
 for the map, [Three.js](https://threejs.org) for 3D. No backend: the browser talks
-directly to public open-data services.
+directly to public open-data services. The one exception is the bug report, sent through a
+Cloudflare Pages Function (`functions/api/bug-report.ts`).
 
 ```sh
 npm run dev      # dev server with hot reload, http://localhost:5173
 npm run build    # type-check (tsc --noEmit) + production build in dist/
 npm run preview  # serve dist/
 ```
+
+## Branches and deploys
+
+The site is hosted on [Cloudflare Pages](https://pages.cloudflare.com), which builds the
+repository on every push.
+
+| Branch | What it holds | Where it's published |
+|---|---|---|
+| `main` | The released app: only releases land here, each tagged (`v1.0.0`, …) with a GitHub release | [map2stl.pages.dev](https://map2stl.pages.dev), the public site |
+| `dev` | Day-to-day development; merged into `main` at each release | [dev.map2stl.pages.dev](https://dev.map2stl.pages.dev), a preview |
+| `bug-reports` | The bug reports' files (each report's `screenshot.png` and `context.json` under `reports/<date>-<code>/`), linked from their issues. Written only by the bug-report function, never merged, commits marked `[skip ci]` so it isn't built | nowhere |
+
+Keeping the reports' files on their own branch keeps `main` and `dev` free of them. Delete a
+report's folder only once its issue is closed: the issue's screenshot and context link to
+it.
+
+A release: bump the version (`npm version x.y.z --no-git-tag-version`), move the
+changelog's Unreleased section under the new version, commit on `dev`, fast-forward `main`
+to it, tag `vx.y.z`, push both and the tag, and create the GitHub release from the
+changelog section.
+
+The Cloudflare project builds with `npm run build` into `dist/`, with `NODE_VERSION=22`, and
+has the secret `GITHUB_TOKEN` (fine-grained, this repository: Issues and Contents read and
+write) for the bug-report function.
 
 ## Data flow
 
