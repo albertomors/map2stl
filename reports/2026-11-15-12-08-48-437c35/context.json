@@ -1,0 +1,92 @@
+{
+  "message": "asdasd",
+  "at": "2026-11-15T12:08:42.517Z",
+  "app": {
+    "version": "0.9.1",
+    "url": "https://map2stl.pages.dev/#3/45/10"
+  },
+  "view": "map",
+  "map": {
+    "center": [
+      10,
+      45
+    ],
+    "zoom": 3,
+    "bearing": 0,
+    "pitch": 0
+  },
+  "selection": {
+    "kind": "polygon",
+    "center": [
+      39.60893076049489,
+      41.25600007761611
+    ],
+    "halfWidth": 1678088.7888012,
+    "halfHeight": 1498860.8268682223,
+    "rotation": 0,
+    "points": [
+      [
+        -0.055607504998708215,
+        1
+      ],
+      [
+        1,
+        -0.14005647095640497
+      ],
+      [
+        -0.43437962137827485,
+        -0.999405164405673
+      ],
+      [
+        -0.9997199815119409,
+        0.3119301006836593
+      ],
+      [
+        -0.5693140321230485,
+        0.2837856442834792
+      ]
+    ]
+  },
+  "drawing": null,
+  "fetching": false,
+  "data": null,
+  "fetch": null,
+  "layers": [],
+  "scales": {
+    "terrain": 1.5,
+    "heights": 1
+  },
+  "edits": {},
+  "selected": null,
+  "camera": null,
+  "export": null,
+  "official": null,
+  "models": {
+    "byKind": {},
+    "stored": 0
+  },
+  "hints": {
+    "select": "",
+    "edits": "",
+    "modelTask": ""
+  },
+  "environment": {
+    "userAgent": "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:157.0) Gecko/20100101 Firefox/157.0",
+    "language": "en-US",
+    "screen": {
+      "width": 1920,
+      "height": 1080,
+      "pixelRatio": 1
+    },
+    "window": {
+      "width": 1809,
+      "height": 939
+    },
+    "webgl": {
+      "vendor": "AMD",
+      "renderer": "Radeon HD 3200 Graphics, or similar",
+      "maxTextureSize": 16384
+    }
+  },
+  "console": []
+}
