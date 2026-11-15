@@ -76,12 +76,19 @@ body {
   color: var(--fg);
 }
 
+/* The question and its pill, centered together: the pill is taller than the text, and on a
+   shared baseline the question sat lower than the other links. */
+#footer .support {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
 /* "Buy me a coffee", as the README's badge: a small dark pill. */
 #footer .coffee {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  margin-left: 4px;
   padding: 2px 8px;
   border-radius: 4px;
   color: #ffffff;
@@ -125,7 +132,7 @@ body {
   }
   #footer .support {
     flex-basis: 100%;
-    text-align: center;
+    justify-content: center;
   }
 }
 
