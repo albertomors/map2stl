@@ -241,12 +241,14 @@ share what you made.
 ## Reporting a bug
 
 The **?** at the top right of the panel opens **Found a bug? Report it**. Describe what
-you did, what you expected and what happened, then **Send**: a zip is saved with your
-message, a screenshot, and what's needed to reproduce it (your selection, the view and its
-settings, your edits, the export and its pieces, the detailed buildings in use, how the data
-was downloaded, your browser and graphics card, recent errors; nothing else), and
-your email app (or, in builds without a report address, a new GitHub issue) opens with the
-message. Attach the zip and send.
+you did, what you expected and what happened, then **Send**. The report becomes a **public
+issue** on the project's GitHub, with your message, a screenshot, and what's needed to
+reproduce it (your selection, the view and its settings, your edits, the export and its
+pieces, the detailed buildings in use, how the data was downloaded, your browser and
+graphics card, recent errors; nothing else). The window links the new issue.
+
+If it can't be sent (offline, or running the app locally), a zip with the same content is
+saved instead and a new GitHub issue opens with your message: attach the zip and submit.
 
 ## Known limits
 

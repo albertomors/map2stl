@@ -1,14 +1,13 @@
 // "Found a bug? Report it": the "?" button in the panel's header opens a window for the user
 // to describe the bug in words; Send packs that with everything needed to reproduce it (the
 // context main.ts gathers, recent console errors, the browser, a screenshot of the view) into
-// a zip. A browser can't email an attachment by itself, so until there's a server to receive
-// it, the zip is downloaded and the user's email app opens with the message, to attach it.
+// one report. The site's /api/bug-report function (functions/api/bug-report.ts) turns it into a
+// GitHub issue. Where that function isn't there (the dev server) or fails, the report is
+// downloaded as a zip instead and a prefilled GitHub issue opens, to attach it by hand.
 
 import { strToU8, zipSync } from 'fflate';
 
-// Where reports go: VITE_BUG_REPORT_EMAIL in .env.local (kept out of the repository). Without
-// it, a GitHub issue is opened instead.
-const EMAIL: string | undefined = import.meta.env.VITE_BUG_REPORT_EMAIL;
+const ENDPOINT = '/api/bug-report';
 const ISSUES_URL = 'https://github.com/albertomors/map2stl/issues/new';
 // Recent console errors and warnings kept for a report.
 const MAX_LOG = 50;
@@ -99,27 +98,34 @@ export function setupBugReport(context: () => Record<string, unknown>, screensho
     try {
       const at = new Date();
       const report = { message, at: at.toISOString(), app: { version: __APP_VERSION__, url: location.href }, ...context(), environment: environment(), console: log };
-      const files: Record<string, Uint8Array> = {
-        'message.txt': strToU8(message),
-        'context.json': strToU8(JSON.stringify(report, null, 2)),
-      };
       const image = await shot;
-      if (image) files['screenshot.png'] = new Uint8Array(await image.arrayBuffer());
-      const name = `map2stl-bug-${at.toISOString().slice(0, 19).replace(/[:T]/g, '-')}.zip`;
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(new Blob([zipSync(files)], { type: 'application/zip' }));
-      a.download = name;
-      a.click();
-      setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+      const subject = message.split('\n')[0].slice(0, 80);
+      status.textContent = 'Sending…';
 
-      const subject = `map2stl bug: ${message.split('\n')[0].slice(0, 80)}`;
-      const body = `${message}\n\n(Attached: ${name}, the context to reproduce it.)`;
-      if (EMAIL) {
-        location.href = `mailto:${EMAIL}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-        status.textContent = `Saved as ${name}. Your email app should open with the message: attach the file to it and send. Thank you!`;
+      const sent = await post(message, report, image);
+      if (sent) {
+        status.textContent = 'Sent as ';
+        const link = document.createElement('a');
+        link.href = sent.url;
+        link.target = '_blank';
+        link.rel = 'noopener';
+        link.textContent = `issue #${sent.number}`;
+        status.append(link, '. Thank you!');
       } else {
-        window.open(`${ISSUES_URL}?title=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`, '_blank', 'noopener');
-        status.textContent = `Saved as ${name}. A GitHub issue opens with the message: drop the file into it and submit. Thank you!`;
+        const files: Record<string, Uint8Array> = {
+          'message.txt': strToU8(message),
+          'context.json': strToU8(JSON.stringify(report, null, 2)),
+        };
+        if (image) files['screenshot.png'] = new Uint8Array(await image.arrayBuffer());
+        const name = `map2stl-bug-${at.toISOString().slice(0, 19).replace(/[:T]/g, '-')}.zip`;
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([zipSync(files)], { type: 'application/zip' }));
+        a.download = name;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 10_000);
+        const body = `${message}\n\n(Attached: ${name}, the context to reproduce it.)`;
+        window.open(`${ISSUES_URL}?title=${encodeURIComponent(`Bug report: ${subject}`)}&body=${encodeURIComponent(body)}`, '_blank', 'noopener');
+        status.textContent = `Couldn't send it directly, so it's saved as ${name}. A GitHub issue opens with the message: drop the file into it and submit. Thank you!`;
       }
       text.value = '';
     } catch (err) {
@@ -128,4 +134,22 @@ export function setupBugReport(context: () => Record<string, unknown>, screensho
       send.disabled = false;
     }
   });
+}
+
+// The report to the site's function. null when there is no function (the dev server) or it
+// fails: the caller falls back to the zip.
+async function post(message: string, report: Record<string, unknown>, image: Blob | null) {
+  const form = new FormData();
+  form.set('message', message);
+  form.set('context', JSON.stringify(report));
+  if (image) form.set('screenshot', image, 'screenshot.png');
+  form.set('website', (document.getElementById('bug-website') as HTMLInputElement | null)?.value ?? '');
+  try {
+    const res = await fetch(ENDPOINT, { method: 'POST', body: form });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { number?: number; url?: string };
+    return data.url && data.number ? { number: data.number, url: data.url } : null;
+  } catch {
+    return null;
+  }
 }

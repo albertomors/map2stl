@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Bug reports send themselves: **Send** opens a public GitHub issue with the message,
+  screenshot and context (`functions/api/bug-report.ts`, a Cloudflare Pages Function), and
+  links it. Where that isn't available, the zip and a prefilled issue as before. The email
+  route (`VITE_BUG_REPORT_EMAIL`) is gone.
+
 ## [0.9.1] - 2026-11-04
 
 Prints that slice cleanly: the terrain is now one closed solid, so a piece no longer opens in

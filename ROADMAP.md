@@ -75,7 +75,4 @@ What going public needs.
 - **Sketchfab without a token:** an approved integration (Sketchfab requires it for
   downloads without each user logging in), with our own server. Until then, a "Log in
   with Sketchfab" button instead of pasting a token needs our app registered with them.
-- **Bug reports sent from the app:** a small endpoint (or a form/email service) that
-  receives the report's zip and forwards it to the maintainer, instead of the user
-  attaching it to an email themselves.
 - Deploy as a public site.
