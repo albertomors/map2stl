@@ -43,7 +43,7 @@ export async function onRequestPost({ request, env }: Context): Promise<Response
     return json({ error: 'Malformed report.' }, 400);
   }
   // A field people never see: bots fill it in. Pretend it worked.
-  if (form.get('website')) return json({ number: 0, url: '' });
+  if (form.get('website')) return json({ id: '00000000' });
 
   // multipart turns line breaks into CRLF
   const message = String(form.get('message') ?? '').replace(/\r\n?/g, '\n').trim();
@@ -71,7 +71,10 @@ export async function onRequestPost({ request, env }: Context): Promise<Response
       },
     });
 
-  const id = `${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}-${crypto.randomUUID().slice(0, 6)}`;
+  // What the user is told: a random code, not the issue's number (which would say how many
+  // there are). It's in the issue's title and folder, so a report can be found by it.
+  const code = [...crypto.getRandomValues(new Uint8Array(4))].map((b) => b.toString(16).padStart(2, '0')).join('');
+  const id = `${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}-${code}`;
 
   // Files first, so the issue can link them. The branch is created on the first report.
   const put = async (name: string, bytes: Uint8Array) => {
@@ -130,12 +133,11 @@ export async function onRequestPost({ request, env }: Context): Promise<Response
     '<sub>Sent from the in-app bug report.</sub>',
   ].join('\n');
 
-  const title = `Bug report: ${message.split('\n')[0].slice(0, 80)}`;
+  const title = `Bug report ${code}: ${message.split('\n')[0].slice(0, 80)}`;
   const issue = await gh('/issues', { method: 'POST', body: JSON.stringify({ title, body, labels: ['bug'] }) });
   if (!issue.ok) {
     console.error('issue failed', issue.status, await issue.text());
     return json({ error: 'GitHub refused the report.' }, 502);
   }
-  const { number, html_url } = (await issue.json()) as { number: number; html_url: string };
-  return json({ number, url: html_url });
+  return json({ id: code });
 }

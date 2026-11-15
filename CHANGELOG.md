@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Sending a bug report shows a progress bar: the upload's share, then "Creating the GitHub
   issue" until the link is there. The description can't be edited meanwhile.
+- A sent bug report is confirmed with a random code (also in the issue's title), not the
+  issue's number and link.
 
 ## [1.0.0] - 2026-11-15
 

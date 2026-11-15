@@ -245,7 +245,8 @@ you did, what you expected and what happened, then **Send**. The report becomes 
 issue** on the project's GitHub, with your message, a screenshot, and what's needed to
 reproduce it (your selection, the view and its settings, your edits, the export and its
 pieces, the detailed buildings in use, how the data was downloaded, your browser and
-graphics card, recent errors; nothing else). The window links the new issue.
+graphics card, recent errors; nothing else). The window shows the report's code, which is
+also in the issue's title.
 
 If it can't be sent (offline, or running the app locally), a zip with the same content is
 saved instead and a new GitHub issue opens with your message: attach the zip and submit.

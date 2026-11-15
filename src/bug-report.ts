@@ -123,13 +123,7 @@ export function setupBugReport(context: () => Record<string, unknown>, screensho
       );
       progress.hidden = true;
       if (sent) {
-        status.textContent = 'Sent as ';
-        const link = document.createElement('a');
-        link.href = sent.url;
-        link.target = '_blank';
-        link.rel = 'noopener';
-        link.textContent = `issue #${sent.number}`;
-        status.append(link, '. Thank you!');
+        status.textContent = `Sent, thank you! Your report's code is ${sent.id}.`;
       } else {
         const files: Record<string, Uint8Array> = {
           'message.txt': strToU8(message),
@@ -167,7 +161,7 @@ function post(
   report: Record<string, unknown>,
   image: Blob | null,
   onProgress: (fraction: number) => void,
-): Promise<{ number: number; url: string } | null> {
+): Promise<{ id: string } | null> {
   const form = new FormData();
   form.set('message', message);
   form.set('context', JSON.stringify(report));
@@ -181,8 +175,8 @@ function post(
     xhr.upload.onload = () => onProgress(1);
     xhr.onload = () => {
       try {
-        const data = JSON.parse(xhr.responseText) as { number?: number; url?: string };
-        resolve(xhr.status < 300 && data.url && data.number ? { number: data.number, url: data.url } : null);
+        const data = JSON.parse(xhr.responseText) as { id?: string };
+        resolve(xhr.status < 300 && data.id ? { id: data.id } : null);
       } catch {
         resolve(null);
       }
