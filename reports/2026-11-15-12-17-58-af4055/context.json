@@ -1,0 +1,234 @@
+{
+  "message": "Free shape on phone show loading the rpevious selected shape. Previously selected hex then switched to free. Clicked frtch data and show the hexagon loading",
+  "at": "2026-11-15T12:17:57.843Z",
+  "app": {
+    "version": "0.9.1",
+    "url": "https://map2stl.pages.dev/#11.61/45.46/12.3231"
+  },
+  "view": "map",
+  "map": {
+    "center": [
+      12.323131751546612,
+      45.460031364950936
+    ],
+    "zoom": 11.605989210419782,
+    "bearing": 0,
+    "pitch": 0
+  },
+  "selection": {
+    "kind": "hexagon",
+    "center": [
+      12.302225470738023,
+      45.44248237660136
+    ],
+    "halfWidth": 1577.0893422255824,
+    "halfHeight": 1577.0893422255824,
+    "rotation": 0
+  },
+  "drawing": "polygon",
+  "fetching": false,
+  "data": {
+    "detail": "full",
+    "status": "",
+    "layers": [
+      {
+        "layer": "buildings",
+        "count": 578,
+        "detail": "60% real heights, 14% shaped roofs"
+      },
+      {
+        "layer": "structures",
+        "count": 366,
+        "detail": "192 wall, 109 pier, 44 retaining wall, 20 bridge"
+      },
+      {
+        "layer": "roads",
+        "count": 982,
+        "detail": "69.1 km, 68 on bridges"
+      },
+      {
+        "layer": "railways",
+        "count": 193,
+        "detail": "39.1 km, 112 on bridges"
+      },
+      {
+        "layer": "paved",
+        "count": 84,
+        "detail": "49 parking, 32 pedestrian, 2 soccer, 1 basketball"
+      },
+      {
+        "layer": "water",
+        "count": 37,
+        "detail": "sea, 10 areas, 26 streams, 102 boats at piers"
+      },
+      {
+        "layer": "green",
+        "count": 64,
+        "detail": "50 grass, 5 garden, 3 wood, 3 scrub"
+      },
+      {
+        "layer": "surfaces",
+        "count": 1,
+        "detail": "1 scree"
+      },
+      {
+        "layer": "trees",
+        "count": 164,
+        "detail": "160 single, 4 forests, 1.5 ha"
+      }
+    ],
+    "terrain": {
+      "source": "AWS Terrain Tiles",
+      "min": -3.4743599891662598,
+      "max": 7.71875,
+      "grid": [
+        472,
+        409
+      ],
+      "zoom": 14
+    },
+    "seaFloor": {
+      "name": "EMODnet Bathymetry, CC BY 4.0",
+      "credit": "Sea depths: EMODnet Bathymetry Consortium (CC BY 4.0)",
+      "resolutionM": 115
+    }
+  },
+  "fetch": {
+    "parts": [
+      {
+        "km2": 8.62,
+        "buildings": 603,
+        "predictedKb": 2934
+      }
+    ],
+    "answered": [
+      {
+        "kb": 8319,
+        "cached": false,
+        "server": "maps.mail.ru",
+        "tries": 2,
+        "answeredS": 25.49380000000447
+      }
+    ],
+    "bytes": 8319052,
+    "cached": false,
+    "done": true,
+    "server": "maps.mail.ru"
+  },
+  "layers": [
+    "buildings",
+    "structures",
+    "roads",
+    "railways",
+    "paved",
+    "water",
+    "green",
+    "surfaces",
+    "trees"
+  ],
+  "scales": {
+    "terrain": 1.5,
+    "heights": 1
+  },
+  "edits": {},
+  "selected": null,
+  "camera": null,
+  "export": null,
+  "official": {
+    "source": null,
+    "loading": false,
+    "tried": 0,
+    "inUse": 0,
+    "card": null,
+    "status": ""
+  },
+  "models": {
+    "byKind": {},
+    "stored": 0
+  },
+  "hints": {
+    "select": "Selecting and editing become available when the detailed data arrives.",
+    "edits": "No edits",
+    "modelTask": ""
+  },
+  "environment": {
+    "userAgent": "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/157.0.0.0 Mobile Safari/537.36",
+    "language": "nb-NO",
+    "screen": {
+      "width": 412,
+      "height": 915,
+      "pixelRatio": 2.625
+    },
+    "window": {
+      "width": 411,
+      "height": 794
+    },
+    "webgl": {
+      "vendor": "Google Inc. (ARM)",
+      "renderer": "ANGLE (ARM, Mali-G615 MC2, OpenGL ES 3.2)",
+      "maxTextureSize": 8192
+    }
+  },
+  "console": [
+    {
+      "at": "2026-11-15T12:14:24.676Z",
+      "level": "error",
+      "message": "3D view failed TypeError: Failed to fetch dynamically imported module: https://map2stl.pages.dev/assets/viewer-DUYbv8g8.js\nTypeError: Failed to fetch dynamically imported module: https://map2stl.pages.dev/assets/viewer-DUYbv8g8.js"
+    },
+    {
+      "at": "2026-11-15T12:14:27.766Z",
+      "level": "error",
+      "message": "3D view failed TypeError: Failed to fetch dynamically imported module: https://map2stl.pages.dev/assets/viewer-DUYbv8g8.js\nTypeError: Failed to fetch dynamically imported module: https://map2stl.pages.dev/assets/viewer-DUYbv8g8.js"
+    },
+    {
+      "at": "2026-11-15T12:14:33.428Z",
+      "level": "error",
+      "message": "3D view failed TypeError: Failed to fetch dynamically imported module: https://map2stl.pages.dev/assets/viewer-DUYbv8g8.js\nTypeError: Failed to fetch dynamically imported module: https://map2stl.pages.dev/assets/viewer-DUYbv8g8.js"
+    },
+    {
+      "at": "2026-11-15T12:14:34.092Z",
+      "level": "error",
+      "message": "3D view failed TypeError: Failed to fetch dynamically imported module: https://map2stl.pages.dev/assets/viewer-DUYbv8g8.js\nTypeError: Failed to fetch dynamically imported module: https://map2stl.pages.dev/assets/viewer-DUYbv8g8.js"
+    },
+    {
+      "at": "2026-11-15T12:14:34.708Z",
+      "level": "error",
+      "message": "3D view failed TypeError: Failed to fetch dynamically imported module: https://map2stl.pages.dev/assets/viewer-DUYbv8g8.js\nTypeError: Failed to fetch dynamically imported module: https://map2stl.pages.dev/assets/viewer-DUYbv8g8.js"
+    },
+    {
+      "at": "2026-11-15T12:14:35.524Z",
+      "level": "error",
+      "message": "3D view failed TypeError: Failed to fetch dynamically imported module: https://map2stl.pages.dev/assets/viewer-DUYbv8g8.js\nTypeError: Failed to fetch dynamically imported module: https://map2stl.pages.dev/assets/viewer-DUYbv8g8.js"
+    },
+    {
+      "at": "2026-11-15T12:15:20.879Z",
+      "level": "error",
+      "message": "3D view failed TypeError: Failed to fetch dynamically imported module: https://map2stl.pages.dev/assets/viewer-DUYbv8g8.js\nTypeError: Failed to fetch dynamically imported module: https://map2stl.pages.dev/assets/viewer-DUYbv8g8.js"
+    },
+    {
+      "at": "2026-11-15T12:16:05.364Z",
+      "level": "error",
+      "message": "3D view failed TypeError: Failed to fetch dynamically imported module: https://map2stl.pages.dev/assets/viewer-DUYbv8g8.js\nTypeError: Failed to fetch dynamically imported module: https://map2stl.pages.dev/assets/viewer-DUYbv8g8.js"
+    },
+    {
+      "at": "2026-11-15T12:16:06.743Z",
+      "level": "error",
+      "message": "3D view failed TypeError: Failed to fetch dynamically imported module: https://map2stl.pages.dev/assets/viewer-DUYbv8g8.js\nTypeError: Failed to fetch dynamically imported module: https://map2stl.pages.dev/assets/viewer-DUYbv8g8.js"
+    },
+    {
+      "at": "2026-11-15T12:16:06.925Z",
+      "level": "error",
+      "message": "3D view failed TypeError: Failed to fetch dynamically imported module: https://map2stl.pages.dev/assets/viewer-DUYbv8g8.js\nTypeError: Failed to fetch dynamically imported module: https://map2stl.pages.dev/assets/viewer-DUYbv8g8.js"
+    },
+    {
+      "at": "2026-11-15T12:16:07.078Z",
+      "level": "error",
+      "message": "3D view failed TypeError: Failed to fetch dynamically imported module: https://map2stl.pages.dev/assets/viewer-DUYbv8g8.js\nTypeError: Failed to fetch dynamically imported module: https://map2stl.pages.dev/assets/viewer-DUYbv8g8.js"
+    },
+    {
+      "at": "2026-11-15T12:17:13.308Z",
+      "level": "error",
+      "message": "3D view failed TypeError: Failed to fetch dynamically imported module: https://map2stl.pages.dev/assets/viewer-DUYbv8g8.js\nTypeError: Failed to fetch dynamically imported module: https://map2stl.pages.dev/assets/viewer-DUYbv8g8.js"
+    }
+  ]
+}
