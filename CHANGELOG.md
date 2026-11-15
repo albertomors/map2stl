@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-11-15
+
+map2stl is public: open **[map2stl.pages.dev](https://map2stl.pages.dev)** and print any
+place on Earth, nothing to install. Bug reports now send themselves.
+
+### Added
+
+- The app is online at [map2stl.pages.dev](https://map2stl.pages.dev), on Cloudflare Pages:
+  every release on `main` publishes itself.
+- The page has a description and a link preview (title, description, image) for when it's
+  shared.
+
 ### Changed
 
 - Bug reports send themselves: **Send** opens a public GitHub issue with the message,

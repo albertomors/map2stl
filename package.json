@@ -1,6 +1,6 @@
 {
   "name": "map2stl",
-  "version": "0.9.1",
+  "version": "1.0.0",
   "private": true,
   "license": "MIT",
   "description": "Pick any place on Earth and turn it into a 3D-printable model (STL / 3MF)",
@@ -8,7 +8,7 @@
     "type": "git",
     "url": "git+https://github.com/albertomors/map2stl.git"
   },
-  "homepage": "https://github.com/albertomors/map2stl#readme",
+  "homepage": "https://map2stl.pages.dev",
   "bugs": "https://github.com/albertomors/map2stl/issues",
   "keywords": [
     "3d-printing",

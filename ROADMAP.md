@@ -2,7 +2,7 @@
 
 Open work only: built items move to the README and CHANGELOG.
 
-## Milestone 0.10: more official buildings
+## Milestone 1.1: more official buildings
 
 Swapping the OSM approximation for measured models. Google's photorealistic tiles can't be
 used (their terms forbid extracting them), and no open worldwide photogrammetry exists.
@@ -68,11 +68,10 @@ testing).
 
 ## Publishing
 
-What going public needs.
+What a growing public needs.
 
 - Our own Overpass instance (or a commercial extract service): the public servers are too
   busy and slow for many users.
 - **Sketchfab without a token:** an approved integration (Sketchfab requires it for
   downloads without each user logging in), with our own server. Until then, a "Log in
   with Sketchfab" button instead of pasting a token needs our app registered with them.
-- Deploy as a public site.

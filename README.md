@@ -4,10 +4,17 @@ Your favorite city on the shelf. A real place for your next tabletop campaign. F
 select it, shape it in 3D, print it. Real buildings, terrain, rivers and the sea floor, from open data, in your browser. No
 account, no API key, nothing to install.
 
+### **[▶ Open map2stl](https://map2stl.pages.dev)** · [map2stl.pages.dev](https://map2stl.pages.dev)
+
 [Quick start](#quick-start) · [How it works](#how-it-works) · [Features](#features) ·
 [Data sources](#data-sources) · [User guide](docs/guide.md)
 
 ## Quick start
+
+Open **[map2stl.pages.dev](https://map2stl.pages.dev)** in a desktop browser with WebGL 2
+(Chrome, Edge, Firefox or Safari) and search for a place. That's all.
+
+### Run it yourself
 
 ```sh
 git clone https://github.com/albertomors/map2stl.git
@@ -67,6 +74,12 @@ for your printer? Split it into pieces that fit your bed and snap back together.
 | Sea floor | [EMODnet](https://emodnet.ec.europa.eu/en/bathymetry) in Europe, [NOAA ETOPO 2022](https://www.ncei.noaa.gov/products/etopo-global-relief-model) elsewhere | CC BY 4.0, public domain |
 | Official 3D buildings | [swissBUILDINGS3D](https://www.swisstopo.admin.ch/en/landscape-model-swissbuildings3d-3-0-beta), [3DBAG](https://3dbag.nl), [PLATEAU](https://www.mlit.go.jp/plateau/), [Hamburg](https://www.hamburg.de/bsw/landesbetrieb-geoinformation-und-vermessung/), [Helsinki](https://kartta.hel.fi/3d/), [Hong Kong](https://portal.csdi.gov.hk/csdi-webpage/apidoc/3d-spatial-data-api) | open data, each its own license (CC BY 4.0 and similar) |
 | Landmark models | [Wikimedia Commons](https://commons.wikimedia.org), [Sketchfab](https://sketchfab.com) (free API token) | per model, shown with each |
+
+## Found a bug?
+
+Click the **?** at the top right of the app's panel, describe what happened and **Send**: it
+becomes a [GitHub issue](https://github.com/albertomors/map2stl/issues) with a screenshot
+and what's needed to reproduce it. Or open an issue yourself.
 
 ## License
 
