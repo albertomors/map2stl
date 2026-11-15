@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-11-15
+
+Fixes from the first public reports: the 3D view on flaky mobile connections, free shapes on
+phones, clearing a selection with a tool armed. Bug reports show their progress and confirm
+with a code, and a footer says who made map2stl.
+
 ### Fixed
 
 - The 3D view starts on a flaky connection: when its code fails to download, it's tried again
