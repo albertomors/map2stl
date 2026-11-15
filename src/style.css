@@ -76,6 +76,59 @@ body {
   color: var(--fg);
 }
 
+/* "Buy me a coffee", as the README's badge: a small dark pill. */
+#footer .coffee {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 4px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  color: #ffffff;
+  background: #1d2129;
+  text-decoration: none;
+}
+
+#footer .coffee:hover {
+  color: #ffffff;
+  background: #000000;
+}
+
+#footer .coffee svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+
+@media (prefers-color-scheme: dark) {
+  #footer .coffee {
+    color: #1d2129;
+    background: #e8eaee;
+  }
+  #footer .coffee:hover {
+    color: #000000;
+    background: #ffffff;
+  }
+}
+
+/* Phones: two lines, who made it on the first, the coffee on the second. */
+@media (max-width: 600px) {
+  :root {
+    --footer-h: 52px;
+  }
+  #footer {
+    flex-wrap: wrap;
+    align-content: center;
+    row-gap: 4px;
+    column-gap: 14px;
+  }
+  #footer .support {
+    flex-basis: 100%;
+    text-align: center;
+  }
+}
+
 /* Narrow phones: the name is in the panel already, the links need the room. */
 @media (max-width: 440px) {
   #footer > span:first-child {

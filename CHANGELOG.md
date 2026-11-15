@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- The footer asks "Like it? Found it useful?" with a **Buy me a coffee** link (Ko-fi), as the
+  README does; on phones the footer takes two lines.
+
 ## [1.0.1] - 2026-11-15
 
 Fixes from the first public reports: the 3D view on flaky mobile connections, free shapes on
