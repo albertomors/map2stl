@@ -23,8 +23,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- The panel ends with who made map2stl, linking the author's site, and the source on GitHub;
+  the README has an Author section.
 - Sending a bug report shows a progress bar: the upload's share, then "Creating the GitHub
-  issue" until the link is there. The description can't be edited meanwhile.
+  issue" until it's sent. The description can't be edited meanwhile.
 - A sent bug report is confirmed with a random code (also in the issue's title), not the
   issue's number and link.
 

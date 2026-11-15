@@ -566,6 +566,19 @@ dd {
   font-size: 11px;
 }
 
+/* Who made it, at the panel's bottom, after everything else. */
+.author {
+  margin-top: auto;
+}
+
+.author a {
+  color: inherit;
+}
+
+.author a:hover {
+  color: var(--fg);
+}
+
 /* Download progress */
 
 #data-progress[hidden],

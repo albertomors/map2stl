@@ -81,6 +81,11 @@ Click the **?** at the top right of the app's panel, describe what happened and 
 becomes a [GitHub issue](https://github.com/albertomors/map2stl/issues) with a screenshot
 and what's needed to reproduce it. Or open an issue yourself.
 
+## Author
+
+Made by [Alberto Morselli](https://albertomorselli.pages.dev), robotics and control engineer.
+Source: [github.com/albertomors/map2stl](https://github.com/albertomors/map2stl).
+
 ## License
 
 map2stl's code is under the [MIT License](LICENSE). The data keeps its own licenses (see
