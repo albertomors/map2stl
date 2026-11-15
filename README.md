@@ -4,7 +4,7 @@ Your favorite city on the shelf. A real place for your next tabletop campaign. F
 select it, shape it in 3D, print it. Real buildings, terrain, rivers and the sea floor, from open data, in your browser. No
 account, no API key, nothing to install.
 
-[![Open map2stl](https://img.shields.io/badge/Open_map2stl-map2stl.pages.dev-ff6b2c?style=for-the-badge)](https://map2stl.pages.dev)
+[![Open map2stl](https://img.shields.io/badge/Open_map2stl-ff6b2c?style=for-the-badge)](https://map2stl.pages.dev)
 
 [Quick start](#quick-start) · [How it works](#how-it-works) · [Features](#features) ·
 [Data sources](#data-sources) · [User guide](docs/guide.md)
