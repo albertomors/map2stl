@@ -18,7 +18,7 @@
     <footer id="footer">
       <span>map2stl</span>
       <span>Made by <a href="https://albertomorselli.pages.dev" target="_blank" rel="noopener">Alberto Morselli</a></span>
-      <a href="https://github.com/albertomors/map2stl" target="_blank" rel="noopener">Source on GitHub</a>
+      <a href="https://github.com/albertomors/map2stl" target="_blank" rel="noopener">Look at the code on GitHub</a>
     </footer>
     <div id="viewer" hidden></div>
 
@@ -58,6 +58,8 @@
           </button>
         </div>
         <p id="tool-hint" class="hint">Pick a shape, then drag on the map.</p>
+        <!-- While a free shape is drawn: ending it without hitting the first point or a double-tap. -->
+        <button id="finish-shape" type="button" class="primary finish-shape" hidden>Finish shape</button>
       </section>
 
 

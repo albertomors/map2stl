@@ -76,6 +76,13 @@ body {
   color: var(--fg);
 }
 
+/* Narrow phones: the name is in the panel already, the links need the room. */
+@media (max-width: 440px) {
+  #footer > span:first-child {
+    display: none;
+  }
+}
+
 #panel {
   position: absolute;
   z-index: 4;
@@ -363,6 +370,15 @@ button.secondary {
 }
 
 /* Tools */
+
+.finish-shape {
+  margin-top: 8px;
+  width: 100%;
+}
+
+.finish-shape[hidden] {
+  display: none;
+}
 
 .tools {
   display: grid;

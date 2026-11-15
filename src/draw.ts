@@ -56,6 +56,8 @@ export class DrawController {
     private onSelection: (sel: Selection | null, final: boolean) => void,
     // A message for the user while drawing (null puts the tool's usual hint back).
     private onMessage: (message: string | null) => void,
+    // How many points the free shape being drawn has (0: none being drawn).
+    private onPoints: (count: number) => void = () => {},
   ) {
     map.addSource(SOURCE, { type: 'geojson', data: emptyCollection() });
     map.addLayer({
@@ -114,6 +116,7 @@ export class DrawController {
     if (this.points.length) {
       this.points = [];
       this.show(this.current);
+      this.onPoints(0);
     }
     this.tool = tool;
     this.start = null;
@@ -241,6 +244,7 @@ export class DrawController {
     this.lastPointAt = now;
     this.onMessage(null);
     this.points.push(p);
+    this.onPoints(this.points.length);
     this.showDraft(p);
   }
 
@@ -251,6 +255,7 @@ export class DrawController {
       return false;
     }
     this.points = [];
+    this.onPoints(0);
     this.onMessage(null);
     this.finishedAt = performance.now();
     if (pts.length < 3) {

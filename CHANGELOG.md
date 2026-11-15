@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   of fetching the shape before it; a double-tap finishes it, without zooming; and the first
   point is easier to tap to close it
   ([#4](https://github.com/albertomors/map2stl/issues/4)).
+- Drawing a free shape shows a **Finish shape** button, usable from the third point: on a
+  phone, the double-tap that ends it wasn't something to guess
+  ([#7](https://github.com/albertomors/map2stl/issues/7)).
 - A click outside the selection clears it with a drawing tool armed too, as it does without
   one ([#5](https://github.com/albertomors/map2stl/issues/5)).
 - A stray "nom" before the page's `<!doctype html>` is gone: it showed in the top-left corner

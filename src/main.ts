@@ -33,7 +33,7 @@ const HINTS: Record<ShapeKind, string> = {
   rectangle: 'Drag from one corner to the opposite corner.',
   hexagon: 'Drag from the center outward. Up on screen becomes the flat top.',
   circle: 'Drag from the center outward.',
-  polygon: 'Click or tap to add points; double-click or double-tap, or click the first point, to finish.',
+  polygon: 'Click or tap to add points; to end, click the first point again, double-click, or press Finish shape.',
 };
 
 const SHAPE_NAMES: Record<ShapeKind, string> = { rectangle: 'Rectangle', hexagon: 'Hexagon', circle: 'Circle', polygon: 'Free shape' };
@@ -98,6 +98,7 @@ toolButtons.forEach((btn) =>
   }),
 );
 $('clear').addEventListener('click', () => draw?.clear());
+$('finish-shape').addEventListener('click', () => draw?.finishDrawing());
 $('fetch').addEventListener('click', () => {
   if (loading) return loading.abort();
   // A free shape still being drawn is what the user means, not the shape before it.
@@ -536,7 +537,12 @@ map.on('load', () => {
     selection = sel;
     showSelection(sel);
     if (final) saveSelection(sel);
-  }, (message) => (message ? ($('tool-hint').textContent = message) : showTool(draw?.activeTool ?? null)));
+  }, (message) => (message ? ($('tool-hint').textContent = message) : showTool(draw?.activeTool ?? null)), (count) => {
+    // Shown from the first point, usable from the third (a shape needs 3).
+    const finish = $<HTMLButtonElement>('finish-shape');
+    finish.hidden = count === 0;
+    finish.disabled = count < 3;
+  });
 
   const saved = loadSelection();
   preview = new DataPreview(map, 'selection-fill');
