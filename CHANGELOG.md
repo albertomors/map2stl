@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-11-15
+
+The footer asks for a coffee.
+
 ### Added
 
 - The footer asks "Like it? Found it useful?" with a **Buy me a coffee** link (Ko-fi), as the
